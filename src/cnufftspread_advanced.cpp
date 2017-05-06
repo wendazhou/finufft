@@ -17,6 +17,8 @@ void cnufftspread_type1_subproblem(BIGINT N1, BIGINT N2, BIGINT N3, FLT *data_un
 
 void to_pi_range(BIGINT M, FLT *X, BIGINT N);
 void from_pi_range(BIGINT M, FLT *X, BIGINT N);
+
+void optimized_write_to_output_grid(BIGINT offset1,BIGINT offset2,BIGINT offset3,BIGINT size1,BIGINT size2,BIGINT size3,BIGINT N1,BIGINT N2,BIGINT N3,FLT* data_uniform_0,FLT* data_uniform);
 }
 
 int cnufftspread_advanced(BIGINT N1, BIGINT N2, BIGINT N3, FLT* data_uniform, BIGINT M, FLT* kx, FLT* ky, FLT* kz, FLT* data_nonuniform, spread_opts opts, int num_threads)
@@ -83,38 +85,48 @@ int cnufftspread_advanced(BIGINT N1, BIGINT N2, BIGINT N3, FLT* data_uniform, BI
 
 #pragma omp critical
             {
-                BIGINT output_inds1[size1];
-                BIGINT output_inds2[size2];
-                BIGINT output_inds3[size3];
-                for (BIGINT a=0; a<size1; a++) {
-                    BIGINT ind0=offset1+a;
-                    while (ind0<0) ind0+=N1;
-                    while (ind0>=N1) ind0-=N1;
-                    output_inds1[a]=ind0;
+                //The idea was to use the following to split the innermost loop into 8 pieces to handle wrapping
+                //(but note this is not the most critical innermost loop, that one is already optimized - more easily)
+                //but it was a big waste of time and effort -- causes crash and doesn't even speed it up
+                int USE_OPTIMIZED_WRITE_TO_OUTPUT_GRID=0;
+                if ((USE_OPTIMIZED_WRITE_TO_OUTPUT_GRID)&&(N1>opts.nspread*2+3)&&(N2>opts.nspread*2+3)&&(N3>opts.nspread*2+3)) {
+                    Advanced::optimized_write_to_output_grid(offset1,offset2,offset3,size1,size2,size3,N1,N2,N3,data_uniform_0,data_uniform);
                 }
-                for (BIGINT a=0; a<size2; a++) {
-                    BIGINT ind0=offset2+a;
-                    while (ind0<0) ind0+=N2;
-                    while (ind0>=N2) ind0-=N2;
-                    output_inds2[a]=ind0;
-                }
-                for (BIGINT a=0; a<size3; a++) {
-                    BIGINT ind0=offset3+a;
-                    while (ind0<0) ind0+=N3;
-                    while (ind0>=N3) ind0-=N3;
-                    output_inds3[a]=ind0;
-                }
+                else {
+                    BIGINT output_inds1[size1];
+                    BIGINT output_inds2[size2];
+                    BIGINT output_inds3[size3];
+                    for (BIGINT a=0; a<size1; a++) {
+                        BIGINT ind0=offset1+a;
+                        while (ind0<0) ind0+=N1;
+                        while (ind0>=N1) ind0-=N1;
+                        output_inds1[a]=ind0;
+                    }
+                    for (BIGINT a=0; a<size2; a++) {
+                        BIGINT ind0=offset2+a;
+                        while (ind0<0) ind0+=N2;
+                        while (ind0>=N2) ind0-=N2;
+                        output_inds2[a]=ind0;
+                    }
+                    for (BIGINT a=0; a<size3; a++) {
+                        BIGINT ind0=offset3+a;
+                        while (ind0<0) ind0+=N3;
+                        while (ind0>=N3) ind0-=N3;
+                        output_inds3[a]=ind0;
+                    }
 
-                BIGINT input_index=0;
-                for (BIGINT i3=0; i3<size3; i3++) {
-                    BIGINT output_index3=output_inds3[i3]*N1*N2;
-                    for (BIGINT i2=0; i2<size2; i2++) {
-                        BIGINT output_index2=output_index3+output_inds2[i2]*N1;
-                        for (BIGINT i1=0; i1<size1; i1++) {
-                            BIGINT output_index1=output_index2+output_inds1[i1];
-                            data_uniform[output_index1*2]+=data_uniform_0[input_index*2];
-                            data_uniform[output_index1*2+1]+=data_uniform_0[input_index*2+1];
-                            input_index++;
+                    //The following could be sped up by splitting into 8 loops to cover the 8 wrapping situations
+                    BIGINT input_index=0;
+                    for (BIGINT i3=0; i3<size3; i3++) {
+                        BIGINT output_index3=output_inds3[i3]*N1*N2;
+                        for (BIGINT i2=0; i2<size2; i2++) {
+                            BIGINT output_index2=output_index3+output_inds2[i2]*N1;
+                            for (BIGINT i1=0; i1<size1; i1++) {
+                                BIGINT output_index=output_index2+output_inds1[i1];
+                                data_uniform[output_index*2]+=data_uniform_0[input_index*2];
+                                data_uniform[output_index*2+1]+=data_uniform_0[input_index*2+1];
+                                input_index++;
+                            }
                         }
                     }
                 }
@@ -341,6 +353,288 @@ void cnufftspread_type1_subproblem(BIGINT N1, BIGINT N2, BIGINT N3, FLT *data_un
         }
     }
 }
+
+/*
+ The following was a big waste of time and effort -- causes crash and doesn't even speed it up
+
+void optimized_write_to_output_grid(BIGINT d1_offset,BIGINT d2_offset,BIGINT d3_offset,BIGINT d1_size,BIGINT d2_size,BIGINT d3_size,BIGINT d1_N,BIGINT d2_N,BIGINT d3_N,FLT* data_uniform_0,FLT* data_uniform) {
+    BIGINT d1_lower_src_A,d1_upper_src_A,d1_lower_dst_A,d1_upper_dst_A;
+    BIGINT d1_lower_src_B,d1_upper_src_B,d1_lower_dst_B,d1_upper_dst_B;
+    while (d1_offset<0) d1_offset+=d1_N;
+    while (d1_offset>=d1_N) d1_offset-=d1_N;
+    if (d1_offset+d1_size-1>=d1_N) {
+        d1_lower_src_A=0;
+        d1_upper_src_A=d1_N-1-d1_offset; //d1_size-1-(d1_N-1-d1_offset)=d1_size-d1_N+d1_offset>=0
+        d1_lower_dst_A=d1_offset;
+        d1_upper_dst_A=d1_N-1;
+        d1_lower_src_B=d1_N-d1_offset;
+        d1_upper_src_B=d1_size-1;
+        d1_lower_dst_B=0;
+        d1_upper_dst_B=d1_size-1-d1_N+d1_offset; //d1_N-1-(d1_size-1-d1_N+d1_offset)=2*d1_N-(d1_size+d1_offset)>=d1_N-d1_size>=0
+    }
+    else {
+        d1_lower_src_A=0;
+        d1_upper_src_A=d1_size-1;
+        d1_lower_dst_A=d1_offset;
+        d1_upper_dst_A=d1_offset+d1_size-1;
+        d1_lower_src_B=-1;
+        d1_upper_src_B=-1;
+        d1_lower_dst_B=-1;
+        d1_upper_dst_B=-1;
+    }
+
+    BIGINT d2_lower_src_A,d2_upper_src_A,d2_lower_dst_A,d2_upper_dst_A;
+    BIGINT d2_lower_src_B,d2_upper_src_B,d2_lower_dst_B,d2_upper_dst_B;
+    while (d2_offset<0) d2_offset+=d2_N;
+    while (d2_offset>=d2_N) d2_offset-=d2_N;
+    if (d2_offset+d2_size-1>=d2_N) {
+        d2_lower_src_A=0;
+        d2_upper_src_A=d2_N-1-d2_offset;
+        d2_lower_dst_A=d2_offset;
+        d2_upper_dst_A=d2_N-1;
+        d2_lower_src_B=d2_N-d2_offset;
+        d2_upper_src_B=d2_size-1;
+        d2_lower_dst_B=0;
+        d2_upper_dst_B=d2_size-1-d2_N+d2_offset;
+    }
+    else {
+        d2_lower_src_A=0;
+        d2_upper_src_A=d2_size-1;
+        d2_lower_dst_A=d2_offset;
+        d2_upper_dst_A=d2_offset+d2_size-1;
+        d2_lower_src_B=-1;
+        d2_upper_src_B=-1;
+        d2_lower_dst_B=-1;
+        d2_upper_dst_B=-1;
+    }
+
+    BIGINT d3_lower_src_A,d3_upper_src_A,d3_lower_dst_A,d3_upper_dst_A;
+    BIGINT d3_lower_src_B,d3_upper_src_B,d3_lower_dst_B,d3_upper_dst_B;
+    while (d3_offset<0) d3_offset+=d3_N;
+    while (d3_offset>=d3_N) d3_offset-=d3_N;
+    if (d3_offset+d3_size-1>=d3_N) {
+        d3_lower_src_A=0;
+        d3_upper_src_A=d3_N-1-d3_offset;
+        d3_lower_dst_A=d3_offset;
+        d3_upper_dst_A=d3_N-1;
+        d3_lower_src_B=d3_N-d3_offset;
+        d3_upper_src_B=d3_size-1;
+        d3_lower_dst_B=0;
+        d3_upper_dst_B=d3_size-1-d3_N+d3_offset;
+    }
+    else {
+        d3_lower_src_A=0;
+        d3_upper_src_A=d3_size-1;
+        d3_lower_dst_A=d3_offset;
+        d3_upper_dst_A=d3_offset+d3_size-1;
+        d3_lower_src_B=-1;
+        d3_upper_src_B=-1;
+        d3_lower_dst_B=-1;
+        d3_upper_dst_B=-1;
+    }
+
+    // AAA
+    if ((d1_lower_src_A>=0)&&(d2_lower_src_A>=0)&&(d3_lower_src_A>=0)) {
+        BIGINT input_index=0;
+        BIGINT output_index=0;
+        BIGINT d1_cc=-d1_lower_src_A+d1_lower_dst_A;
+        BIGINT d2_cc=-d2_lower_src_A+d2_lower_dst_A;
+        BIGINT d3_cc=-d3_lower_src_A+d3_lower_dst_A;
+        for (BIGINT i3=d3_lower_src_A; i3<=d3_upper_src_A; i3++) {
+            BIGINT in_tmp00=d1_lower_src_A+d1_size*d2_size*i3;
+            BIGINT out_tmp00=(d1_lower_src_A+d1_cc)+d1_N*d2_N*(i3+d3_cc);
+            for (BIGINT i2=d2_lower_src_A; i2<=d2_upper_src_A; i2++) {
+                BIGINT input_index=in_tmp00+d1_size*i2;
+                BIGINT output_index=out_tmp00+d1_N*(i2+d2_cc);
+                for (BIGINT i1=d1_lower_src_A; i1<=d1_upper_src_A; i1++) {
+                    //BIGINT input_index=i1+d1_size*i2+d1_size*d2_size*i3; //for reference
+                    //BIGINT output_index=(i1+d1_cc)+d1_N*(i2+d2_cc)+d1_N*d2_N*(i3+d3_cc); //for reference
+                    data_uniform[output_index*2]+=data_uniform_0[input_index*2];
+                    data_uniform[output_index*2+1]+=data_uniform_0[input_index*2+1];
+                    input_index++;
+                    output_index++;
+                }
+            }
+        }
+    }
+
+    // AAB
+    if ((d1_lower_src_A>=0)&&(d2_lower_src_A>=0)&&(d3_lower_src_B>=0)) {
+        BIGINT input_index=0;
+        BIGINT output_index=0;
+        BIGINT d1_cc=-d1_lower_src_A+d1_lower_dst_A;
+        BIGINT d2_cc=-d2_lower_src_A+d2_lower_dst_A;
+        BIGINT d3_cc=-d3_lower_src_B+d3_lower_dst_B;
+        for (BIGINT i3=d3_lower_src_B; i3<=d3_upper_src_B; i3++) {
+            BIGINT in_tmp00=d1_lower_src_A+d1_size*d2_size*i3;
+            BIGINT out_tmp00=(d1_lower_src_A+d1_cc)+d1_N*d2_N*(i3+d3_cc);
+            for (BIGINT i2=d2_lower_src_A; i2<=d2_upper_src_A; i2++) {
+                BIGINT input_index=in_tmp00+d1_size*i2;
+                BIGINT output_index=out_tmp00+d1_N*(i2+d2_cc);
+                for (BIGINT i1=d1_lower_src_A; i1<=d1_upper_src_A; i1++) {
+                    //BIGINT input_index=i1+d1_size*i2+d1_size*d2_size*i3; //for reference
+                    //BIGINT output_index=(i1+d1_cc)+d1_N*(i2+d2_cc)+d1_N*d2_N*(i3+d3_cc); //for reference
+                    data_uniform[output_index*2]+=data_uniform_0[input_index*2];
+                    data_uniform[output_index*2+1]+=data_uniform_0[input_index*2+1];
+                    input_index++;
+                    output_index++;
+                }
+            }
+        }
+    }
+
+    // ABA
+    if ((d1_lower_src_A>=0)&&(d2_lower_src_B>=0)&&(d3_lower_src_A>=0)) {
+        BIGINT input_index=0;
+        BIGINT output_index=0;
+        BIGINT d1_cc=-d1_lower_src_A+d1_lower_dst_A;
+        BIGINT d2_cc=-d2_lower_src_B+d2_lower_dst_B;
+        BIGINT d3_cc=-d3_lower_src_A+d3_lower_dst_A;
+        for (BIGINT i3=d3_lower_src_A; i3<=d3_upper_src_A; i3++) {
+            BIGINT in_tmp00=d1_lower_src_A+d1_size*d2_size*i3;
+            BIGINT out_tmp00=(d1_lower_src_A+d1_cc)+d1_N*d2_N*(i3+d3_cc);
+            for (BIGINT i2=d2_lower_src_B; i2<=d2_upper_src_B; i2++) {
+                BIGINT input_index=in_tmp00+d1_size*i2;
+                BIGINT output_index=out_tmp00+d1_N*(i2+d2_cc);
+                for (BIGINT i1=d1_lower_src_A; i1<=d1_upper_src_A; i1++) {
+                    //BIGINT input_index=i1+d1_size*i2+d1_size*d2_size*i3; //for reference
+                    //BIGINT output_index=(i1+d1_cc)+d1_N*(i2+d2_cc)+d1_N*d2_N*(i3+d3_cc); //for reference
+                    data_uniform[output_index*2]+=data_uniform_0[input_index*2];
+                    data_uniform[output_index*2+1]+=data_uniform_0[input_index*2+1];
+                    input_index++;
+                    output_index++;
+                }
+            }
+        }
+    }
+
+    // ABB
+    if ((d1_lower_src_A>=0)&&(d2_lower_src_B>=0)&&(d3_lower_src_B>=0)) {
+        BIGINT input_index=0;
+        BIGINT output_index=0;
+        BIGINT d1_cc=-d1_lower_src_A+d1_lower_dst_A;
+        BIGINT d2_cc=-d2_lower_src_B+d2_lower_dst_B;
+        BIGINT d3_cc=-d3_lower_src_B+d3_lower_dst_B;
+        for (BIGINT i3=d3_lower_src_B; i3<=d3_upper_src_B; i3++) {
+            BIGINT in_tmp00=d1_lower_src_A+d1_size*d2_size*i3;
+            BIGINT out_tmp00=(d1_lower_src_A+d1_cc)+d1_N*d2_N*(i3+d3_cc);
+            for (BIGINT i2=d2_lower_src_B; i2<=d2_upper_src_B; i2++) {
+                BIGINT input_index=in_tmp00+d1_size*i2;
+                BIGINT output_index=out_tmp00+d1_N*(i2+d2_cc);
+                for (BIGINT i1=d1_lower_src_A; i1<=d1_upper_src_A; i1++) {
+                    //BIGINT input_index=i1+d1_size*i2+d1_size*d2_size*i3; //for reference
+                    //BIGINT output_index=(i1+d1_cc)+d1_N*(i2+d2_cc)+d1_N*d2_N*(i3+d3_cc); //for reference
+                    data_uniform[output_index*2]+=data_uniform_0[input_index*2];
+                    data_uniform[output_index*2+1]+=data_uniform_0[input_index*2+1];
+                    input_index++;
+                    output_index++;
+                }
+            }
+        }
+    }
+
+    // BAA
+    if ((d1_lower_src_B>=0)&&(d2_lower_src_A>=0)&&(d3_lower_src_A>=0)) {
+        BIGINT input_index=0;
+        BIGINT output_index=0;
+        BIGINT d1_cc=-d1_lower_src_B+d1_lower_dst_B;
+        BIGINT d2_cc=-d2_lower_src_A+d2_lower_dst_A;
+        BIGINT d3_cc=-d3_lower_src_A+d3_lower_dst_A;
+        for (BIGINT i3=d3_lower_src_A; i3<=d3_upper_src_A; i3++) {
+            BIGINT in_tmp00=d1_lower_src_B+d1_size*d2_size*i3;
+            BIGINT out_tmp00=(d1_lower_src_B+d1_cc)+d1_N*d2_N*(i3+d3_cc);
+            for (BIGINT i2=d2_lower_src_A; i2<=d2_upper_src_A; i2++) {
+                BIGINT input_index=in_tmp00+d1_size*i2;
+                BIGINT output_index=out_tmp00+d1_N*(i2+d2_cc);
+                for (BIGINT i1=d1_lower_src_B; i1<=d1_upper_src_B; i1++) {
+                    //BIGINT input_index=i1+d1_size*i2+d1_size*d2_size*i3; //for reference
+                    //BIGINT output_index=(i1+d1_cc)+d1_N*(i2+d2_cc)+d1_N*d2_N*(i3+d3_cc); //for reference
+                    data_uniform[output_index*2]+=data_uniform_0[input_index*2];
+                    data_uniform[output_index*2+1]+=data_uniform_0[input_index*2+1];
+                    input_index++;
+                    output_index++;
+                }
+            }
+        }
+    }
+
+    // BAB
+    if ((d1_lower_src_B>=0)&&(d2_lower_src_A>=0)&&(d3_lower_src_B>=0)) {
+        BIGINT input_index=0;
+        BIGINT output_index=0;
+        BIGINT d1_cc=-d1_lower_src_B+d1_lower_dst_B;
+        BIGINT d2_cc=-d2_lower_src_A+d2_lower_dst_A;
+        BIGINT d3_cc=-d3_lower_src_B+d3_lower_dst_B;
+        for (BIGINT i3=d3_lower_src_B; i3<=d3_upper_src_B; i3++) {
+            BIGINT in_tmp00=d1_lower_src_B+d1_size*d2_size*i3;
+            BIGINT out_tmp00=(d1_lower_src_B+d1_cc)+d1_N*d2_N*(i3+d3_cc);
+            for (BIGINT i2=d2_lower_src_A; i2<=d2_upper_src_A; i2++) {
+                BIGINT input_index=in_tmp00+d1_size*i2;
+                BIGINT output_index=out_tmp00+d1_N*(i2+d2_cc);
+                for (BIGINT i1=d1_lower_src_B; i1<=d1_upper_src_B; i1++) {
+                    //BIGINT input_index=i1+d1_size*i2+d1_size*d2_size*i3; //for reference
+                    //BIGINT output_index=(i1+d1_cc)+d1_N*(i2+d2_cc)+d1_N*d2_N*(i3+d3_cc); //for reference
+                    data_uniform[output_index*2]+=data_uniform_0[input_index*2];
+                    data_uniform[output_index*2+1]+=data_uniform_0[input_index*2+1];
+                    input_index++;
+                    output_index++;
+                }
+            }
+        }
+    }
+
+    // BBA
+    if ((d1_lower_src_B>=0)&&(d2_lower_src_B>=0)&&(d3_lower_src_A>=0)) {
+        BIGINT input_index=0;
+        BIGINT output_index=0;
+        BIGINT d1_cc=-d1_lower_src_B+d1_lower_dst_B;
+        BIGINT d2_cc=-d2_lower_src_B+d2_lower_dst_B;
+        BIGINT d3_cc=-d3_lower_src_A+d3_lower_dst_A;
+        for (BIGINT i3=d3_lower_src_A; i3<=d3_upper_src_A; i3++) {
+            BIGINT in_tmp00=d1_lower_src_B+d1_size*d2_size*i3;
+            BIGINT out_tmp00=(d1_lower_src_B+d1_cc)+d1_N*d2_N*(i3+d3_cc);
+            for (BIGINT i2=d2_lower_src_B; i2<=d2_upper_src_B; i2++) {
+                BIGINT input_index=in_tmp00+d1_size*i2;
+                BIGINT output_index=out_tmp00+d1_N*(i2+d2_cc);
+                for (BIGINT i1=d1_lower_src_B; i1<=d1_upper_src_B; i1++) {
+                    //BIGINT input_index=i1+d1_size*i2+d1_size*d2_size*i3; //for reference
+                    //BIGINT output_index=(i1+d1_cc)+d1_N*(i2+d2_cc)+d1_N*d2_N*(i3+d3_cc); //for reference
+                    data_uniform[output_index*2]+=data_uniform_0[input_index*2];
+                    data_uniform[output_index*2+1]+=data_uniform_0[input_index*2+1];
+                    input_index++;
+                    output_index++;
+                }
+            }
+        }
+    }
+
+    // BBB
+    if ((d1_lower_src_B>=0)&&(d2_lower_src_B>=0)&&(d3_lower_src_B>=0)) {
+        BIGINT input_index=0;
+        BIGINT output_index=0;
+        BIGINT d1_cc=-d1_lower_src_B+d1_lower_dst_B;
+        BIGINT d2_cc=-d2_lower_src_B+d2_lower_dst_B;
+        BIGINT d3_cc=-d3_lower_src_B+d3_lower_dst_B;
+        for (BIGINT i3=d3_lower_src_B; i3<=d3_upper_src_B; i3++) {
+            BIGINT in_tmp00=d1_lower_src_B+d1_size*d2_size*i3;
+            BIGINT out_tmp00=(d1_lower_src_B+d1_cc)+d1_N*d2_N*(i3+d3_cc);
+            for (BIGINT i2=d2_lower_src_B; i2<=d2_upper_src_B; i2++) {
+                BIGINT input_index=in_tmp00+d1_size*i2;
+                BIGINT output_index=out_tmp00+d1_N*(i2+d2_cc);
+                for (BIGINT i1=d1_lower_src_B; i1<=d1_upper_src_B; i1++) {
+                    //BIGINT input_index=i1+d1_size*i2+d1_size*d2_size*i3; //for reference
+                    //BIGINT output_index=(i1+d1_cc)+d1_N*(i2+d2_cc)+d1_N*d2_N*(i3+d3_cc); //for reference
+                    data_uniform[output_index*2]+=data_uniform_0[input_index*2];
+                    data_uniform[output_index*2+1]+=data_uniform_0[input_index*2+1];
+                    input_index++;
+                    output_index++;
+                }
+            }
+        }
+    }
+}
+
+*/
 
 }
 

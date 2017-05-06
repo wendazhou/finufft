@@ -14,17 +14,17 @@ TEMPLATE = app
 DEFINES += NEED_EXTERN_C
 
 HEADERS += \
-    ../../src/cnufftspread.h \
+    ../../src/cnufftspread.h ../../src/cnufftspread_advanced.h \
     ../../src/common.h \
     ../../src/dirft.h \
     ../../src/finufft.h \
-    ../../src/twopispread.h \
+    #../../src/twopispread.h \
     ../../src/utils.h \
-    ../../contrib/besseli.h \
+    #../../contrib/besseli.h \
     ../../contrib/legendre_rule_fast.h
 
 SOURCES += \
-    ../../src/cnufftspread.cpp \
+    ../../src/cnufftspread.cpp ../../src/cnufftspread_advanced.cpp \
     ../../src/common.cpp \
     ../../src/dirft1d.cpp \
     ../../src/dirft2d.cpp \
@@ -32,10 +32,10 @@ SOURCES += \
     ../../src/finufft1d.cpp \
     ../../src/finufft2d.cpp \
     ../../src/finufft3d.cpp \
-    ../../src/twopispread.cpp \
+    #../../src/twopispread.cpp \
     ../../src/utils.cpp \
-    ../../contrib/besseli.cpp \
-    ../../contrib/testi0.cpp \
+    #../../contrib/besseli.cpp \
+    #../../contrib/testi0.cpp \
     ../../contrib/legendre_rule_fast.c
 
 #FFTW

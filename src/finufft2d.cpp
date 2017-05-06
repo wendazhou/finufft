@@ -86,6 +86,7 @@ int finufft2d1(INT nj,FLT* xj,FLT *yj,CPX* cj,int iflag,
   timer.restart();
   spopts.debug = opts.spread_debug;
   spopts.sort_data = opts.spread_sort;
+  spopts.use_advanced=(opts.spread_sort>=2);
   spopts.spread_direction = 1;
   spopts.pirange = 1; FLT *dummy;
   int ier_spread = cnufftspread(nf1,nf2,1,(FLT*)fw,nj,xj,yj,dummy,(FLT*)cj,spopts);
@@ -192,6 +193,7 @@ int finufft2d2(INT nj,FLT* xj,FLT *yj,CPX* cj,int iflag,FLT eps,
   timer.restart();
   spopts.debug = opts.spread_debug;
   spopts.sort_data = opts.spread_sort;
+  spopts.use_advanced=(opts.spread_sort>=2);
   spopts.spread_direction = 2;
   spopts.pirange = 1; FLT *dummy;
   int ier_spread = cnufftspread(nf1,nf2,1,(FLT*)fw,nj,xj,yj,dummy,(FLT*)cj,spopts);
@@ -283,6 +285,7 @@ int finufft2d3(INT nj,FLT* xj,FLT* yj,CPX* cj,int iflag, FLT eps, INT nk, FLT* s
   timer.restart();
   spopts.debug = opts.spread_debug;
   spopts.sort_data = opts.spread_sort;
+  spopts.use_advanced=(opts.spread_sort>=2);
   spopts.spread_direction = 1;
   spopts.pirange = 1; FLT *dummy;
   int ier_spread = cnufftspread(nf1,nf2,1,(FLT*)fw,nj,xpj,ypj,dummy,(FLT*)cpj,spopts);

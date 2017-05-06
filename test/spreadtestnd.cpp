@@ -59,8 +59,8 @@ int main(int argc, char* argv[])
   }
   if (argc>5) {
     sscanf(argv[5],"%d",&sort);
-    if (sort!=0 && sort!=1) {
-      printf("sort must be 0 or 1!\n"); usage(); return 1;
+    if ((sort!=0) && (sort!=1)&&(sort!=2)) {
+      printf("sort must be 0 or 1 or 2!\n"); usage(); return 1;
     }
   }
   if (argc>6) { usage();
@@ -75,7 +75,8 @@ int main(int argc, char* argv[])
 
   spread_opts opts; // set method opts...
   opts.debug = 0;
-  opts.sort_data=(bool)sort;   // for 3D: 1-2x faster on i7; but 0.5-0.9x (ie slower) on xeon!
+  opts.sort_data=sort;   // for 3D: 1-2x faster on i7; but 0.5-0.9x (ie slower) on xeon!
+  opts.use_advanced=(sort>=2);
   FLT Rdummy = 2.0;    // since no nufft done, merely to please the setup
   setup_kernel(opts,(FLT)tol,Rdummy);  // note tol is always double
 

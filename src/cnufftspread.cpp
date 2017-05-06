@@ -2,6 +2,7 @@
 #include <stdlib.h>
 #include <vector>
 #include <math.h>
+#include "cnufftspread_advanced.h"
 
 // declarations of internal functions...
 std::vector<BIGINT> compute_sort_indices(BIGINT M,FLT *kx, FLT *ky,
@@ -91,6 +92,10 @@ int cnufftspread(
    error codes 3/13/17. pirange 3/28/17
 */
 { 
+    if ((opts.use_advanced)&&(opts.spread_direction==1)&&(N2>1)&&(N3>1)) {
+        return cnufftspread_advanced(N1,N2,N3,data_uniform,M,kx,ky,kz,data_nonuniform,opts,omp_get_max_threads());
+    }
+
   // Input checking: cuboid not too small for spreading
   int minN = 2*opts.nspread;
   if (N1<minN || (N2>1 && N2<minN) || (N3>1 && N3<minN)) {

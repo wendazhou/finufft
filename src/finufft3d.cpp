@@ -85,7 +85,8 @@ int finufft3d1(INT nj,FLT* xj,FLT *yj,FLT *zj,CPX* cj,int iflag,
   timer.restart();
   FFTW_CPX *fw = FFTW_ALLOC_CPX(nf1*nf2*nf3);  // working upsampled array
   int fftsign = (iflag>=0) ? 1 : -1;
-  FFTW_PLAN p = FFTW_PLAN_3D(nf3,nf2,nf1,fw,fw,fftsign, FFTW_ESTIMATE);  // in-place
+  //FFTW_PLAN p = FFTW_PLAN_3D(nf3,nf2,nf1,fw,fw,fftsign, FFTW_ESTIMATE);  // in-place
+  FFTW_PLAN p = FFTW_PLAN_3D(nf3,nf2,nf1,fw,fw,fftsign, FFTW_MEASURE);  // in-place
   if (opts.debug) printf("fftw plan\t\t %.3g s\n", timer.elapsedsec());
 
   // Step 1: spread from irregular points to regular grid

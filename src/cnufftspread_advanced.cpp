@@ -182,20 +182,20 @@ std::vector<BIGINT> get_bin_sort_indices(BIGINT M,FLT *kx, FLT *ky, FLT *kz,doub
         bins[i]=i1+nbins1*i2+nbins1*nbins2*i3;
     }
 
-    std::vector<BIGINT> counts(nbins1*nbins2*nbins3);
-    for (BIGINT i=0; i<nbins1*nbins2*nbins3; i++) {
-        counts[i]=0;
-    }
+    std::vector<BIGINT> counts(nbins1*nbins2*nbins3,0);
+    //how to parallelize this?
     for (BIGINT i=0; i<M; i++) {
         counts[bins[i]]++;
     }
     std::vector<BIGINT> offsets(nbins1*nbins2*nbins3);
     offsets[0]=0;
+    //how to parallelize a cumulative sum?
     for (BIGINT i=1; i<nbins1*nbins2*nbins3; i++) {
         offsets[i]=offsets[i-1]+counts[i-1];
     }
 
     std::vector<BIGINT> inv(M);
+    //how to parallelize this?
     for (BIGINT i=0; i<M; i++) {
         BIGINT offset=offsets[bins[i]];
         offsets[bins[i]]++;
@@ -203,31 +203,11 @@ std::vector<BIGINT> get_bin_sort_indices(BIGINT M,FLT *kx, FLT *ky, FLT *kz,doub
     }
 
     std::vector<BIGINT> ret(M);
+    //I think this is safe to parallelize, but afraid to do it just yet
     for (BIGINT i=0; i<M; i++) {
         ret[inv[i]]=i;
     }
     return ret;
-
-    /*
-    std::vector<double> scores(M);
-    double LARGE_NUMBER=1e7;
-#pragma omp for
-    for (BIGINT i=0; i<M; i++) {
-        double x0=kx[i];
-        double y0=ky[i];
-        double z0=kz[i];
-        double score0=0;
-        if (bin_size_x>0)
-            score0+=floor(x0/bin_size_x);
-        if (bin_size_y>0)
-            score0+=LARGE_NUMBER*floor(y0/bin_size_y);
-        if (bin_size_x>0)
-            score0+=LARGE_NUMBER*LARGE_NUMBER*floor(z0/bin_size_z);
-        scores[i]=score0;
-    }
-    printf("get sort indices...\n");
-    return get_sort_indices_0(scores);
-    */
 }
 
 double compute_min_par(BIGINT M,FLT *X) {

@@ -38,12 +38,12 @@ public:
     SpreadingLocker();
     void acquireLock(BIGINT x1,BIGINT x2,BIGINT y1,BIGINT y2,BIGINT z1,BIGINT z2);
     void releaseLock(BIGINT x1,BIGINT x2,BIGINT y1,BIGINT y2,BIGINT z1,BIGINT z2);
+    double totalNumLockBlocks();
 
 private:
     std::vector<Subgrid> m_locked_subgrids;
+    double m_total_lock_blocks=0;
 };
-
-
 
 }
 
@@ -77,7 +77,7 @@ int cnufftspread_advanced(BIGINT N1, BIGINT N2, BIGINT N3, FLT* data_uniform, BI
 
 #pragma omp parallel for
     for (int jsub=0; jsub<num_subproblems; jsub++) {
-        int isub=(jsub*1)%num_subproblems;
+        int isub=(jsub*1)%num_subproblems; // I was thinking of doing the subproblems in a different order to avoid lock conflicts, but doesn't seem to make a difference
         BIGINT M0=subproblem_size;
         if (isub*subproblem_size+M0>M) {
             M0=M-isub*subproblem_size;
@@ -165,6 +165,8 @@ int cnufftspread_advanced(BIGINT N1, BIGINT N2, BIGINT N3, FLT* data_uniform, BI
         Advanced::to_pi_range(M,ky,N2);
         Advanced::to_pi_range(M,kz,N3);
     }
+
+    printf("Total num lock blocks per thread: %g\n",SL.totalNumLockBlocks()/omp_get_max_threads());
 
     return 0;
 }
@@ -399,6 +401,8 @@ void SpreadingLocker::acquireLock(BIGINT x1, BIGINT x2, BIGINT y1, BIGINT y2, BI
         }
         if (!intersects_something)
             break;
+        else
+            m_total_lock_blocks++;
     }
 #pragma omp critical
     {
@@ -425,6 +429,11 @@ void SpreadingLocker::releaseLock(BIGINT x1, BIGINT x2, BIGINT y1, BIGINT y2, BI
         }
     }
     //printf("        Released: %ld,%ld %ld,%ld %ld,%ld\n",x1,x2,y1,y2,z1,z2);
+}
+
+double SpreadingLocker::totalNumLockBlocks()
+{
+    return m_total_lock_blocks;
 }
 
 Subgrid::Subgrid(BIGINT x1_in, BIGINT x2_in, BIGINT y1_in, BIGINT y2_in, BIGINT z1_in, BIGINT z2_in)

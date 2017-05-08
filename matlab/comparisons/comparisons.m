@@ -21,7 +21,7 @@ NN=128;
 N1=NN; N2=NN; N3=NN;
 %M=8e4;
 M=1e7;
-multithreaded=0;
+multithreaded=1;
 max_nthreads=8;
 spread_sort=2;
 

@@ -19,6 +19,32 @@ void to_pi_range(BIGINT M, FLT *X, BIGINT N);
 void from_pi_range(BIGINT M, FLT *X, BIGINT N);
 
 void optimized_write_to_output_grid(BIGINT offset1,BIGINT offset2,BIGINT offset3,BIGINT size1,BIGINT size2,BIGINT size3,BIGINT N1,BIGINT N2,BIGINT N3,FLT* data_uniform_0,FLT* data_uniform);
+
+struct Subgrid {
+    Subgrid(BIGINT x1,BIGINT x2,BIGINT y1,BIGINT y2,BIGINT z1,BIGINT z2);
+    Subgrid(const Subgrid &other);
+    void operator=(const Subgrid &other);
+    bool operator==(const Subgrid &other);
+    bool intersects(const Subgrid &other); //N1,N2,N3 needed for wrapping
+    BIGINT x1=0,x2=0;
+    BIGINT y1=0,y2=0;
+    BIGINT z1=0,z2=0;
+private:
+    void copy_from(const Subgrid &other);
+};
+
+class SpreadingLocker {
+public:
+    SpreadingLocker();
+    void acquireLock(BIGINT x1,BIGINT x2,BIGINT y1,BIGINT y2,BIGINT z1,BIGINT z2);
+    void releaseLock(BIGINT x1,BIGINT x2,BIGINT y1,BIGINT y2,BIGINT z1,BIGINT z2);
+
+private:
+    std::vector<Subgrid> m_locked_subgrids;
+};
+
+
+
 }
 
 int cnufftspread_advanced(BIGINT N1, BIGINT N2, BIGINT N3, FLT* data_uniform, BIGINT M, FLT* kx, FLT* ky, FLT* kz, FLT* data_nonuniform, spread_opts opts, int num_threads)
@@ -34,12 +60,14 @@ int cnufftspread_advanced(BIGINT N1, BIGINT N2, BIGINT N3, FLT* data_uniform, BI
         Advanced::from_pi_range(M,kz,N3);
     }
 
+    Advanced::SpreadingLocker SL;
+
     std::vector<BIGINT> sort_indices(M);
     //sort_indices=Advanced::get_bin_sort_indices(M,kx,ky,kz,0,opts.nspread*2,opts.nspread*2);
     printf("Get bin sort indices...\n");
     sort_indices=Advanced::get_bin_sort_indices(M,kx,ky,kz,3,3,3);
     
-    BIGINT max_points_per_subproblem=1e6;
+    BIGINT max_points_per_subproblem=1000;
     int num_subproblems=num_threads*4;
     if (num_subproblems*max_points_per_subproblem<M)
         num_subproblems=M/max_points_per_subproblem;
@@ -48,7 +76,8 @@ int cnufftspread_advanced(BIGINT N1, BIGINT N2, BIGINT N3, FLT* data_uniform, BI
     printf ("Using %d subproblems of size %ld (M=%ld)...\n",num_subproblems,subproblem_size,M);
 
 #pragma omp parallel for
-    for (int isub=0; isub<num_subproblems; isub++) {
+    for (int jsub=0; jsub<num_subproblems; jsub++) {
+        int isub=(jsub*1)%num_subproblems;
         BIGINT M0=subproblem_size;
         if (isub*subproblem_size+M0>M) {
             M0=M-isub*subproblem_size;
@@ -78,44 +107,34 @@ int cnufftspread_advanced(BIGINT N1, BIGINT N2, BIGINT N3, FLT* data_uniform, BI
             }
             FLT* data_uniform_0=(FLT*)malloc(sizeof(FLT)*size1*size2*size3*2);
             Advanced::cnufftspread_type1_subproblem(size1,size2,size3,data_uniform_0,M0,kx0,ky0,kz0,dd0,opts);
-            free(kx0);
-            free(ky0);
-            free(kz0);
-            free(dd0);
 
-#pragma omp critical
+//#pragma omp critical
             {
-                //The idea was to use the following to split the innermost loop into 8 pieces to handle wrapping
-                //(but note this is not the most critical innermost loop, that one is already optimized - more easily)
-                //but it was a big waste of time and effort -- causes crash and doesn't even speed it up
-                int USE_OPTIMIZED_WRITE_TO_OUTPUT_GRID=0;
-                if ((USE_OPTIMIZED_WRITE_TO_OUTPUT_GRID)&&(N1>opts.nspread*2+3)&&(N2>opts.nspread*2+3)&&(N3>opts.nspread*2+3)) {
-                    Advanced::optimized_write_to_output_grid(offset1,offset2,offset3,size1,size2,size3,N1,N2,N3,data_uniform_0,data_uniform);
-                }
-                else {
-                    BIGINT output_inds1[size1];
-                    BIGINT output_inds2[size2];
-                    BIGINT output_inds3[size3];
-                    for (BIGINT a=0; a<size1; a++) {
-                        BIGINT ind0=offset1+a;
-                        while (ind0<0) ind0+=N1;
-                        while (ind0>=N1) ind0-=N1;
-                        output_inds1[a]=ind0;
-                    }
-                    for (BIGINT a=0; a<size2; a++) {
-                        BIGINT ind0=offset2+a;
-                        while (ind0<0) ind0+=N2;
-                        while (ind0>=N2) ind0-=N2;
-                        output_inds2[a]=ind0;
-                    }
-                    for (BIGINT a=0; a<size3; a++) {
-                        BIGINT ind0=offset3+a;
-                        while (ind0<0) ind0+=N3;
-                        while (ind0>=N3) ind0-=N3;
-                        output_inds3[a]=ind0;
-                    }
 
-                    //The following could be sped up by splitting into 8 loops to cover the 8 wrapping situations
+                BIGINT output_inds1[size1];
+                BIGINT output_inds2[size2];
+                BIGINT output_inds3[size3];
+                for (BIGINT a=0; a<size1; a++) {
+                    BIGINT ind0=offset1+a;
+                    while (ind0<0) ind0+=N1;
+                    while (ind0>=N1) ind0-=N1;
+                    output_inds1[a]=ind0;
+                }
+                for (BIGINT a=0; a<size2; a++) {
+                    BIGINT ind0=offset2+a;
+                    while (ind0<0) ind0+=N2;
+                    while (ind0>=N2) ind0-=N2;
+                    output_inds2[a]=ind0;
+                }
+                for (BIGINT a=0; a<size3; a++) {
+                    BIGINT ind0=offset3+a;
+                    while (ind0<0) ind0+=N3;
+                    while (ind0>=N3) ind0-=N3;
+                    output_inds3[a]=ind0;
+                }
+
+                SL.acquireLock(offset1,offset1+size1-1,offset2,offset2+size2-1,offset3,offset3+size3-1);
+                {
                     BIGINT input_index=0;
                     for (BIGINT i3=0; i3<size3; i3++) {
                         BIGINT output_index3=output_inds3[i3]*N1*N2;
@@ -130,8 +149,13 @@ int cnufftspread_advanced(BIGINT N1, BIGINT N2, BIGINT N3, FLT* data_uniform, BI
                         }
                     }
                 }
+                SL.releaseLock(offset1,offset1+size1-1,offset2,offset2+size2-1,offset3,offset3+size3-1);
             }
 
+            free(kx0);
+            free(ky0);
+            free(kz0);
+            free(dd0);
             free(data_uniform_0);
         }
     }
@@ -352,6 +376,105 @@ void cnufftspread_type1_subproblem(BIGINT N1, BIGINT N2, BIGINT N3, FLT *data_un
             }
         }
     }
+}
+
+SpreadingLocker::SpreadingLocker()
+{
+
+}
+
+void SpreadingLocker::acquireLock(BIGINT x1, BIGINT x2, BIGINT y1, BIGINT y2, BIGINT z1, BIGINT z2)
+{
+    //printf("Acquiring lock %ld,%ld %ld,%ld %ld,%ld\n",x1,x2,y1,y2,z1,z2);
+    Subgrid SG(x1,x2,y1,y2,z1,z2);
+    while (1) {
+        bool intersects_something=false;
+        #pragma omp critical
+        {
+            for (int i=0; i<m_locked_subgrids.size(); i++) {
+                if (m_locked_subgrids.at(i).intersects(SG)) {
+                    intersects_something=true;
+                }
+            }
+        }
+        if (!intersects_something)
+            break;
+    }
+#pragma omp critical
+    {
+        m_locked_subgrids.push_back(SG);
+        //printf("    Locked: %ld,%ld %ld,%ld %ld,%ld (%ld locked)\n",x1,x2,y1,y2,z1,z2,m_locked_subgrids.size());
+    }
+}
+
+void SpreadingLocker::releaseLock(BIGINT x1, BIGINT x2, BIGINT y1, BIGINT y2, BIGINT z1, BIGINT z2)
+{
+    #pragma omp critical
+    {
+        Subgrid SG(x1,x2,y1,y2,z1,z2);
+        bool found=false;
+        for (int i=0; i<m_locked_subgrids.size(); i++) {
+            if (m_locked_subgrids.at(i)==SG) {
+                m_locked_subgrids.erase(m_locked_subgrids.begin()+i);
+                found=true;
+                break;
+            }
+        }
+        if (!found) {
+            printf("Warning: Unexpected problem in releaseLock... unable to find subgrid.\n");
+        }
+    }
+    //printf("        Released: %ld,%ld %ld,%ld %ld,%ld\n",x1,x2,y1,y2,z1,z2);
+}
+
+Subgrid::Subgrid(BIGINT x1_in, BIGINT x2_in, BIGINT y1_in, BIGINT y2_in, BIGINT z1_in, BIGINT z2_in)
+{
+    x1=x1_in; x2=x2_in;
+    y1=y1_in; y2=y2_in;
+    z1=z1_in; z2=z2_in;
+}
+
+Subgrid::Subgrid(const Subgrid &other)
+{
+    copy_from(other);
+}
+
+void Subgrid::operator=(const Subgrid &other)
+{
+    copy_from(other);
+}
+
+bool Subgrid::operator==(const Subgrid &other)
+{
+    if ((other.x1!=x1)||(other.x2!=x2))
+        return false;
+    if ((other.y1!=y1)||(other.y2!=y2))
+        return false;
+    if ((other.z1!=z1)||(other.z2!=z2))
+        return false;
+    return true;
+}
+
+bool Subgrid::intersects(const Subgrid &other)
+{
+    //there are 6 ways they could not intersect
+    if (other.x1>x2) return false;
+    if (other.x2<x1) return false;
+    if (other.y1>y2) return false;
+    if (other.y2<y1) return false;
+    if (other.z1>z2) return false;
+    if (other.z2<z1) return false;
+    return true;
+}
+
+void Subgrid::copy_from(const Subgrid &other)
+{
+    x1=other.x1;
+    x2=other.x2;
+    y1=other.y1;
+    y2=other.y2;
+    z1=other.z1;
+    z2=other.z2;
 }
 
 /*

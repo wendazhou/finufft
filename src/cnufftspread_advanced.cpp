@@ -38,7 +38,7 @@ int cnufftspread_advanced(BIGINT N1, BIGINT N2, BIGINT N3, FLT* data_uniform, BI
     //sort_indices=Advanced::get_bin_sort_indices(M,kx,ky,kz,0,opts.nspread*2,opts.nspread*2);
     printf("Get bin sort indices...\n");
     sort_indices=Advanced::get_bin_sort_indices(M,kx,ky,kz,3,3,3);
-
+    
     BIGINT max_points_per_subproblem=1e6;
     int num_subproblems=num_threads*4;
     if (num_subproblems*max_points_per_subproblem<M)
@@ -321,7 +321,7 @@ void cnufftspread_type1_subproblem(BIGINT N1, BIGINT N2, BIGINT N3, FLT *data_un
     for (BIGINT i = 0; i < 2 * N1 * N2 * N3; i++)
         data_uniform[i] = 0.0;
 
-    FLT kernel_values[ns*ns*ns];
+    FLT kernel_values[ns*ns*ns];   // is this dynamic alloc?
 
     for (BIGINT i=0; i<M; i++) {
 

@@ -5,7 +5,7 @@
 M=1e6       # problem size (sets both # NU pts and # U modes)
 TOL=1e-6    # overall requested accuracy
 DEBUG=0     # whether to see timing breakdowns
-SORT=1      # i7 better if sort
+SORT=2      # i7 better if sort
 if grep -q Xeon /proc/cpuinfo; then
     echo "Xeon detected, switching off spreader sorting..."
     SORT=0      # whether to sort (0 best for xeon)

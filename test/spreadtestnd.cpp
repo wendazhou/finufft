@@ -135,7 +135,6 @@ int main(int argc, char* argv[])
     // note this is weaker than below dir=2 test, but is good indicator that
     // periodic wrapping is correct
 
-
     // test direction 2 (U -> NU interpolation) ..............................
     opts.spread_direction=2;
     printf("cnufftspread %dD, %.3g U pts, dir=%d, tol=%.3g: nspread=%d\n",d,(double)Ng,opts.spread_direction,tol,opts.nspread);
@@ -150,7 +149,8 @@ int main(int argc, char* argv[])
       unsigned int s=MY_OMP_GET_THREAD_NUM();  // needed for parallel random #s
 #pragma omp for schedule(dynamic,1000000)
       for (BIGINT i=0; i<M; ++i) {       // random target pts
-        kx[i]=rand01r(&s)*N;
+        //kx[i]=10+.9*rand01r(&s)*N;   /////  ************ to keep ns away from edges
+	kx[i]=rand01r(&s)*N;
 	if (d>1) ky[i]=rand01r(&s)*N;
 	if (d>2) kz[i]=rand01r(&s)*N;
       }

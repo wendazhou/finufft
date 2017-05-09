@@ -5,22 +5,14 @@
 #include <algorithm>
 
 namespace Advanced {
-std::vector<BIGINT> get_bin_sort_indices(BIGINT M,FLT *kx, FLT *ky, FLT *kz,double bin_size_x,double bin_size_y,double bin_size_z);
 
-void get_subgrid(BIGINT &offset1,BIGINT &offset2,BIGINT &offset3,BIGINT &size1,BIGINT &size2,BIGINT &size3,BIGINT M0,FLT* kx0,FLT* ky0,FLT* kz0,int nspread);
-double compute_min_par(BIGINT M,FLT *X);
-double compute_max_par(BIGINT M,FLT *X);
-
-void cnufftspread_type1_subproblem(BIGINT N1, BIGINT N2, BIGINT N3, FLT *data_uniform,
-         BIGINT M, FLT *kx, FLT *ky, FLT *kz,
-         FLT *data_nonuniform, spread_opts opts);
-
-void to_pi_range(BIGINT M, FLT *X, BIGINT N);
-void from_pi_range(BIGINT M, FLT *X, BIGINT N);
-
-void optimized_write_to_output_grid(BIGINT offset1,BIGINT offset2,BIGINT offset3,BIGINT size1,BIGINT size2,BIGINT size3,BIGINT N1,BIGINT N2,BIGINT N3,FLT* data_uniform_0,FLT* data_uniform);
+struct Subproblem {
+    // a subproblem is simply a collection of indices to nonuniform points
+    std::vector<BIGINT> nonuniform_indices;
+};
 
 struct Subgrid {
+    // a subgrid is a rectilinear subset of the uniform grid defined by x1,x2,y1,y2,z1,z2
     Subgrid(BIGINT x1,BIGINT x2,BIGINT y1,BIGINT y2,BIGINT z1,BIGINT z2);
     Subgrid(const Subgrid &other);
     void operator=(const Subgrid &other);
@@ -33,64 +25,104 @@ private:
     void copy_from(const Subgrid &other);
 };
 
+// For each subproblem, we should sort the indices for cache efficiency
+void bin_sort_subproblem_inds(std::vector<BIGINT> &inds,FLT *kx, FLT *ky, FLT *kz,double bin_size_x,double bin_size_y,double bin_size_z);
+
+// get he offsets and sizes of the subgrid defined by the nonuniform points and the spreading diameter
+void get_subgrid(BIGINT &offset1,BIGINT &offset2,BIGINT &offset3,BIGINT &size1,BIGINT &size2,BIGINT &size3,BIGINT M0,FLT* kx0,FLT* ky0,FLT* kz0,int nspread);
+
+// do the spreading for the subproblem
+void cnufftspread_type1_subproblem(BIGINT N1, BIGINT N2, BIGINT N3, FLT *data_uniform,
+         BIGINT M, FLT *kx, FLT *ky, FLT *kz,
+         FLT *data_nonuniform, spread_opts opts);
+
+// convert nonuniform locations to [-pi,pi] range
+void to_pi_range(BIGINT M, FLT *X, BIGINT N);
+
+// convert nonuniform locations from [-pi,pi] range
+void from_pi_range(BIGINT M, FLT *X, BIGINT N);
+
+// Smart mutex locker for writing to the uniform grid
 class SpreadingLocker {
 public:
     SpreadingLocker();
     void acquireLock(BIGINT x1,BIGINT x2,BIGINT y1,BIGINT y2,BIGINT z1,BIGINT z2);
     void releaseLock(BIGINT x1,BIGINT x2,BIGINT y1,BIGINT y2,BIGINT z1,BIGINT z2);
-    double totalNumLockBlocks();
 
 private:
     std::vector<Subgrid> m_locked_subgrids;
-    double m_total_lock_blocks=0;
 };
 
 }
 
-int cnufftspread_advanced(BIGINT N1, BIGINT N2, BIGINT N3, FLT* data_uniform, BIGINT M, FLT* kx, FLT* ky, FLT* kz, FLT* data_nonuniform, spread_opts opts, int num_threads)
+int cnufftspread_advanced(BIGINT N1, BIGINT N2, BIGINT N3, FLT* data_uniform, BIGINT M, FLT* kx, FLT* ky, FLT* kz, FLT* data_nonuniform, spread_opts opts)
 {
+    // Initialize the output data
     BIGINT NNN=N1*N2*N3*2;
     for (BIGINT i=0; i<NNN; i++) {
         data_uniform[i]=0;
     }
 
+    // If needed, change units for the nonuniform locations
     if (opts.pirange) {
         Advanced::from_pi_range(M,kx,N1);
         Advanced::from_pi_range(M,ky,N2);
         Advanced::from_pi_range(M,kz,N3);
     }
 
+    // some hard-coded parameters
+    int w2=4,w3=4;
+    BIGINT max_subproblem_size=1000;
+
+    // Define the subproblems
+    BIGINT A1=ceil(N2*1.0/w2);
+    BIGINT A2=ceil(N3*1.0/w3);
+    std::vector<Advanced::Subproblem> subproblems(A1*A2);
+    for (BIGINT i=0; i<M; i++) {
+        BIGINT i2=floor(ky[i]/w2);
+        BIGINT i3=floor(kz[i]/w3);
+        BIGINT subproblem_index=i2+A1*i3;
+        subproblems.at(subproblem_index).nonuniform_indices.push_back(i);
+    }
+    BIGINT original_num_subproblems=subproblems.size();
+    BIGINT num_nonempty_subproblems=0;
+    for (BIGINT i=0; i<original_num_subproblems; i++) {
+        std::vector<BIGINT> inds=subproblems.at(i).nonuniform_indices;
+        BIGINT num_nonuniform_points=inds.size();
+        if (num_nonuniform_points>max_subproblem_size) {
+            BIGINT next=0;
+            for (BIGINT j=0; j+max_subproblem_size<=num_nonuniform_points; j+=max_subproblem_size) {
+                Advanced::Subproblem X;
+                X.nonuniform_indices=std::vector<BIGINT>(inds.begin()+j,inds.begin()+j+max_subproblem_size);
+                subproblems.push_back(X);
+                next=j+max_subproblem_size;
+            }
+            subproblems.at(i).nonuniform_indices=std::vector<BIGINT>(inds.begin()+next,inds.end());
+        }
+        if (subproblems.at(i).nonuniform_indices.size()>0) {
+            num_nonempty_subproblems++;
+        }
+    }
+    printf("Using %ld subproblems.\n",num_nonempty_subproblems);
+
     Advanced::SpreadingLocker SL;
-
-    std::vector<BIGINT> sort_indices(M);
-    //sort_indices=Advanced::get_bin_sort_indices(M,kx,ky,kz,0,opts.nspread*2,opts.nspread*2);
-    printf("Get bin sort indices...\n");
-    sort_indices=Advanced::get_bin_sort_indices(M,kx,ky,kz,3,3,3);
     
-    BIGINT max_points_per_subproblem=1000;
-    int num_subproblems=num_threads*4;
-    if (num_subproblems*max_points_per_subproblem<M)
-        num_subproblems=M/max_points_per_subproblem;
-    BIGINT subproblem_size=(M+num_subproblems-1)/num_subproblems;
-
-    printf ("Using %d subproblems of size %ld (M=%ld)...\n",num_subproblems,subproblem_size,M);
-
+    // The main spreading starts now
+    BIGINT num_subproblems=subproblems.size();
 #pragma omp parallel for
     for (int jsub=0; jsub<num_subproblems; jsub++) {
         int isub=(jsub*1)%num_subproblems; // I was thinking of doing the subproblems in a different order to avoid lock conflicts, but doesn't seem to make a difference
-        BIGINT M0=subproblem_size;
-        if (isub*subproblem_size+M0>M) {
-            M0=M-isub*subproblem_size;
-            if (M0<0) M0=0;
-        }
+        std::vector<BIGINT> inds=subproblems.at(isub).nonuniform_indices;
+        BIGINT M0=inds.size();
         if (M0>0) {
-            BIGINT j_offset=isub*subproblem_size;
+            Advanced::bin_sort_subproblem_inds(inds,kx,ky,kz,3,3,3);
+
             FLT* kx0=(FLT*)malloc(sizeof(FLT)*M0);
             FLT* ky0=(FLT*)malloc(sizeof(FLT)*M0);
             FLT* kz0=(FLT*)malloc(sizeof(FLT)*M0);
             FLT* dd0=(FLT*)malloc(sizeof(FLT)*M0*2);
             for (BIGINT j=0; j<M0; j++) {
-                BIGINT kk=sort_indices[j_offset+j];
+                BIGINT kk=inds[j];
                 kx0[j]=kx[kk];
                 ky0[j]=ky[kk];
                 kz0[j]=kz[kk];
@@ -110,7 +142,6 @@ int cnufftspread_advanced(BIGINT N1, BIGINT N2, BIGINT N3, FLT* data_uniform, BI
 
 //#pragma omp critical
             {
-
                 BIGINT output_inds1[size1];
                 BIGINT output_inds2[size2];
                 BIGINT output_inds3[size3];
@@ -166,8 +197,6 @@ int cnufftspread_advanced(BIGINT N1, BIGINT N2, BIGINT N3, FLT* data_uniform, BI
         Advanced::to_pi_range(M,kz,N3);
     }
 
-    printf("Total num lock blocks per thread: %g\n",SL.totalNumLockBlocks()/omp_get_max_threads());
-
     return 0;
 }
 
@@ -187,53 +216,85 @@ void from_pi_range(BIGINT M, FLT *X, BIGINT N)
     }
 }
 
-/*
-std::vector<BIGINT> get_sort_indices_0(const std::vector<double> &X) {
-    std::vector<BIGINT> result(X.size());
-    for (BIGINT i = 0; i < (BIGINT)X.size(); i++)
-        result[i]=i;
-    std::stable_sort(result.begin(), result.end(),
-        [&X](BIGINT i1, BIGINT i2) { return X[i1] < X[i2]; });
-    return result;
+double compute_min(const std::vector<BIGINT>& inds,FLT *X) {
+    BIGINT M=inds.size();
+    if (M==0) return 0;
+
+    double best=X[inds[0]];
+    for (BIGINT i=0; i<M; i++) {
+        double val=X[inds[i]];
+        if (val<best) best=val;
+    }
+    return best;
 }
-*/
 
-std::vector<BIGINT> get_bin_sort_indices(BIGINT M,FLT *kx, FLT *ky, FLT *kz,double bin_size_x,double bin_size_y,double bin_size_z) {
+double compute_max(const std::vector<BIGINT>& inds,FLT *X) {
+    BIGINT M=inds.size();
+    if (M==0) return 0;
 
-    FLT kx_min=compute_min_par(M,kx);
-    FLT kx_max=compute_max_par(M,kx);
-    FLT ky_min=compute_min_par(M,ky);
-    FLT ky_max=compute_max_par(M,ky);
-    FLT kz_min=compute_min_par(M,kz);
-    FLT kz_max=compute_max_par(M,kz);
+    double best=X[inds[0]];
+    for (BIGINT i=0; i<M; i++) {
+        double val=X[inds[i]];
+        if (val>best) best=val;
+    }
+    return best;
+}
+
+double compute_min(BIGINT M,FLT *X) {
+    if (M==0) return 0;
+
+    double best=X[0];
+    for (BIGINT i=0; i<M; i++) {
+        double val=X[i];
+        if (val<best) best=val;
+    }
+    return best;
+}
+
+double compute_max(BIGINT M,FLT *X) {
+    if (M==0) return 0;
+
+    double best=X[0];
+    for (BIGINT i=0; i<M; i++) {
+        double val=X[i];
+        if (val>best) best=val;
+    }
+    return best;
+}
+
+void bin_sort_subproblem_inds(std::vector<BIGINT> &inds,FLT *kx, FLT *ky, FLT *kz,double bin_size_x,double bin_size_y,double bin_size_z) {
+    BIGINT M=inds.size();
+
+    FLT kx_min=compute_min(inds,kx);
+    FLT kx_max=compute_max(inds,kx);
+    FLT ky_min=compute_min(inds,ky);
+    FLT ky_max=compute_max(inds,ky);
+    FLT kz_min=compute_min(inds,kz);
+    FLT kz_max=compute_max(inds,kz);
 
     BIGINT nbins1=(kx_max-kx_min)/bin_size_x+1;
     BIGINT nbins2=(ky_max-ky_min)/bin_size_y+1;
     BIGINT nbins3=(kz_max-kz_min)/bin_size_z+1;
 
     std::vector<BIGINT> bins(M);
-#pragma omp parallel for
     for (BIGINT i=0; i<M; i++) {
-        BIGINT i1=(kx[i]-kx_min)/bin_size_x;
-        BIGINT i2=(ky[i]-ky_min)/bin_size_y;
-        BIGINT i3=(kz[i]-kz_min)/bin_size_z;
+        BIGINT i1=(kx[inds[i]]-kx_min)/bin_size_x;
+        BIGINT i2=(ky[inds[i]]-ky_min)/bin_size_y;
+        BIGINT i3=(kz[inds[i]]-kz_min)/bin_size_z;
         bins[i]=i1+nbins1*i2+nbins1*nbins2*i3;
     }
 
     std::vector<BIGINT> counts(nbins1*nbins2*nbins3,0);
-    //how to parallelize this?
     for (BIGINT i=0; i<M; i++) {
         counts[bins[i]]++;
     }
     std::vector<BIGINT> offsets(nbins1*nbins2*nbins3);
     offsets[0]=0;
-    //how to parallelize a cumulative sum?
     for (BIGINT i=1; i<nbins1*nbins2*nbins3; i++) {
         offsets[i]=offsets[i-1]+counts[i-1];
     }
 
     std::vector<BIGINT> inv(M);
-    //how to parallelize this?
     for (BIGINT i=0; i<M; i++) {
         BIGINT offset=offsets[bins[i]];
         offsets[bins[i]]++;
@@ -241,57 +302,19 @@ std::vector<BIGINT> get_bin_sort_indices(BIGINT M,FLT *kx, FLT *ky, FLT *kz,doub
     }
 
     std::vector<BIGINT> ret(M);
-    //I think this is safe to parallelize, but afraid to do it just yet
     for (BIGINT i=0; i<M; i++) {
-        ret[inv[i]]=i;
+        ret[inv[i]]=inds[i];
     }
-    return ret;
+    inds=ret;
 }
 
-double compute_min_par(BIGINT M,FLT *X) {
-    if (M==0) return 0;
-
-    double global_best=X[0];
-#pragma omp parallel
-    {
-        double best=X[0];
-#pragma omp for
-        for (BIGINT i=0; i<M; i++) {
-            if (X[i]<best) best=X[i];
-        }
-#pragma omp critical
-        {
-            if (best<global_best) global_best=best;
-        }
-    }
-    return global_best;
-}
-
-double compute_max_par(BIGINT M,FLT *X) {
-    if (M==0) return 0;
-
-    double global_best=X[0];
-#pragma omp parallel
-    {
-        double best=X[0];
-#pragma omp for
-        for (BIGINT i=0; i<M; i++) {
-            if (X[i]>best) best=X[i];
-        }
-#pragma omp critical
-        {
-            if (best>global_best) global_best=best;
-        }
-    }
-    return global_best;
-}
 void get_subgrid(BIGINT &offset1,BIGINT &offset2,BIGINT &offset3,BIGINT &size1,BIGINT &size2,BIGINT &size3,BIGINT M,FLT* kx,FLT* ky,FLT* kz,int nspread) {
-    double min_kx=compute_min_par(M,kx);
-    double max_kx=compute_max_par(M,kx);
-    double min_ky=compute_min_par(M,ky);
-    double max_ky=compute_max_par(M,ky);
-    double min_kz=compute_min_par(M,kz);
-    double max_kz=compute_max_par(M,kz);
+    double min_kx=compute_min(M,kx);
+    double max_kx=compute_max(M,kx);
+    double min_ky=compute_min(M,ky);
+    double max_ky=compute_max(M,ky);
+    double min_kz=compute_min(M,kz);
+    double max_kz=compute_max(M,kz);
 
     min_kx=min_kx;
     max_kx=max_kx;
@@ -393,7 +416,7 @@ void SpreadingLocker::acquireLock(BIGINT x1, BIGINT x2, BIGINT y1, BIGINT y2, BI
         bool intersects_something=false;
         #pragma omp critical
         {
-            for (int i=0; i<m_locked_subgrids.size(); i++) {
+            for (int i=0; i<(int)m_locked_subgrids.size(); i++) {
                 if (m_locked_subgrids.at(i).intersects(SG)) {
                     intersects_something=true;
                 }
@@ -401,8 +424,6 @@ void SpreadingLocker::acquireLock(BIGINT x1, BIGINT x2, BIGINT y1, BIGINT y2, BI
         }
         if (!intersects_something)
             break;
-        else
-            m_total_lock_blocks++;
     }
 #pragma omp critical
     {
@@ -417,7 +438,7 @@ void SpreadingLocker::releaseLock(BIGINT x1, BIGINT x2, BIGINT y1, BIGINT y2, BI
     {
         Subgrid SG(x1,x2,y1,y2,z1,z2);
         bool found=false;
-        for (int i=0; i<m_locked_subgrids.size(); i++) {
+        for (int i=0; i<(int)m_locked_subgrids.size(); i++) {
             if (m_locked_subgrids.at(i)==SG) {
                 m_locked_subgrids.erase(m_locked_subgrids.begin()+i);
                 found=true;
@@ -429,11 +450,6 @@ void SpreadingLocker::releaseLock(BIGINT x1, BIGINT x2, BIGINT y1, BIGINT y2, BI
         }
     }
     //printf("        Released: %ld,%ld %ld,%ld %ld,%ld\n",x1,x2,y1,y2,z1,z2);
-}
-
-double SpreadingLocker::totalNumLockBlocks()
-{
-    return m_total_lock_blocks;
 }
 
 Subgrid::Subgrid(BIGINT x1_in, BIGINT x2_in, BIGINT y1_in, BIGINT y2_in, BIGINT z1_in, BIGINT z2_in)
@@ -485,288 +501,6 @@ void Subgrid::copy_from(const Subgrid &other)
     z1=other.z1;
     z2=other.z2;
 }
-
-/*
- The following was a big waste of time and effort -- causes crash and doesn't even speed it up
-
-void optimized_write_to_output_grid(BIGINT d1_offset,BIGINT d2_offset,BIGINT d3_offset,BIGINT d1_size,BIGINT d2_size,BIGINT d3_size,BIGINT d1_N,BIGINT d2_N,BIGINT d3_N,FLT* data_uniform_0,FLT* data_uniform) {
-    BIGINT d1_lower_src_A,d1_upper_src_A,d1_lower_dst_A,d1_upper_dst_A;
-    BIGINT d1_lower_src_B,d1_upper_src_B,d1_lower_dst_B,d1_upper_dst_B;
-    while (d1_offset<0) d1_offset+=d1_N;
-    while (d1_offset>=d1_N) d1_offset-=d1_N;
-    if (d1_offset+d1_size-1>=d1_N) {
-        d1_lower_src_A=0;
-        d1_upper_src_A=d1_N-1-d1_offset; //d1_size-1-(d1_N-1-d1_offset)=d1_size-d1_N+d1_offset>=0
-        d1_lower_dst_A=d1_offset;
-        d1_upper_dst_A=d1_N-1;
-        d1_lower_src_B=d1_N-d1_offset;
-        d1_upper_src_B=d1_size-1;
-        d1_lower_dst_B=0;
-        d1_upper_dst_B=d1_size-1-d1_N+d1_offset; //d1_N-1-(d1_size-1-d1_N+d1_offset)=2*d1_N-(d1_size+d1_offset)>=d1_N-d1_size>=0
-    }
-    else {
-        d1_lower_src_A=0;
-        d1_upper_src_A=d1_size-1;
-        d1_lower_dst_A=d1_offset;
-        d1_upper_dst_A=d1_offset+d1_size-1;
-        d1_lower_src_B=-1;
-        d1_upper_src_B=-1;
-        d1_lower_dst_B=-1;
-        d1_upper_dst_B=-1;
-    }
-
-    BIGINT d2_lower_src_A,d2_upper_src_A,d2_lower_dst_A,d2_upper_dst_A;
-    BIGINT d2_lower_src_B,d2_upper_src_B,d2_lower_dst_B,d2_upper_dst_B;
-    while (d2_offset<0) d2_offset+=d2_N;
-    while (d2_offset>=d2_N) d2_offset-=d2_N;
-    if (d2_offset+d2_size-1>=d2_N) {
-        d2_lower_src_A=0;
-        d2_upper_src_A=d2_N-1-d2_offset;
-        d2_lower_dst_A=d2_offset;
-        d2_upper_dst_A=d2_N-1;
-        d2_lower_src_B=d2_N-d2_offset;
-        d2_upper_src_B=d2_size-1;
-        d2_lower_dst_B=0;
-        d2_upper_dst_B=d2_size-1-d2_N+d2_offset;
-    }
-    else {
-        d2_lower_src_A=0;
-        d2_upper_src_A=d2_size-1;
-        d2_lower_dst_A=d2_offset;
-        d2_upper_dst_A=d2_offset+d2_size-1;
-        d2_lower_src_B=-1;
-        d2_upper_src_B=-1;
-        d2_lower_dst_B=-1;
-        d2_upper_dst_B=-1;
-    }
-
-    BIGINT d3_lower_src_A,d3_upper_src_A,d3_lower_dst_A,d3_upper_dst_A;
-    BIGINT d3_lower_src_B,d3_upper_src_B,d3_lower_dst_B,d3_upper_dst_B;
-    while (d3_offset<0) d3_offset+=d3_N;
-    while (d3_offset>=d3_N) d3_offset-=d3_N;
-    if (d3_offset+d3_size-1>=d3_N) {
-        d3_lower_src_A=0;
-        d3_upper_src_A=d3_N-1-d3_offset;
-        d3_lower_dst_A=d3_offset;
-        d3_upper_dst_A=d3_N-1;
-        d3_lower_src_B=d3_N-d3_offset;
-        d3_upper_src_B=d3_size-1;
-        d3_lower_dst_B=0;
-        d3_upper_dst_B=d3_size-1-d3_N+d3_offset;
-    }
-    else {
-        d3_lower_src_A=0;
-        d3_upper_src_A=d3_size-1;
-        d3_lower_dst_A=d3_offset;
-        d3_upper_dst_A=d3_offset+d3_size-1;
-        d3_lower_src_B=-1;
-        d3_upper_src_B=-1;
-        d3_lower_dst_B=-1;
-        d3_upper_dst_B=-1;
-    }
-
-    // AAA
-    if ((d1_lower_src_A>=0)&&(d2_lower_src_A>=0)&&(d3_lower_src_A>=0)) {
-        BIGINT input_index=0;
-        BIGINT output_index=0;
-        BIGINT d1_cc=-d1_lower_src_A+d1_lower_dst_A;
-        BIGINT d2_cc=-d2_lower_src_A+d2_lower_dst_A;
-        BIGINT d3_cc=-d3_lower_src_A+d3_lower_dst_A;
-        for (BIGINT i3=d3_lower_src_A; i3<=d3_upper_src_A; i3++) {
-            BIGINT in_tmp00=d1_lower_src_A+d1_size*d2_size*i3;
-            BIGINT out_tmp00=(d1_lower_src_A+d1_cc)+d1_N*d2_N*(i3+d3_cc);
-            for (BIGINT i2=d2_lower_src_A; i2<=d2_upper_src_A; i2++) {
-                BIGINT input_index=in_tmp00+d1_size*i2;
-                BIGINT output_index=out_tmp00+d1_N*(i2+d2_cc);
-                for (BIGINT i1=d1_lower_src_A; i1<=d1_upper_src_A; i1++) {
-                    //BIGINT input_index=i1+d1_size*i2+d1_size*d2_size*i3; //for reference
-                    //BIGINT output_index=(i1+d1_cc)+d1_N*(i2+d2_cc)+d1_N*d2_N*(i3+d3_cc); //for reference
-                    data_uniform[output_index*2]+=data_uniform_0[input_index*2];
-                    data_uniform[output_index*2+1]+=data_uniform_0[input_index*2+1];
-                    input_index++;
-                    output_index++;
-                }
-            }
-        }
-    }
-
-    // AAB
-    if ((d1_lower_src_A>=0)&&(d2_lower_src_A>=0)&&(d3_lower_src_B>=0)) {
-        BIGINT input_index=0;
-        BIGINT output_index=0;
-        BIGINT d1_cc=-d1_lower_src_A+d1_lower_dst_A;
-        BIGINT d2_cc=-d2_lower_src_A+d2_lower_dst_A;
-        BIGINT d3_cc=-d3_lower_src_B+d3_lower_dst_B;
-        for (BIGINT i3=d3_lower_src_B; i3<=d3_upper_src_B; i3++) {
-            BIGINT in_tmp00=d1_lower_src_A+d1_size*d2_size*i3;
-            BIGINT out_tmp00=(d1_lower_src_A+d1_cc)+d1_N*d2_N*(i3+d3_cc);
-            for (BIGINT i2=d2_lower_src_A; i2<=d2_upper_src_A; i2++) {
-                BIGINT input_index=in_tmp00+d1_size*i2;
-                BIGINT output_index=out_tmp00+d1_N*(i2+d2_cc);
-                for (BIGINT i1=d1_lower_src_A; i1<=d1_upper_src_A; i1++) {
-                    //BIGINT input_index=i1+d1_size*i2+d1_size*d2_size*i3; //for reference
-                    //BIGINT output_index=(i1+d1_cc)+d1_N*(i2+d2_cc)+d1_N*d2_N*(i3+d3_cc); //for reference
-                    data_uniform[output_index*2]+=data_uniform_0[input_index*2];
-                    data_uniform[output_index*2+1]+=data_uniform_0[input_index*2+1];
-                    input_index++;
-                    output_index++;
-                }
-            }
-        }
-    }
-
-    // ABA
-    if ((d1_lower_src_A>=0)&&(d2_lower_src_B>=0)&&(d3_lower_src_A>=0)) {
-        BIGINT input_index=0;
-        BIGINT output_index=0;
-        BIGINT d1_cc=-d1_lower_src_A+d1_lower_dst_A;
-        BIGINT d2_cc=-d2_lower_src_B+d2_lower_dst_B;
-        BIGINT d3_cc=-d3_lower_src_A+d3_lower_dst_A;
-        for (BIGINT i3=d3_lower_src_A; i3<=d3_upper_src_A; i3++) {
-            BIGINT in_tmp00=d1_lower_src_A+d1_size*d2_size*i3;
-            BIGINT out_tmp00=(d1_lower_src_A+d1_cc)+d1_N*d2_N*(i3+d3_cc);
-            for (BIGINT i2=d2_lower_src_B; i2<=d2_upper_src_B; i2++) {
-                BIGINT input_index=in_tmp00+d1_size*i2;
-                BIGINT output_index=out_tmp00+d1_N*(i2+d2_cc);
-                for (BIGINT i1=d1_lower_src_A; i1<=d1_upper_src_A; i1++) {
-                    //BIGINT input_index=i1+d1_size*i2+d1_size*d2_size*i3; //for reference
-                    //BIGINT output_index=(i1+d1_cc)+d1_N*(i2+d2_cc)+d1_N*d2_N*(i3+d3_cc); //for reference
-                    data_uniform[output_index*2]+=data_uniform_0[input_index*2];
-                    data_uniform[output_index*2+1]+=data_uniform_0[input_index*2+1];
-                    input_index++;
-                    output_index++;
-                }
-            }
-        }
-    }
-
-    // ABB
-    if ((d1_lower_src_A>=0)&&(d2_lower_src_B>=0)&&(d3_lower_src_B>=0)) {
-        BIGINT input_index=0;
-        BIGINT output_index=0;
-        BIGINT d1_cc=-d1_lower_src_A+d1_lower_dst_A;
-        BIGINT d2_cc=-d2_lower_src_B+d2_lower_dst_B;
-        BIGINT d3_cc=-d3_lower_src_B+d3_lower_dst_B;
-        for (BIGINT i3=d3_lower_src_B; i3<=d3_upper_src_B; i3++) {
-            BIGINT in_tmp00=d1_lower_src_A+d1_size*d2_size*i3;
-            BIGINT out_tmp00=(d1_lower_src_A+d1_cc)+d1_N*d2_N*(i3+d3_cc);
-            for (BIGINT i2=d2_lower_src_B; i2<=d2_upper_src_B; i2++) {
-                BIGINT input_index=in_tmp00+d1_size*i2;
-                BIGINT output_index=out_tmp00+d1_N*(i2+d2_cc);
-                for (BIGINT i1=d1_lower_src_A; i1<=d1_upper_src_A; i1++) {
-                    //BIGINT input_index=i1+d1_size*i2+d1_size*d2_size*i3; //for reference
-                    //BIGINT output_index=(i1+d1_cc)+d1_N*(i2+d2_cc)+d1_N*d2_N*(i3+d3_cc); //for reference
-                    data_uniform[output_index*2]+=data_uniform_0[input_index*2];
-                    data_uniform[output_index*2+1]+=data_uniform_0[input_index*2+1];
-                    input_index++;
-                    output_index++;
-                }
-            }
-        }
-    }
-
-    // BAA
-    if ((d1_lower_src_B>=0)&&(d2_lower_src_A>=0)&&(d3_lower_src_A>=0)) {
-        BIGINT input_index=0;
-        BIGINT output_index=0;
-        BIGINT d1_cc=-d1_lower_src_B+d1_lower_dst_B;
-        BIGINT d2_cc=-d2_lower_src_A+d2_lower_dst_A;
-        BIGINT d3_cc=-d3_lower_src_A+d3_lower_dst_A;
-        for (BIGINT i3=d3_lower_src_A; i3<=d3_upper_src_A; i3++) {
-            BIGINT in_tmp00=d1_lower_src_B+d1_size*d2_size*i3;
-            BIGINT out_tmp00=(d1_lower_src_B+d1_cc)+d1_N*d2_N*(i3+d3_cc);
-            for (BIGINT i2=d2_lower_src_A; i2<=d2_upper_src_A; i2++) {
-                BIGINT input_index=in_tmp00+d1_size*i2;
-                BIGINT output_index=out_tmp00+d1_N*(i2+d2_cc);
-                for (BIGINT i1=d1_lower_src_B; i1<=d1_upper_src_B; i1++) {
-                    //BIGINT input_index=i1+d1_size*i2+d1_size*d2_size*i3; //for reference
-                    //BIGINT output_index=(i1+d1_cc)+d1_N*(i2+d2_cc)+d1_N*d2_N*(i3+d3_cc); //for reference
-                    data_uniform[output_index*2]+=data_uniform_0[input_index*2];
-                    data_uniform[output_index*2+1]+=data_uniform_0[input_index*2+1];
-                    input_index++;
-                    output_index++;
-                }
-            }
-        }
-    }
-
-    // BAB
-    if ((d1_lower_src_B>=0)&&(d2_lower_src_A>=0)&&(d3_lower_src_B>=0)) {
-        BIGINT input_index=0;
-        BIGINT output_index=0;
-        BIGINT d1_cc=-d1_lower_src_B+d1_lower_dst_B;
-        BIGINT d2_cc=-d2_lower_src_A+d2_lower_dst_A;
-        BIGINT d3_cc=-d3_lower_src_B+d3_lower_dst_B;
-        for (BIGINT i3=d3_lower_src_B; i3<=d3_upper_src_B; i3++) {
-            BIGINT in_tmp00=d1_lower_src_B+d1_size*d2_size*i3;
-            BIGINT out_tmp00=(d1_lower_src_B+d1_cc)+d1_N*d2_N*(i3+d3_cc);
-            for (BIGINT i2=d2_lower_src_A; i2<=d2_upper_src_A; i2++) {
-                BIGINT input_index=in_tmp00+d1_size*i2;
-                BIGINT output_index=out_tmp00+d1_N*(i2+d2_cc);
-                for (BIGINT i1=d1_lower_src_B; i1<=d1_upper_src_B; i1++) {
-                    //BIGINT input_index=i1+d1_size*i2+d1_size*d2_size*i3; //for reference
-                    //BIGINT output_index=(i1+d1_cc)+d1_N*(i2+d2_cc)+d1_N*d2_N*(i3+d3_cc); //for reference
-                    data_uniform[output_index*2]+=data_uniform_0[input_index*2];
-                    data_uniform[output_index*2+1]+=data_uniform_0[input_index*2+1];
-                    input_index++;
-                    output_index++;
-                }
-            }
-        }
-    }
-
-    // BBA
-    if ((d1_lower_src_B>=0)&&(d2_lower_src_B>=0)&&(d3_lower_src_A>=0)) {
-        BIGINT input_index=0;
-        BIGINT output_index=0;
-        BIGINT d1_cc=-d1_lower_src_B+d1_lower_dst_B;
-        BIGINT d2_cc=-d2_lower_src_B+d2_lower_dst_B;
-        BIGINT d3_cc=-d3_lower_src_A+d3_lower_dst_A;
-        for (BIGINT i3=d3_lower_src_A; i3<=d3_upper_src_A; i3++) {
-            BIGINT in_tmp00=d1_lower_src_B+d1_size*d2_size*i3;
-            BIGINT out_tmp00=(d1_lower_src_B+d1_cc)+d1_N*d2_N*(i3+d3_cc);
-            for (BIGINT i2=d2_lower_src_B; i2<=d2_upper_src_B; i2++) {
-                BIGINT input_index=in_tmp00+d1_size*i2;
-                BIGINT output_index=out_tmp00+d1_N*(i2+d2_cc);
-                for (BIGINT i1=d1_lower_src_B; i1<=d1_upper_src_B; i1++) {
-                    //BIGINT input_index=i1+d1_size*i2+d1_size*d2_size*i3; //for reference
-                    //BIGINT output_index=(i1+d1_cc)+d1_N*(i2+d2_cc)+d1_N*d2_N*(i3+d3_cc); //for reference
-                    data_uniform[output_index*2]+=data_uniform_0[input_index*2];
-                    data_uniform[output_index*2+1]+=data_uniform_0[input_index*2+1];
-                    input_index++;
-                    output_index++;
-                }
-            }
-        }
-    }
-
-    // BBB
-    if ((d1_lower_src_B>=0)&&(d2_lower_src_B>=0)&&(d3_lower_src_B>=0)) {
-        BIGINT input_index=0;
-        BIGINT output_index=0;
-        BIGINT d1_cc=-d1_lower_src_B+d1_lower_dst_B;
-        BIGINT d2_cc=-d2_lower_src_B+d2_lower_dst_B;
-        BIGINT d3_cc=-d3_lower_src_B+d3_lower_dst_B;
-        for (BIGINT i3=d3_lower_src_B; i3<=d3_upper_src_B; i3++) {
-            BIGINT in_tmp00=d1_lower_src_B+d1_size*d2_size*i3;
-            BIGINT out_tmp00=(d1_lower_src_B+d1_cc)+d1_N*d2_N*(i3+d3_cc);
-            for (BIGINT i2=d2_lower_src_B; i2<=d2_upper_src_B; i2++) {
-                BIGINT input_index=in_tmp00+d1_size*i2;
-                BIGINT output_index=out_tmp00+d1_N*(i2+d2_cc);
-                for (BIGINT i1=d1_lower_src_B; i1<=d1_upper_src_B; i1++) {
-                    //BIGINT input_index=i1+d1_size*i2+d1_size*d2_size*i3; //for reference
-                    //BIGINT output_index=(i1+d1_cc)+d1_N*(i2+d2_cc)+d1_N*d2_N*(i3+d3_cc); //for reference
-                    data_uniform[output_index*2]+=data_uniform_0[input_index*2];
-                    data_uniform[output_index*2+1]+=data_uniform_0[input_index*2+1];
-                    input_index++;
-                    output_index++;
-                }
-            }
-        }
-    }
-}
-
-*/
 
 }
 

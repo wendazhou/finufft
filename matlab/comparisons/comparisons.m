@@ -24,10 +24,20 @@ M=1e7;
 multithreaded=1;
 max_nthreads=8;
 spread_sort=2;
+radial_sampling=1;
 
-x=rand(1,M)*2*pi-pi;
-y=rand(1,M)*2*pi-pi;
-z=rand(1,M)*2*pi-pi;
+if (radial_sampling)
+    theta=rand(1,M)*2*pi;
+    phi=rand(1,M)*2*pi;
+    rad=rand(1,M)*pi;
+    x=rad.*cos(theta).*cos(phi);
+    y=rad.*sin(theta).*cos(phi);
+    z=rad.*sin(phi);
+else
+    x=rand(1,M)*2*pi-pi;
+    y=rand(1,M)*2*pi-pi;
+    z=rand(1,M)*2*pi-pi;
+end;
 data_in=randn(1,M);
 if multithreaded
     finufft_nthreads=max_nthreads;

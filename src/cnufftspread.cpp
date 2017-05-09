@@ -97,7 +97,7 @@ int cnufftspread(
 */
 { 
     if ((opts.use_advanced)&&(opts.spread_direction==1)&&(N2>1)&&(N3>1)) {
-        return cnufftspread_advanced(N1,N2,N3,data_uniform,M,kx,ky,kz,data_nonuniform,opts,omp_get_max_threads());
+        return cnufftspread_advanced(N1,N2,N3,data_uniform,M,kx,ky,kz,data_nonuniform,opts);
     }
 
   // Input checking: cuboid not too small for spreading

@@ -20,7 +20,7 @@ rng(1);
 NN=128;
 N1=NN; N2=NN; N3=NN;
 %M=8e4;
-M=1e7;
+M=1e6;
 multithreaded=1;
 max_nthreads=8;
 spread_sort=2;
@@ -93,6 +93,16 @@ else
     rmpath('nfft-3.3.1-single-thread/matlab/nfft');
 end;
 m_s=1:6;
+if 1
+    % create nfft dummy run to initialize with fftw_measure
+    ALG=struct;
+    ALG.algtype=0;
+    ALG.name=sprintf('nfft(1) - dummy');
+    ALG.algopts=nfft_algopts;
+    ALG.algopts.m=1;
+    ALG.init=@init_nfft; ALG.run=@run_nfft;
+    ALGS{end+1}=ALG;
+end;
 for im=1:length(m_s)
     %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
     ALG=struct;

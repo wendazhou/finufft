@@ -35,12 +35,11 @@ See spread_opts.timing_flags.
 
 */
 #define TF_OMIT_WRITE_TO_GRID          1  // don't write to the output grid at all
-#define TF_OMIT_LOCK_GRID              2  // don't lock the output grid (should produce inaccurate output)
-#define TF_OMIT_EVALUATE_KERNEL        4  // don't evaluate the kernel at all
-#define TF_OMIT_EVALUATE_EXPONENTIAL   8  // don't evaluate the exp operation in the kernel
-#define TF_OMIT_PI_RANGE               16 // don't convert the data to/from [-pi,pi) range
-#define TF_OMIT_SORT_SUBPROBLEMS       32 // don't bin-sort the subproblems
-#define TF_OMIT_SPREADING              64 // don't spread at all!
+#define TF_OMIT_EVALUATE_KERNEL        2  // don't evaluate the kernel at all
+#define TF_OMIT_EVALUATE_EXPONENTIAL   4  // don't evaluate the exp operation in the kernel
+#define TF_OMIT_PI_RANGE               8  // don't convert the data to/from [-pi,pi) range
+#define TF_OMIT_SORT_SUBPROBLEMS       16 // don't bin-sort the subproblems
+#define TF_OMIT_SPREADING              32 // don't spread at all!
 /////////////////////////////////////////////////////////////////////////////////
 
 #endif // CNUFFTSPREAD_ADVANCED_H

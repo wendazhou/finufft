@@ -20,7 +20,7 @@ struct Subgrid {
     Subgrid(const Subgrid &other);
     void operator=(const Subgrid &other);
     bool operator==(const Subgrid &other);
-    bool intersects(const Subgrid &other); //N1,N2,N3 needed for wrapping
+    bool intersects(const Subgrid &other,BIGINT N1,BIGINT N2,BIGINT N3); //N1,N2,N3 needed for wrapping
     BIGINT x1=0,x2=0;
     BIGINT y1=0,y2=0;
     BIGINT z1=0,z2=0;
@@ -45,21 +45,6 @@ void to_pi_range(BIGINT M, FLT *X, BIGINT N);
 // convert nonuniform locations from [-pi,pi) range to [0,N)
 void from_pi_range(BIGINT M, FLT *X, BIGINT N);
 
-// Smart mutex locker for writing to the uniform output grid
-// If the output grid is not locked and two threads access it at the same time,
-// the results will be inaccurate. You can't increment the same entry by two
-// threads simultaneously.
-// Acquiring a lock for a subgrid guarantees that no intersecting subgrid is
-// currently locked. The lock should be released ASAP for maximum efficiency.
-class SpreadingLocker {
-public:
-    SpreadingLocker();
-    void acquireLock(BIGINT x1,BIGINT x2,BIGINT y1,BIGINT y2,BIGINT z1,BIGINT z2);
-    void releaseLock(BIGINT x1,BIGINT x2,BIGINT y1,BIGINT y2,BIGINT z1,BIGINT z2);
-private:
-    std::vector<Subgrid> m_locked_subgrids;
-};
-
 }
 
 // Convenience: Return true if opts.timing_flags does not contain the flag (usually it is a flag of omission)
@@ -82,6 +67,21 @@ int cnufftspread_advanced(BIGINT N1, BIGINT N2, BIGINT N3, FLT* data_uniform, BI
             Advanced::from_pi_range(M,ky,N2);
             Advanced::from_pi_range(M,kz,N3);
         }
+        // Check whether everything is in the right range
+        for (BIGINT i=0; i<M; i++) {
+            if ((kx[i]<0)||(kx[i]>=N1)) {
+                printf("Location is out of range kx=%g, N1=%ld (pirange=%d)\n",kx[i],N1,opts.pirange);
+                return -1;
+            }
+            if ((ky[i]<0)||(ky[i]>=N2)) {
+                printf("Location is out of range ky=%g, N2=%ld (pirange=%d)\n",ky[i],N2,opts.pirange);
+                return -1;
+            }
+            if ((kz[i]<0)||(kz[i]>=N2)) {
+                printf("Location is out of range kz=%g, N3=%ld (pirange=%d)\n",kz[i],N3,opts.pirange);
+                return -1;
+            }
+        }
     }
 
     // some hard-coded parameters
@@ -89,7 +89,9 @@ int cnufftspread_advanced(BIGINT N1, BIGINT N2, BIGINT N3, FLT* data_uniform, BI
     // nonuniform points into subproblems
     // Those subproblems will then be split further in order to satisfy the
     // max_subproblem_size requirement
-    int w2=4,w3=4;
+    int nthr=omp_get_max_threads();
+    int cc=4;
+    int w2=ceil(N1*1.0/sqrt(nthr*cc)),w3=ceil(N2*1.0/sqrt(nthr*cc));
     BIGINT max_subproblem_size=1e5; //controls extra RAM allocation per thread, but it really won't be very much
 
     // Define the subproblems
@@ -129,13 +131,9 @@ int cnufftspread_advanced(BIGINT N1, BIGINT N2, BIGINT N3, FLT* data_uniform, BI
     }
     printf("Using %ld subproblems.\n",num_nonempty_subproblems);
 
-    // The SpreadingLocker is used to avoid two threads from writing
-    // simultaneously to the same part of the output grid
-    Advanced::SpreadingLocker SL;
-
     // The main spreading starts now
     BIGINT num_subproblems=subproblems.size();
-#pragma omp parallel for
+    #pragma omp parallel for
     for (int jsub=0; jsub<num_subproblems; jsub++) { // Loop through the subproblems
         // I was thinking of doing the subproblems in a different order to avoid
         // lock conflicts whenever possible, but doesn't seem to make a difference.
@@ -179,7 +177,7 @@ int cnufftspread_advanced(BIGINT N1, BIGINT N2, BIGINT N3, FLT* data_uniform, BI
                 Advanced::cnufftspread_type1_subproblem(size1,size2,size3,data_uniform_0,M0,kx0,ky0,kz0,dd0,opts);
             }
 
-//#pragma omp critical (this is the way we used to do it, before we had smart grid locking)
+
             {
                 // Now we write to the output grid
 
@@ -206,32 +204,25 @@ int cnufftspread_advanced(BIGINT N1, BIGINT N2, BIGINT N3, FLT* data_uniform, BI
                     output_inds3[a]=ind0;
                 }
 
-                if (noflag(opts,TF_OMIT_WRITE_TO_GRID)) {
-                    if (noflag(opts,TF_OMIT_LOCK_GRID)) {
-                        // Acquire the lock (ensures we are not writing to any intersecting subgrid)
-                        SL.acquireLock(offset1,offset1+size1-1,offset2,offset2+size2-1,offset3,offset3+size3-1);
-                    }
-
-                    // The innermost loop of writing to the output grid
-                    // But ideally this will contribute a lot less time compared with the
-                    // innermost loop of the subproblem spreading
-                    BIGINT input_index=0;
-                    for (BIGINT i3=0; i3<size3; i3++) {
-                        BIGINT output_index3=output_inds3[i3]*N1*N2;
-                        for (BIGINT i2=0; i2<size2; i2++) {
-                            BIGINT output_index2=output_index3+output_inds2[i2]*N1;
-                            for (BIGINT i1=0; i1<size1; i1++) {
-                                BIGINT output_index=output_index2+output_inds1[i1];
-                                data_uniform[output_index*2]+=data_uniform_0[input_index*2];
-                                data_uniform[output_index*2+1]+=data_uniform_0[input_index*2+1];
-                                input_index++;
+                #pragma omp critical
+                {
+                    if (noflag(opts,TF_OMIT_WRITE_TO_GRID)) {
+                        // The innermost loop of writing to the output grid
+                        // But ideally this will contribute a lot less time compared with the
+                        // innermost loop of the subproblem spreading
+                        BIGINT input_index=0;
+                        for (BIGINT i3=0; i3<size3; i3++) {
+                            BIGINT output_index3=output_inds3[i3]*N1*N2;
+                            for (BIGINT i2=0; i2<size2; i2++) {
+                                BIGINT output_index2=output_index3+output_inds2[i2]*N1;
+                                for (BIGINT i1=0; i1<size1; i1++) {
+                                    BIGINT output_index=output_index2+output_inds1[i1];
+                                    data_uniform[output_index*2]+=data_uniform_0[input_index*2];
+                                    data_uniform[output_index*2+1]+=data_uniform_0[input_index*2+1];
+                                    input_index++;
+                                }
                             }
                         }
-                    }
-
-                    if (noflag(opts,TF_OMIT_LOCK_GRID)) {
-                        // Release the lock allowing other subproblem spreaders to access this part of the output grid
-                        SL.releaseLock(offset1,offset1+size1-1,offset2,offset2+size2-1,offset3,offset3+size3-1);
                     }
                 }
             }
@@ -499,56 +490,6 @@ void cnufftspread_type1_subproblem(BIGINT N1, BIGINT N2, BIGINT N3, FLT *data_un
     }
 }
 
-SpreadingLocker::SpreadingLocker()
-{
-
-}
-
-void SpreadingLocker::acquireLock(BIGINT x1, BIGINT x2, BIGINT y1, BIGINT y2, BIGINT z1, BIGINT z2)
-{
-    //printf("Acquiring lock %ld,%ld %ld,%ld %ld,%ld\n",x1,x2,y1,y2,z1,z2);
-    Subgrid SG(x1,x2,y1,y2,z1,z2);
-    while (1) { // Loop until no other lock involves a subgrid that intersects ours
-        bool intersects_something=false;
-        #pragma omp critical // We probably need a omp critical here because we access m_locked_subgrids
-        {
-            for (int i=0; i<(int)m_locked_subgrids.size(); i++) {
-                if (m_locked_subgrids.at(i).intersects(SG)) {
-                    intersects_something=true;
-                }
-            }
-        }
-        if (!intersects_something)
-            break;
-    }
-#pragma omp critical
-    {
-        m_locked_subgrids.push_back(SG);
-        //printf("    Locked: %ld,%ld %ld,%ld %ld,%ld (%ld locked)\n",x1,x2,y1,y2,z1,z2,m_locked_subgrids.size());
-    }
-}
-
-void SpreadingLocker::releaseLock(BIGINT x1, BIGINT x2, BIGINT y1, BIGINT y2, BIGINT z1, BIGINT z2)
-{
-    #pragma omp critical // We probably need a omp critical here because we access m_locked_subgrids
-    {
-        // Find the locked subgrid and release the lock
-        Subgrid SG(x1,x2,y1,y2,z1,z2);
-        bool found=false;
-        for (int i=0; i<(int)m_locked_subgrids.size(); i++) {
-            if (m_locked_subgrids.at(i)==SG) {
-                m_locked_subgrids.erase(m_locked_subgrids.begin()+i);
-                found=true;
-                break;
-            }
-        }
-        if (!found) {
-            printf("Warning: Unexpected problem in releaseLock... unable to find subgrid.\n");
-        }
-    }
-    //printf("        Released: %ld,%ld %ld,%ld %ld,%ld\n",x1,x2,y1,y2,z1,z2);
-}
-
 // Constructor
 Subgrid::Subgrid(BIGINT x1_in, BIGINT x2_in, BIGINT y1_in, BIGINT y2_in, BIGINT z1_in, BIGINT z2_in)
 {
@@ -565,31 +506,6 @@ Subgrid::Subgrid(const Subgrid &other)
 void Subgrid::operator=(const Subgrid &other)
 {
     copy_from(other);
-}
-
-// Comparison of subgrids. This is important for finding the locked subgrid in order to release it.
-bool Subgrid::operator==(const Subgrid &other)
-{
-    if ((other.x1!=x1)||(other.x2!=x2))
-        return false;
-    if ((other.y1!=y1)||(other.y2!=y2))
-        return false;
-    if ((other.z1!=z1)||(other.z2!=z2))
-        return false;
-    return true;
-}
-
-bool Subgrid::intersects(const Subgrid &other)
-{
-    //there are 6 ways they could *not* intersect
-    if (other.x1>x2) return false;
-    if (other.x2<x1) return false;
-    if (other.y1>y2) return false;
-    if (other.y2<y1) return false;
-    if (other.z1>z2) return false;
-    if (other.z2<z1) return false;
-    // Otherwise they intersect
-    return true;
 }
 
 void Subgrid::copy_from(const Subgrid &other)

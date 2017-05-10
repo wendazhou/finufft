@@ -53,6 +53,7 @@ int finufft3d1(INT nj,FLT* xj,FLT *yj,FLT *zj,CPX* cj,int iflag,
  */
 {
   spread_opts spopts;
+  spopts.timing_flags=0; //even though this has a default value, when we compile with mex/matlab it doesn't respect that. thumbs down.
   int ier_set = setup_kernel(spopts,eps,opts.R);
   if (ier_set) return ier_set;
   INT64 nf1; set_nf_type12((BIGINT)ms,opts,spopts,&nf1);

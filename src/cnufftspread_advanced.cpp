@@ -90,7 +90,7 @@ int cnufftspread_advanced(BIGINT N1, BIGINT N2, BIGINT N3, FLT* data_uniform, BI
     // Those subproblems will then be split further in order to satisfy the
     // max_subproblem_size requirement
     int w2=4,w3=4;
-    BIGINT max_subproblem_size=1000;
+    BIGINT max_subproblem_size=1e5; //controls extra RAM allocation per thread, but it really won't be very much
 
     // Define the subproblems
     BIGINT A1=ceil(N2*1.0/w2); // number of subproblem bins in 2nd dimension
@@ -132,7 +132,7 @@ int cnufftspread_advanced(BIGINT N1, BIGINT N2, BIGINT N3, FLT* data_uniform, BI
     // The SpreadingLocker is used to avoid two threads from writing
     // simultaneously to the same part of the output grid
     Advanced::SpreadingLocker SL;
-    
+
     // The main spreading starts now
     BIGINT num_subproblems=subproblems.size();
 #pragma omp parallel for
@@ -392,7 +392,7 @@ void get_subgrid(BIGINT &offset1,BIGINT &offset2,BIGINT &offset3,BIGINT &size1,B
     max_kz=max_kz;
 
     // we need some padding for the spreading
-    int min_radius=(nspread+1)/2+2; //there might be a reason for using the +2. If not, then you could save a bit of RAM and a bit of time.
+    int min_radius=(nspread+1)/2;
     BIGINT a1=floor(min_kx-min_radius);
     BIGINT a2=ceil(max_kx+min_radius);
     BIGINT b1=floor(min_ky-min_radius);

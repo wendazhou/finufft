@@ -5,7 +5,7 @@
 
 int usage()
 {
-  printf("usage: spreadtestnd [dim [M [N [tol [sort]]]]]\n\twhere dim=1,2 or 3\n\tM=# nonuniform pts\n\tN=# uniform pts\n\ttol=requested accuracy\n\tsort=0 (don't sort data) or 1 (do, default)\n");
+  printf("usage: spreadtestnd [dim [M [N [tol [sort [timing_flags]]]]]]\n\twhere dim=1,2 or 3\n\tM=# nonuniform pts\n\tN=# uniform pts\n\ttol=requested accuracy\n\tsort=0 (don't sort data) or 1 (do, default)\n");
 }
 
 int main(int argc, char* argv[])
@@ -34,6 +34,7 @@ int main(int argc, char* argv[])
   BIGINT M = 1e6;         // default # NU pts
   BIGINT roughNg = 1e6;   // default # U pts
   int sort = 1;         // default
+  int timing_flags = 0; //default
   if (argc<=1) { usage(); return 0; }
   sscanf(argv[1],"%d",&d);
   if (d<1 || d>3) {
@@ -63,7 +64,10 @@ int main(int argc, char* argv[])
       printf("sort must be 0 or 1 or 2!\n"); usage(); return 1;
     }
   }
-  if (argc>6) { usage();
+  if (argc>6) {
+    sscanf(argv[6],"%d",&timing_flags);
+  }
+  if (argc>7) { usage();
     return 1; }
   BIGINT N=std::round(pow(roughNg,1.0/d));         // Fourier grid size per dim
   BIGINT Ng = (BIGINT)pow(N,d);                      // actual total grid points
@@ -76,6 +80,7 @@ int main(int argc, char* argv[])
   spread_opts opts; // set method opts...
   opts.debug = 0;
   opts.sort_data=sort;   // for 3D: 1-2x faster on i7; but 0.5-0.9x (ie slower) on xeon!
+  opts.timing_flags=timing_flags;
   opts.use_advanced=(sort>=2);
   FLT Rdummy = 2.0;    // since no nufft done, merely to please the setup
   setup_kernel(opts,(FLT)tol,Rdummy);  // note tol is always double

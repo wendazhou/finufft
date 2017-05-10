@@ -24,6 +24,7 @@ struct spread_opts {
 
   //jfm
   bool use_advanced=false;
+  int timing_flags=0;
 };
 
 int cnufftspread(BIGINT N1, BIGINT N2, BIGINT N3, FLT *data_uniform,

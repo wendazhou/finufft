@@ -10,6 +10,7 @@ struct nufft_opts {  // this sets default opts for NUFFT alg:
   int spread_debug = 0;   // passed to spread_opts debug: 0,1 or 2
   int spread_sort = 1;    // passed to spread_opts sort: 0 or 1
   int fftw = FFTW_ESTIMATE; // use FFTW_MEASURE for slow first call, fast rerun
+  int timing_flags = 0;
 };
 
 // library provides...

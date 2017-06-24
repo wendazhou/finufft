@@ -50,6 +50,7 @@ int finufft2d1(INT nj,FLT* xj,FLT *yj,CPX* cj,int iflag,
  */
 {
   spread_opts spopts;
+  spopts.flags=opts.timing_flags;
   int ier_set = setup_kernel(spopts,eps,opts.R);
   if (ier_set) return ier_set;
   INT64 nf1; set_nf_type12((BIGINT)ms,opts,spopts,&nf1);
@@ -143,6 +144,7 @@ int finufft2d2(INT nj,FLT* xj,FLT *yj,CPX* cj,int iflag,FLT eps,
  */
 {
   spread_opts spopts;
+  spopts.flags=opts.timing_flags;
   int ier_set = setup_kernel(spopts,eps,opts.R);
   if (ier_set) return ier_set;
   INT64 nf1; set_nf_type12((BIGINT)ms,opts,spopts,&nf1);
@@ -243,6 +245,7 @@ int finufft2d3(INT nj,FLT* xj,FLT* yj,CPX* cj,int iflag, FLT eps, INT nk, FLT* s
  */
 {
   spread_opts spopts;
+  spopts.flags=opts.timing_flags;
   int ier_set = setup_kernel(spopts,eps,opts.R);
   if (ier_set) return ier_set;
   INT64 nf1,nf2;

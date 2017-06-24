@@ -52,6 +52,7 @@ int finufft3d1(INT nj,FLT* xj,FLT *yj,FLT *zj,CPX* cj,int iflag,
  */
 {
   spread_opts spopts;
+  spopts.flags=opts.timing_flags;
   int ier_set = setup_kernel(spopts,eps,opts.R);
   if (ier_set) return ier_set;
   INT64 nf1; set_nf_type12((BIGINT)ms,opts,spopts,&nf1);
@@ -84,7 +85,10 @@ int finufft3d1(INT nj,FLT* xj,FLT *yj,FLT *zj,CPX* cj,int iflag,
   timer.restart();
   FFTW_CPX *fw = FFTW_ALLOC_CPX(nf1*nf2*nf3);  // working upsampled array
   int fftsign = (iflag>=0) ? 1 : -1;
-  FFTW_PLAN p = FFTW_PLAN_3D(nf3,nf2,nf1,fw,fw,fftsign, opts.fftw);  // in-place
+  FFTW_PLAN p;
+  if (!(opts.timing_flags&TF_OMIT_FFT)) {
+    p = FFTW_PLAN_3D(nf3,nf2,nf1,fw,fw,fftsign, opts.fftw);  // in-place
+  }
   if (opts.debug) printf("fftw plan\t\t %.3g s\n", timer.elapsedsec());
 
   // Step 1: spread from irregular points to regular grid
@@ -98,10 +102,12 @@ int finufft3d1(INT nj,FLT* xj,FLT *yj,FLT *zj,CPX* cj,int iflag,
   if (ier_spread>0) exit(ier_spread);
 
   // Step 2:  Call FFT
-  timer.restart();
-  FFTW_EX(p);
-  FFTW_DE(p);
-  if (opts.debug) printf("fft (%d threads):\t %.3g s\n", nth, timer.elapsedsec());
+  if (!(opts.timing_flags&TF_OMIT_FFT)) {
+      timer.restart();
+      FFTW_EX(p);
+      FFTW_DE(p);
+      if (opts.debug) printf("fft (%d threads):\t %.3g s\n", nth, timer.elapsedsec());
+  }
 
   // Step 3: Deconvolve by dividing coeffs by that of kernel; shuffle to output
   timer.restart();
@@ -154,6 +160,7 @@ int finufft3d2(INT nj,FLT* xj,FLT *yj,FLT *zj,CPX* cj,
  */
 {
   spread_opts spopts;
+  spopts.flags=opts.timing_flags;
   int ier_set = setup_kernel(spopts,eps,opts.R);
   if (ier_set) return ier_set;
   INT64 nf1; set_nf_type12((BIGINT)ms,opts,spopts,&nf1);
@@ -264,6 +271,7 @@ int finufft3d3(INT nj,FLT* xj,FLT* yj,FLT *zj, CPX* cj,
  */
 {
   spread_opts spopts;
+  spopts.flags=opts.timing_flags;
   int ier_set = setup_kernel(spopts,eps,opts.R);
   if (ier_set) return ier_set;
   INT64 nf1,nf2,nf3;

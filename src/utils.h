@@ -63,6 +63,21 @@ typedef complex<double> dcomplex;  // slightly sneaky since duplicated by mwrap
   #define FFTW_FR fftw_free
 #endif
 
+/* Bitwise timing flag definitions; see spread_opts.flags.
+    This is an unobtrusive way to determine the time contributions of the
+    different components of the algorithm by selectively leaving them out.
+    For example, running the following two tests shows the effect of the exp()
+    in the kernel evaluation (the last argument is the flag):
+    > test/spreadtestnd 3 8e6 8e6 1e-6 2 0
+    > test/spreadtestnd 3 8e6 8e6 1e-6 2 4
+    NOTE: NUMERICAL OUTPUT WILL BE INCORRECT UNLESS spread_opts.flags=0 !
+*/
+#define TF_OMIT_WRITE_TO_GRID        1 // don't add subgrids to out grid (dir=1)
+#define TF_OMIT_EVALUATE_KERNEL      2 // don't evaluate the kernel at all
+#define TF_OMIT_EVALUATE_EXPONENTIAL 4 // don't evaluate the exp() in the kernel
+#define TF_OMIT_SPREADING            8 // don't interp/spread (dir=1: to subgrids)
+#define TF_OMIT_FFT                 16 // applies to the nufft (not cnufftspread)
+
 // Compile-flag choice of 64 (default) or 32 bit integers in interface:
 #ifdef INTERFACE32
   typedef int INT;

@@ -994,6 +994,7 @@ void bin_sort_singlethread(BIGINT *ret, BIGINT M, FLT *kx, FLT *ky, FLT *kz,
  * Avoided the bins array, as in JFM's spreader of 2016,
  * tidied up, early 2017, Barnett.
  * 8/3/18: brought back bins array (extra RAM), and Melody's idea for offsinbin.
+ * Turned out this speed up i7 by a little, but not xeon (can be slower!)
  */
 {
   bool isky=(N2>1), iskz=(N3>1);  // ky,kz avail? (cannot access if not)
@@ -1003,7 +1004,7 @@ void bin_sort_singlethread(BIGINT *ret, BIGINT M, FLT *kx, FLT *ky, FLT *kz,
   BIGINT nbins = nbins1*nbins2*nbins3;
 
   std::vector<BIGINT> counts(nbins,0);  // count how many pts in each bin
-  std::vector<BIGINT> bins(M), offsinbin(M);
+  std::vector<BIGINT> bins(M), offsinbin(M);  // note extra size-M needed
   for (BIGINT i=0; i<M; i++) {
     // find the bin index in however many dims are needed, and store it
     BIGINT i1=RESCALE(kx[i],N1,pirange)/bin_size_x, i2=0, i3=0;

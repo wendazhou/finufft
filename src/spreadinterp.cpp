@@ -993,8 +993,7 @@ void bin_sort_singlethread(BIGINT *ret, BIGINT M, FLT *kx, FLT *ky, FLT *kz,
  * back; the latter used more RAM and was slower.
  * Avoided the bins array, as in JFM's spreader of 2016,
  * tidied up, early 2017, Barnett.
- *
- * Timings: 3s for M=1e8 NU pts on 1 core of i7; 5s on 1 core of xeon.
+ * 8/3/18: brought back bins array (extra RAM), and Melody's idea for offsinbin.
  */
 {
   bool isky=(N2>1), iskz=(N3>1);  // ky,kz avail? (cannot access if not)
@@ -1004,33 +1003,25 @@ void bin_sort_singlethread(BIGINT *ret, BIGINT M, FLT *kx, FLT *ky, FLT *kz,
   BIGINT nbins = nbins1*nbins2*nbins3;
 
   std::vector<BIGINT> counts(nbins,0);  // count how many pts in each bin
+  std::vector<BIGINT> bins(M), offsinbin(M);
   for (BIGINT i=0; i<M; i++) {
-    // find the bin index in however many dims are needed
+    // find the bin index in however many dims are needed, and store it
     BIGINT i1=RESCALE(kx[i],N1,pirange)/bin_size_x, i2=0, i3=0;
     if (isky) i2 = RESCALE(ky[i],N2,pirange)/bin_size_y;
     if (iskz) i3 = RESCALE(kz[i],N3,pirange)/bin_size_z;
     BIGINT bin = i1+nbins1*(i2+nbins2*i3);
-    counts[bin]++;
+    bins[i] = bin;
+    offsinbin[i] = counts[bin]++;
   }
   std::vector<BIGINT> offsets(nbins);   // cumulative sum of bin counts
   offsets[0]=0;     // do: offsets = [0 cumsum(counts(1:end-1)]
-  for (BIGINT i=1; i<nbins; i++)
-    offsets[i]=offsets[i-1]+counts[i-1];
+  for (BIGINT b=1; b<nbins; b++)
+    offsets[b]=offsets[b-1]+counts[b-1];
   
-  std::vector<BIGINT> inv(M);           // fill inverse map
-  for (BIGINT i=0; i<M; i++) {
-    // find the bin index (again! but better than using RAM)
-    BIGINT i1=RESCALE(kx[i],N1,pirange)/bin_size_x, i2=0, i3=0;
-    if (isky) i2 = RESCALE(ky[i],N2,pirange)/bin_size_y;
-    if (iskz) i3 = RESCALE(kz[i],N3,pirange)/bin_size_z;
-    BIGINT bin = i1+nbins1*(i2+nbins2*i3);
-    BIGINT offset=offsets[bin];
-    offsets[bin]++;
-    inv[i]=offset;
+  for (BIGINT i=0; i<M; i++) {  // no need to invert the list
+    BIGINT j = offsets[bins[i]]+offsinbin[i];
+    ret[j] = i;
   }
-  // invert the map, writing to output pointer (writing pattern is random)
-  for (BIGINT i=0; i<M; i++)
-    ret[inv[i]]=i;
 }
 
 void bin_sort_multithread(BIGINT *ret, BIGINT M, FLT *kx, FLT *ky, FLT *kz,

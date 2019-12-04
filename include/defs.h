@@ -6,8 +6,7 @@
 #define DEFS_H
 
 // define types intrinsic to finufft interface (FLT, CPX, BIGINT, etc):
-#include "finufft.h"
-
+#include <dataTypes.h>
 
 // ------------- Library-wide algorithm parameter settings ----------------
 
@@ -46,11 +45,11 @@
 // -------------- Math consts (not in math.h) and useful math macros ----------
 
 // prec-indep unit imaginary number
-#define IMA std::complex<FLT>(0.0,1.0)
+#define IMA std::complex<T>(0.0,1.0)
 #define M_1_2PI 0.159154943091895336
 #define M_2PI   6.28318530717958648
 // to avoid mixed precision operators in eg i*pi...
-#define PI (FLT)M_PI
+#define PI (T)M_PI
 
 using namespace std;        // means std:: not needed for cout, max, etc
 
@@ -58,64 +57,20 @@ using namespace std;        // means std:: not needed for cout, max, etc
 #define MIN(a,b) (a<b) ? a : b
 
 // Random numbers: crappy unif random number generator in [0,1):
-//#define rand01() (((FLT)(rand()%RAND_MAX))/RAND_MAX)
-#define rand01() ((FLT)rand()/RAND_MAX)
+//#define rand01() (((T)(rand()%RAND_MAX))/RAND_MAX)
+#define rand01() ((T)rand()/RAND_MAX)
 // unif[-1,1]:
-#define randm11() (2*rand01() - (FLT)1.0)
+#define randm11() (2*rand01() - (T)1.0)
 // complex unif[-1,1] for Re and Im:
 #define crandm11() (randm11() + IMA*randm11())
 
 // Thread-safe seed-carrying versions of above (x is ptr to seed)...
-#define rand01r(x) ((FLT)rand_r(x)/RAND_MAX)
+#define rand01r(x) ((T)rand_r(x)/RAND_MAX)
 // unif[-1,1]:
-#define randm11r(x) (2*rand01r(x) - (FLT)1.0)
+#define randm11r(x) (2*rand01r(x) - (T)1.0)
 // complex unif[-1,1] for Re and Im:
 #define crandm11r(x) (randm11r(x) + IMA*randm11r(x))
 
-
-
-// ---------- Precision-indep complex types, macros to FFTW -------------------
-
-#include <fftw3.h>          // (after complex.h) needed so can typedef FFTW_CPX
-
-// prec-indep interfaces to FFTW and other math utilities...
-#ifdef SINGLE
-  // single-prec, machine epsilon for rounding
-  #define EPSILON (float)6e-08
-  #define FABS(x) fabsf(x)
-  typedef fftwf_complex FFTW_CPX;           //  single-prec has fftwf_*
-  typedef fftwf_plan FFTW_PLAN;
-  #define FFTW_INIT fftwf_init_threads
-  #define FFTW_PLAN_TH fftwf_plan_with_nthreads
-  #define FFTW_ALLOC_RE fftwf_alloc_real
-  #define FFTW_ALLOC_CPX fftwf_alloc_complex
-  #define FFTW_PLAN_1D fftwf_plan_dft_1d
-  #define FFTW_PLAN_2D fftwf_plan_dft_2d
-  #define FFTW_PLAN_3D fftwf_plan_dft_3d
-  #define FFTW_PLAN_MANY_DFT fftwf_plan_many_dft
-  #define FFTW_EX fftwf_execute
-  #define FFTW_DE fftwf_destroy_plan
-  #define FFTW_FR fftwf_free
-  #define FFTW_FORGET_WISDOM fftwf_forget_wisdom
-#else
-  // double-precision, machine epsilon for rounding
-  #define EPSILON (double)1.1e-16
-  #define FABS(x) fabs(x)
-  typedef fftw_complex FFTW_CPX;           // double-prec has fftw_*
-  typedef fftw_plan FFTW_PLAN;
-  #define FFTW_INIT fftw_init_threads
-  #define FFTW_PLAN_TH fftw_plan_with_nthreads
-  #define FFTW_ALLOC_RE fftw_alloc_real
-  #define FFTW_ALLOC_CPX fftw_alloc_complex
-  #define FFTW_PLAN_1D fftw_plan_dft_1d
-  #define FFTW_PLAN_2D fftw_plan_dft_2d
-  #define FFTW_PLAN_3D fftw_plan_dft_3d
-  #define FFTW_PLAN_MANY_DFT fftw_plan_many_dft
-  #define FFTW_EX fftw_execute
-  #define FFTW_DE fftw_destroy_plan
-  #define FFTW_FR fftw_free
-  #define FFTW_FORGET_WISDOM fftw_forget_wisdom
-#endif
 
 
 

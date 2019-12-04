@@ -1,5 +1,5 @@
-#include "../src/finufft.h"
-#include "../src/dirft.h"
+#include <finufft_legacy.h>
+#include <dirft.h>
 #include <complex>
 #include <stdio.h>
 #include <stdlib.h>

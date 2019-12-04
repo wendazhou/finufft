@@ -1,12 +1,14 @@
-#include "finufft.h"
-#include "common.h"
+#include <finufft_legacy.h>
+#include <common_legacy.h>
+#include <utils_legacy.h>
+#include <helpers.h>
 #include <fftw3.h>
 #include <math.h>
 #include <stdio.h>
 #include <iostream>
 #include <iomanip>
 
-int finufft1d1(BIGINT nj,FLT* xj,CPX* cj,int iflag,FLT eps,BIGINT ms,
+int finufft1d1_old(BIGINT nj,FLT* xj,CPX* cj,int iflag,FLT eps,BIGINT ms,
 	       CPX* fk, nufft_opts opts)
  /*  Type-1 1D complex nonuniform FFT.
 
@@ -97,7 +99,7 @@ int finufft1d1(BIGINT nj,FLT* xj,CPX* cj,int iflag,FLT eps,BIGINT ms,
 }
 
 
-int finufft1d2(BIGINT nj,FLT* xj,CPX* cj,int iflag,FLT eps,BIGINT ms,
+int finufft1d2_old(BIGINT nj,FLT* xj,CPX* cj,int iflag,FLT eps,BIGINT ms,
 	       CPX* fk, nufft_opts opts)
  /*  Type-2 1D complex nonuniform FFT.
 
@@ -186,7 +188,7 @@ int finufft1d2(BIGINT nj,FLT* xj,CPX* cj,int iflag,FLT eps,BIGINT ms,
 }
 
 
-int finufft1d3(BIGINT nj,FLT* xj,CPX* cj,int iflag, FLT eps, BIGINT nk, FLT* s, CPX* fk, nufft_opts opts)
+int finufft1d3_old(BIGINT nj,FLT* xj,CPX* cj,int iflag, FLT eps, BIGINT nk, FLT* s, CPX* fk, nufft_opts opts)
  /*  Type-3 1D complex nonuniform FFT.
 
                nj-1
@@ -270,7 +272,7 @@ int finufft1d3(BIGINT nj,FLT* xj,CPX* cj,int iflag, FLT eps, BIGINT nk, FLT* s, 
   FLT *sp = (FLT*)malloc(sizeof(FLT)*nk);     // rescaled targs s'_k
   for (BIGINT k=0;k<nk;++k)
     sp[k] = h1*gam1*(s[k]-D1);                         // so that |s'_k| < pi/R
-  int ier_t2 = finufft1d2(nk,sp,fk,iflag,eps,nf1,fw,opts);  // the meat
+  int ier_t2 = finufft1d2_old(nk,sp,fk,iflag,eps,nf1,fw,opts);  // the meat
   free(fw);
   if (opts.debug) printf("total type-2 (ier=%d):\t %.3g s\n",ier_t2,timer.elapsedsec());
   if (ier_t2) return ier_t2;

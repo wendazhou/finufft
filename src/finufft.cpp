@@ -8,6 +8,8 @@
 #include <spreadinterp.h>
 #include <fftw_defs.h>
 
+#include <mkl.h>
+
 #include <iostream>
 #include <iomanip>
 #include <math.h>
@@ -224,6 +226,67 @@ void onedim_fseries_kernel(BIGINT nf, FLT *fwkerhalf, spread_opts opts)
   }
 }
 
+static inline void onedim_cos_accumulate_omp(BIGINT nk, int q, FLT *k, FLT *phihat, FLT* f, FLT* z, int nthreads) {
+#pragma omp parallel for num_threads(nthreads)
+  for (BIGINT j=0;j<nk;++j) {          // loop along output array
+    FLT x = 0.0;                    // register
+    for (int n=0;n<q;++n) x += f[n] * 2*cos(k[j]*z[n]);  // pos & neg freq pair
+    phihat[j] = x;
+  }
+}
+
+static inline void vml_cos(MKL_INT n, const float* a, float* y) {
+  vmsCos(n, a, y, VML_HA | VML_FTZDAZ_OFF | VML_ERRMODE_IGNORE);
+}
+
+static inline void vml_cos(MKL_INT n, const double* a, double* y) {
+  vmdCos(n, a, y, VML_HA | VML_FTZDAZ_OFF | VML_ERRMODE_IGNORE);
+}
+
+
+static inline void onedim_cos_accumulate_vml(BIGINT nk, int q, FLT *k, FLT* phihat, FLT* f, FLT* z, int nthreads) {
+  const int UNROLL = 16;
+
+#pragma omp parallel num_threads(nthreads)
+  {
+    double* buffer = (double*)malloc(UNROLL * sizeof(double) * q);
+
+    #pragma omp for nowait
+    for (BIGINT j = 0; j < nk - UNROLL + 1; j += UNROLL) {
+      for(int j2 = 0; j2 < UNROLL; ++j2) {
+        for (int n = 0; n < q; ++n) {
+          buffer[j2 * q + n] = k[j + j2] * z[n];
+        }
+      }
+
+      vml_cos(UNROLL * q, buffer, buffer);
+
+      for (int j2 = 0; j2 < UNROLL; ++j2) {
+        FLT x = 0.0;
+
+        for (int n = 0; n < q; ++n) {
+          x += f[n] * 2 * buffer[j2 * q + n];
+        }
+
+        phihat[j + j2] = x;
+      }
+    }
+
+    free(buffer);
+  }
+
+  // tail loop
+  for (BIGINT j = nk - (nk % UNROLL); j < nk; ++j) {
+    FLT x = 0.0;
+
+    for (int n = 0; n < q; ++n) {
+      x += f[n] * 2 * cos(k[j] * z[n]);
+    }
+
+    phihat[j] = x;
+  }
+}
+
 void onedim_nuft_kernel(BIGINT nk, FLT *k, FLT *phihat, spread_opts opts)
 /*
   Approximates exact 1D Fourier transform of cnufftspread's real symmetric
@@ -250,19 +313,14 @@ void onedim_nuft_kernel(BIGINT nk, FLT *k, FLT *phihat, spread_opts opts)
   int q=(int)(2 + 2.0*J2);     // > pi/2 ratio.  cannot exceed MAX_NQUAD
   if (opts.debug) printf("q (# ker FT quadr pts) = %d\n",q);
   FLT f[MAX_NQUAD]; double z[2*MAX_NQUAD],w[2*MAX_NQUAD];   // glr needs double
+  FLT zf[2 * MAX_NQUAD];
   legendre_compute_glr(2*q,z,w);        // only half the nodes used, eg on (0,1)
   for (int n=0;n<q;++n) {
-    z[n] *= (FLT)J2;                    // quadr nodes for [0,J/2]
-    f[n] = J2*(FLT)w[n] * evaluate_kernel((FLT)z[n], opts);  // w/ quadr weights
+    zf[n] = J2 * z[n]; // quadr nodes for [0,J/2]
+    f[n] = J2*(FLT)w[n] * evaluate_kernel(zf[n], opts);  // w/ quadr weights
     //printf("f[%d] = %.3g\n",n,f[n]);
   }
-#pragma omp parallel for num_threads(opts.nthreads)
-  for (BIGINT j=0;j<nk;++j) {          // loop along output array
-    FLT x = 0.0;                       // register
-    for (int n=0;n<q;++n)
-      x += f[n] * 2*cos(k[j]*(FLT)z[n]);  // pos & neg freq pair.  use FLT cos!
-    phihat[j] = x;
-  }
+  onedim_cos_accumulate_omp(nk, q, k, phihat, f, zf, opts.nthreads);
 }  
 
 void deconvolveshuffle1d(int dir,FLT prefac,FLT* ker, BIGINT ms,

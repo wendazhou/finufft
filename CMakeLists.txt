@@ -6,6 +6,7 @@ list(APPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_SOURCE_DIR}/cmake")
 
 find_package(FFTW REQUIRED)
 find_package(OpenMP REQUIRED)
+find_package(MKL REQUIRED)
 
 include(FetchContent)
 
@@ -33,7 +34,7 @@ function(set_finufft_options target)
     set_property(TARGET ${target} PROPERTY CMAKE_CXX_STANDARD 14)
     target_compile_options(${target} PRIVATE $<$<CONFIG:Release,RelWithDebInfo>:-O3 -funroll-loops -march=native -fcx-limited-range>)
     target_include_directories(${target} PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/include")
-    target_link_libraries(${target} PUBLIC OpenMP::OpenMP_CXX)
+    target_link_libraries(${target} PUBLIC OpenMP::OpenMP_CXX MKL::MKL)
 endfunction()
 
 # Main finufft libraries

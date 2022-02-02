@@ -14,3 +14,7 @@ endforeach()
 
 add_executable(testutils testutils.cpp)
 target_link_libraries(testutils PRIVATE finufft)
+
+add_executable(kernel_test kernel_test.cpp)
+target_link_libraries(kernel_test PRIVATE finufft gtest_main)
+target_compile_options(kernel_test PRIVATE -march=native -mavx2 -mfma)

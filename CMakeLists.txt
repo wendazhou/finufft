@@ -10,6 +10,15 @@ find_package(MKL REQUIRED)
 
 include(FetchContent)
 
+# Install googletest from git
+FetchContent_Declare(
+    googletest
+    URL https://github.com/google/googletest/archive/609281088cfefc76f9d0ce82e1ff6c30cc3591e5.zip
+)
+set(gtest_force_shared_crt ON CACHE BOOL "" FORCE)
+FetchContent_MakeAvailable(googletest)
+
+
 # Install google benchmark from git
 set(BENCHMARK_ENABLE_TESTING OFF)
 set(BENCHMARK_ENABLE_INSTALL OFF)
@@ -70,6 +79,7 @@ add_executable(spreadbenchmark perftest/spread_benchmark.cpp)
 target_link_libraries(spreadbenchmark PRIVATE finufft random123 benchmark::benchmark_main)
 set_property(TARGET spreadbenchmark PROPERTY CMAKE_CXX_STANDARD 14)
 target_compile_options(spreadbenchmark PRIVATE $<$<CONFIG:Release,RelWithDebInfo>:-O3 -funroll-loops -march=native -fcx-limited-range>)
+target_compile_options(spreadbenchmark PRIVATE -mavx2 -mfma)
 enable_asan(spreadbenchmark)
 
 # Add tests defined in their own directory

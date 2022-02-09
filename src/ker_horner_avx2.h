@@ -6,7 +6,7 @@
 
 #include <immintrin.h>
 
-void accumulate_kernel_vec_horner_7_avx2(float* out, float x, float w_re, float w_im) {
+inline __m256 eval_kernel_vec_horner_7_avx2(float x) {
     float c0d[] = {3.9948351830487481E+03, 5.4715865608590771E+05, 5.0196413492771760E+06, 9.8206709220713247E+06, 5.0196413492771825E+06, 5.4715865608590783E+05, 3.9948351830642519E+03, 0.0000000000000000E+00};
     float c1d[] = {1.5290160332974696E+04, 8.7628248584320408E+05, 3.4421061790934438E+06, -2.6908159596373561E-10, -3.4421061790934461E+06, -8.7628248584320408E+05, -1.5290160332958067E+04, 0.0000000000000000E+00};
     float c2d[] = {2.4458227486779251E+04, 5.3904618484139396E+05, 2.4315566181017534E+05, -1.6133959371974322E+06, 2.4315566181017453E+05, 5.3904618484139396E+05, 2.4458227486795113E+04, 0.0000000000000000E+00};
@@ -43,6 +43,13 @@ void accumulate_kernel_vec_horner_7_avx2(float* out, float x, float w_re, float 
     __m256 t7 = _mm256_fmadd_ps(z, t6, c1);
     __m256 k = _mm256_fmadd_ps(z, t7, c0);
 
+    return k;
+}
+
+/** Accumulates single 8-wide single-precision vector into output pointer in complex interleaved format.
+ * 
+ */
+inline void accumulate_kernel_vec(float* out, float w_re, float w_im, __m256 k) {
     __m256 w_re_v = _mm256_set1_ps(w_re);
     __m256 w_im_v = _mm256_set1_ps(w_im);
 
@@ -65,5 +72,8 @@ void accumulate_kernel_vec_horner_7_avx2(float* out, float x, float w_re, float 
     _mm256_storeu_ps(out + 8, out_hi);
 }
 
-
+inline void accumulate_kernel_vec_horner_7_avx2(float* out, float x, float w_re, float w_im) {
+    __m256 k = eval_kernel_vec_horner_7_avx2(x);
+    accumulate_kernel_vec(out, w_re, w_im, k);
+}
 

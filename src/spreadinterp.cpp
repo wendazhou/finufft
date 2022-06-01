@@ -11,6 +11,8 @@
 #include <math.h>
 #include <stdio.h>
 
+#include "spreading.h"
+
 
 /* local NU coord fold+rescale macro: does the following affine transform to x:
      when p=true:   map [-3pi,-pi) and [-pi,pi) and [pi,3pi)    each to [0,N)
@@ -312,9 +314,30 @@ int spreadinterpSorted(BIGINT* sort_indices, BIGINT N1, BIGINT N2, BIGINT N3,
   return 0;
 }
 
+// Reworked spreadSorted entry point
+int spreadSorted(BIGINT* sort_indices, BIGINT N1, BIGINT N2, BIGINT N3,
+          FLT* data_uniform, BIGINT M, FLT *kx, FLT * ky, FLT* kz,
+          FLT* data_nonuniform, spread_opts opts, int did_sort) {
+  int ndims = ndims_from_Ns(N1,N2,N3);
+
+  switch (ndims) {
+    case 1:
+      finufft::spreading::spread<1, FLT>(sort_indices, {N1}, M, {kx}, data_nonuniform, data_uniform, opts);
+      break;
+    case 2:
+      finufft::spreading::spread<2, FLT>(sort_indices, {N1, N2}, M, {kx, ky}, data_nonuniform, data_uniform, opts);
+      break;
+    case 3:
+      finufft::spreading::spread<3, FLT>(sort_indices, {N1, N2, N3}, M, {kx, ky, kz}, data_nonuniform, data_uniform, opts);
+      break;
+  }
+
+  return 0;
+}
+
 
 // --------------------------------------------------------------------------
-int spreadSorted(BIGINT* sort_indices,BIGINT N1, BIGINT N2, BIGINT N3, 
+int spreadSortedOriginal(BIGINT* sort_indices,BIGINT N1, BIGINT N2, BIGINT N3, 
 		      FLT *data_uniform,BIGINT M, FLT *kx, FLT *ky, FLT *kz,
 		      FLT *data_nonuniform, finufft_spread_opts opts, int did_sort)
 // Spread NU pts in sorted order to a uniform grid. See spreadinterp() for doc.
@@ -397,7 +420,7 @@ int spreadSorted(BIGINT* sort_indices,BIGINT N1, BIGINT N2, BIGINT N3,
             printf("\tsubgrid: off %lld,%lld\t siz %lld,%lld\t #NU %lld\n",(long long)offset1,(long long)offset2,(long long)size1,(long long)size2,(long long)M0);
           else
             printf("\tsubgrid: off %lld,%lld,%lld\t siz %lld,%lld,%lld\t #NU %lld\n",(long long)offset1,(long long)offset2,(long long)offset3,(long long)size1,(long long)size2,(long long)size3,(long long)M0);
-	}
+	      }
         // allocate output data for this subgrid
         FLT *du0=(FLT*)malloc(sizeof(FLT)*2*size1*size2*size3); // complex
         
@@ -409,7 +432,7 @@ int spreadSorted(BIGINT* sort_indices,BIGINT N1, BIGINT N2, BIGINT N3,
             spread_subproblem_2d(offset1,offset2,size1,size2,du0,M0,kx0,ky0,dd0,opts);
           else
             spread_subproblem_3d(offset1,offset2,offset3,size1,size2,size3,du0,M0,kx0,ky0,kz0,dd0,opts);
-	}
+	      }
         
         // do the adding of subgrid to output
         if (!(opts.flags & TF_OMIT_WRITE_TO_GRID)) {

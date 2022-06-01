@@ -31,7 +31,8 @@
             "generator": "Ninja Multi-Config",
             "cacheVariables": {
                 "FINUFFT_BUILD_TESTS": "ON",
-                "FINUFFT_BUILD_EXAMPLES": "ON"
+                "FINUFFT_BUILD_EXAMPLES": "ON",
+                "CMAKE_EXPORT_COMPILE_COMMANDS": "ON"
             }
         },
         {

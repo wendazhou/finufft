@@ -953,6 +953,159 @@ int FINUFFT_SETPTS(FINUFFT_PLAN p, BIGINT nj, FLT* xj, FLT* yj, FLT* zj,
 }
 // ............ end setpts ..................................................
 
+int finufft_execute_type1(FINUFFT_PLAN p, CPX* cj, CPX* fk) {
+  if (p->type != 1) {
+    return -1;
+  }
+
+  CNTime timer; timer.start();
+  double t_sprint = 0.0, t_fft = 0.0, t_deconv = 0.0;  // accumulated timing
+
+  for (int b=0; b*p->batchSize < p->ntrans; b++) { // .....loop b over batches
+    // current batch is either batchSize, or possibly truncated if last one
+    int thisBatchSize = min(p->ntrans - b*p->batchSize, p->batchSize);
+    int bB = b*p->batchSize;         // index of vector, since batchsizes same
+    CPX* cjb = cj + bB*p->nj;        // point to batch of weights
+    CPX* fkb = fk + bB*p->N;         // point to batch of mode coeffs
+    if (p->opts.debug>1) printf("[%s] start batch %d (size %d):\n",__func__, b,thisBatchSize);
+
+    timer.restart();
+    // STEP 1: spread NU pts p->X, weights cj, to fw grid
+    spreadinterpSortedBatch(thisBatchSize, p, cjb);
+
+    // STEP 2: call the pre-planned FFT on this batch
+    timer.restart();
+    FFTW_EX(p->fftwPlan);   // if thisBatchSize<batchSize it wastes some flops
+    t_fft += timer.elapsedsec();
+    if (p->opts.debug>1)
+      printf("\tFFTW exec:\t\t%.3g s\n", timer.elapsedsec());
+
+    timer.restart();
+    // STEP 3: deconvolve (amplify) fw and shuffle to fk
+    deconvolveBatch(thisBatchSize, p, fkb);
+    t_deconv += timer.elapsedsec();
+  }                                                   // ........end b loop
+
+  if (p->opts.debug) {  // report total times in their natural order...
+    printf("[%s] done. tot spread:\t\t%.3g s\n",__func__,t_sprint);
+    printf("               tot FFT:\t\t\t\t%.3g s\n", t_fft);
+    printf("               tot deconvolve:\t\t\t%.3g s\n", t_deconv);
+  }
+
+  return 0;
+}
+
+int finufft_execute_type2(FINUFFT_PLAN p, CPX* cj, CPX* fk) {
+  if (p->type != 2) {
+    return -1;
+  }
+
+  double t_sprint = 0.0, t_fft = 0.0, t_deconv = 0.0;  // accumulated timing
+  CNTime timer; timer.start();
+
+  for (int b=0; b*p->batchSize < p->ntrans; b++) { // .....loop b over batches
+    // current batch is either batchSize, or possibly truncated if last one
+    int thisBatchSize = min(p->ntrans - b*p->batchSize, p->batchSize);
+    int bB = b*p->batchSize;         // index of vector, since batchsizes same
+    CPX* cjb = cj + bB*p->nj;        // point to batch of weights
+    CPX* fkb = fk + bB*p->N;         // point to batch of mode coeffs
+    if (p->opts.debug>1) printf("[%s] start batch %d (size %d):\n",__func__, b,thisBatchSize);
+
+    // STEP 1:  amplify Fourier coeffs fk into 0-padded fw
+    timer.restart();
+    deconvolveBatch(thisBatchSize, p, fkb);
+    t_deconv += timer.elapsedsec();
+
+    // STEP 2: call the pre-planned FFT on this batch
+    timer.restart();
+    FFTW_EX(p->fftwPlan);   // if thisBatchSize<batchSize it wastes some flops
+    t_fft += timer.elapsedsec();
+    if (p->opts.debug>1)
+      printf("\tFFTW exec:\t\t%.3g s\n", timer.elapsedsec());
+
+    // STEP 3: (varies by type)
+    timer.restart();
+    // type 2: interpolate unif fw grid to NU target pts
+    spreadinterpSortedBatch(thisBatchSize, p, cjb);
+    t_sprint += timer.elapsedsec(); 
+  }                                                   // ........end b loop
+
+  if (p->opts.debug) {
+    printf("[%s] done. tot deconvolve:\t\t%.3g s\n",__func__,t_deconv);
+    printf("               tot FFT:\t\t\t\t%.3g s\n", t_fft);
+    printf("               tot interp:\t\t\t%.3g s\n",t_sprint);
+  }
+
+  return 0;
+}
+
+int finufft_execute_type3(FINUFFT_PLAN p, CPX* cj, CPX* fk) {
+  if (p->type != 3) {
+    return -1;
+  }
+
+  double t_pre=0.0, t_spr=0.0, t_t2=0.0, t_deconv=0.0;  // accumulated timings
+  CNTime timer; timer.start();
+
+  if (p->opts.debug)
+    printf("[%s t3] start ntrans=%d (%d batches, bsize=%d)...\n",__func__,p->ntrans, p->nbatch, p->batchSize);
+
+  for (int b=0; b*p->batchSize < p->ntrans; b++) { // .....loop b over batches
+    // batching and pointers to this batch, identical to t1,2 above...
+    int thisBatchSize = min(p->ntrans - b*p->batchSize, p->batchSize);
+    int bB = b*p->batchSize;
+    CPX* cjb = cj + bB*p->nj;           // batch of input strengths
+    CPX* fkb = fk + bB*p->nk;           // batch of output strengths
+    if (p->opts.debug>1) printf("[%s t3] start batch %d (size %d):\n",__func__,b,thisBatchSize);
+    
+    // STEP 0: pre-phase (possibly) the c_j input strengths into c'_j batch...
+    timer.restart();
+#pragma omp parallel for num_threads(p->opts.nthreads)   // or p->batchSize?
+    for (int i=0; i<thisBatchSize; i++) {
+      BIGINT ioff = i*p->nj;
+      for (BIGINT j=0;j<p->nj;++j)
+        p->CpBatch[ioff+j] = p->prephase[j] * cjb[ioff+j];
+    }
+    t_pre += timer.elapsedsec();
+    
+    // STEP 1: spread c'_j batch (x'_j NU pts) into fw batch grid...
+    timer.restart();
+    p->spopts.spread_direction = 1;                         // spread
+    spreadinterpSortedBatch(thisBatchSize, p, p->CpBatch);  // p->X are primed
+    t_spr += timer.elapsedsec();
+
+    //for (int j=0;j<p->nf1;++j) printf("fw[%d]=%.3g+%.3gi\n",j,p->fwBatch[j][0],p->fwBatch[j][1]);  // debug
+  
+    // STEP 2: type 2 NUFFT from fw batch to user output fk array batch...
+    timer.restart();
+    // illegal possible shrink of ntrans *after* plan for smaller last batch:
+    p->innerT2plan->ntrans = thisBatchSize;      // do not try this at home!
+    /* (alarming that FFTW not shrunk, but safe, because t2's fwBatch array
+        still the same size, as Andrea explained; just wastes a few flops) */
+    FINUFFT_EXECUTE(p->innerT2plan, fkb, (CPX*)(p->fwBatch));
+    t_t2 += timer.elapsedsec();
+
+    // STEP 3: apply deconvolve (precomputed 1/phiHat(targ_k), phasing too)...
+    timer.restart();
+#pragma omp parallel for num_threads(p->opts.nthreads)
+    for (int i=0; i<thisBatchSize; i++) {
+      BIGINT ioff = i*p->nk;
+      for (BIGINT k=0;k<p->nk;++k)
+        fkb[ioff+k] *= p->deconv[k];
+    }
+    t_deconv += timer.elapsedsec();
+  }                                                   // ........end b loop
+
+  if (p->opts.debug) {  // report total times in their natural order...
+    printf("[%s t3] done. tot prephase:\t\t%.3g s\n",__func__,t_pre);
+    printf("                  tot spread:\t\t\t%.3g s\n",t_spr);
+    printf("                  tot type 2:\t\t\t%.3g s\n", t_t2);
+    printf("                  tot deconvolve:\t\t%.3g s\n", t_deconv);
+  }
+
+  return 0;
+}
+
 
 // EEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEE
 int FINUFFT_EXECUTE(FINUFFT_PLAN p, CPX* cj, CPX* fk){
@@ -969,128 +1122,17 @@ int FINUFFT_EXECUTE(FINUFFT_PLAN p, CPX* cj, CPX* fk){
    Barnett 5/20/20, based on Malleo 2019.
 */
   CNTime timer; timer.start();
-  
-  if (p->type!=3){ // --------------------- TYPE 1,2 EXEC ------------------
-  
-    double t_sprint = 0.0, t_fft = 0.0, t_deconv = 0.0;  // accumulated timing
-    if (p->opts.debug)
-      printf("[%s] start ntrans=%d (%d batches, bsize=%d)...\n", __func__, p->ntrans, p->nbatch, p->batchSize);
-    
-    for (int b=0; b*p->batchSize < p->ntrans; b++) { // .....loop b over batches
 
-      // current batch is either batchSize, or possibly truncated if last one
-      int thisBatchSize = min(p->ntrans - b*p->batchSize, p->batchSize);
-      int bB = b*p->batchSize;         // index of vector, since batchsizes same
-      CPX* cjb = cj + bB*p->nj;        // point to batch of weights
-      CPX* fkb = fk + bB*p->N;         // point to batch of mode coeffs
-      if (p->opts.debug>1) printf("[%s] start batch %d (size %d):\n",__func__, b,thisBatchSize);
-      
-      // STEP 1: (varies by type)
-      timer.restart();
-      if (p->type == 1) {  // type 1: spread NU pts p->X, weights cj, to fw grid
-        spreadinterpSortedBatch(thisBatchSize, p, cjb);
-        t_sprint += timer.elapsedsec();
-      } else {          //  type 2: amplify Fourier coeffs fk into 0-padded fw
-        deconvolveBatch(thisBatchSize, p, fkb);
-        t_deconv += timer.elapsedsec();
-      }
-             
-      // STEP 2: call the pre-planned FFT on this batch
-      timer.restart();
-      FFTW_EX(p->fftwPlan);   // if thisBatchSize<batchSize it wastes some flops
-      t_fft += timer.elapsedsec();
-      if (p->opts.debug>1)
-        printf("\tFFTW exec:\t\t%.3g s\n", timer.elapsedsec());
-      
-      // STEP 3: (varies by type)
-      timer.restart();        
-      if (p->type == 1) {   // type 1: deconvolve (amplify) fw and shuffle to fk
-        deconvolveBatch(thisBatchSize, p, fkb);
-        t_deconv += timer.elapsedsec();
-      } else {          // type 2: interpolate unif fw grid to NU target pts
-        spreadinterpSortedBatch(thisBatchSize, p, cjb);
-        t_sprint += timer.elapsedsec(); 
-      }
-    }                                                   // ........end b loop
-    
-    if (p->opts.debug) {  // report total times in their natural order...
-      if(p->type == 1) {
-        printf("[%s] done. tot spread:\t\t%.3g s\n",__func__,t_sprint);
-        printf("               tot FFT:\t\t\t\t%.3g s\n", t_fft);
-        printf("               tot deconvolve:\t\t\t%.3g s\n", t_deconv);
-      } else {
-        printf("[%s] done. tot deconvolve:\t\t%.3g s\n",__func__,t_deconv);
-        printf("               tot FFT:\t\t\t\t%.3g s\n", t_fft);
-        printf("               tot interp:\t\t\t%.3g s\n",t_sprint);
-      }
-    }
+  switch (p->type) {
+  case 1:
+    return finufft_execute_type1(p, cj, fk);
+  case 2:
+    return finufft_execute_type2(p, cj, fk);
+  case 3:
+    return finufft_execute_type3(p, cj, fk);
+  default:
+    return -1;
   }
-
-  else {  // ----------------------------- TYPE 3 EXEC ---------------------
-
-    //for (BIGINT j=0;j<10;++j) printf("\tcj[%ld]=%.15g+%.15gi\n",(long int)j,(double)real(cj[j]),(double)imag(cj[j]));  // debug
-    
-    double t_pre=0.0, t_spr=0.0, t_t2=0.0, t_deconv=0.0;  // accumulated timings
-    if (p->opts.debug)
-      printf("[%s t3] start ntrans=%d (%d batches, bsize=%d)...\n",__func__,p->ntrans, p->nbatch, p->batchSize);
-
-    for (int b=0; b*p->batchSize < p->ntrans; b++) { // .....loop b over batches
-
-      // batching and pointers to this batch, identical to t1,2 above...
-      int thisBatchSize = min(p->ntrans - b*p->batchSize, p->batchSize);
-      int bB = b*p->batchSize;
-      CPX* cjb = cj + bB*p->nj;           // batch of input strengths
-      CPX* fkb = fk + bB*p->nk;           // batch of output strengths
-      if (p->opts.debug>1) printf("[%s t3] start batch %d (size %d):\n",__func__,b,thisBatchSize);
-      
-      // STEP 0: pre-phase (possibly) the c_j input strengths into c'_j batch...
-      timer.restart();
-#pragma omp parallel for num_threads(p->opts.nthreads)   // or p->batchSize?
-      for (int i=0; i<thisBatchSize; i++) {
-        BIGINT ioff = i*p->nj;
-        for (BIGINT j=0;j<p->nj;++j)
-          p->CpBatch[ioff+j] = p->prephase[j] * cjb[ioff+j];
-      }
-      t_pre += timer.elapsedsec(); 
-      
-      // STEP 1: spread c'_j batch (x'_j NU pts) into fw batch grid...
-      timer.restart();
-      p->spopts.spread_direction = 1;                         // spread
-      spreadinterpSortedBatch(thisBatchSize, p, p->CpBatch);  // p->X are primed
-      t_spr += timer.elapsedsec();
-
-      //for (int j=0;j<p->nf1;++j) printf("fw[%d]=%.3g+%.3gi\n",j,p->fwBatch[j][0],p->fwBatch[j][1]);  // debug
-   
-      // STEP 2: type 2 NUFFT from fw batch to user output fk array batch...
-      timer.restart();
-      // illegal possible shrink of ntrans *after* plan for smaller last batch:
-      p->innerT2plan->ntrans = thisBatchSize;      // do not try this at home!
-      /* (alarming that FFTW not shrunk, but safe, because t2's fwBatch array
-         still the same size, as Andrea explained; just wastes a few flops) */
-      FINUFFT_EXECUTE(p->innerT2plan, fkb, (CPX*)(p->fwBatch));
-      t_t2 += timer.elapsedsec();
-
-      // STEP 3: apply deconvolve (precomputed 1/phiHat(targ_k), phasing too)...
-      timer.restart();
-#pragma omp parallel for num_threads(p->opts.nthreads)
-      for (int i=0; i<thisBatchSize; i++) {
-        BIGINT ioff = i*p->nk;
-        for (BIGINT k=0;k<p->nk;++k)
-          fkb[ioff+k] *= p->deconv[k];
-      }
-      t_deconv += timer.elapsedsec();
-    }                                                   // ........end b loop
-
-    if (p->opts.debug) {  // report total times in their natural order...
-      printf("[%s t3] done. tot prephase:\t\t%.3g s\n",__func__,t_pre);
-      printf("                  tot spread:\t\t\t%.3g s\n",t_spr);
-      printf("                  tot type 2:\t\t\t%.3g s\n", t_t2);
-      printf("                  tot deconvolve:\t\t%.3g s\n", t_deconv);
-    }    
-  }
-  //for (BIGINT k=0;k<10;++k) printf("\tfk[%ld]=%.15g+%.15gi\n",(long int)k,(double)real(fk[k]),(double)imag(fk[k]));  // debug
-  
-  return 0; 
 }
 
 

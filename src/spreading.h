@@ -58,6 +58,20 @@ template <std::size_t Dim> struct grid_specification {
     }
 };
 
+/** This structure represents the output information of the spreading operation.
+ *
+ * It specifies a set of non-uniform points, by their coordinates and their
+ * complex values. Additionally, it specifies an indirect index which allows
+ * for the points to be sorted.
+ *
+ */
+template <std::size_t Dim, typename T> struct spread_problem_input {
+    std::size_t num_points;
+    std::array<T const *, Dim> coordinates;
+    T const *weights;
+    std::int64_t *sorted_idx;
+};
+
 /** Computes subgrid offsets and extents large enough to contain all locations.
  *
  * We compute a rectangular subgrid specified as offsets and sizes which is large
@@ -89,20 +103,32 @@ compute_subgrid(std::size_t M, std::array<T const *, Dim> const &coordinates, in
     return {offsets, sizes};
 }
 
+/** Utility deleter which deletes memory allocated with an aligned new operation.
+ *
+ */
 template <typename T> struct AlignedDeleter {
     std::size_t alignment;
 
-    void operator()(T *ptr) const noexcept { ::operator delete(ptr, std::align_val_t(this->alignment)); }
+    void operator()(T *ptr) const noexcept {
+        ::operator delete(ptr, std::align_val_t(this->alignment));
+    }
 };
 
 template <typename T> struct AlignedDeleter<T[]> {
     std::size_t alignment;
 
-    void operator()(T *ptr) const noexcept { ::operator delete[](ptr, std::align_val_t(this->alignment)); }
+    void operator()(T *ptr) const noexcept {
+        ::operator delete[](ptr, std::align_val_t(this->alignment));
+    }
 };
 
 template <typename T> using aligned_unique_ptr = std::unique_ptr<T, AlignedDeleter<T>>;
 
+/** Allocates an array of the given size with specified alignment (in bytes).
+ *
+ * @param size Number of elements in the array.
+ * @param alignment Alignment of the array in bytes. Must be a power of 2.
+ */
 template <typename T>
 aligned_unique_ptr<T[]> allocate_aligned_array(std::size_t size, std::size_t alignment) {
     std::size_t size_bytes = size * sizeof(T);
@@ -124,6 +150,12 @@ allocate_aligned_arrays(std::size_t size, std::size_t alignment) {
     return std::move(arrays);
 }
 
+/** Input for the spreading sub-operation.
+ *
+ * This struct is used to track the inputs to the contiguous spreading memory operation.
+ * It captures the wrapped and rescaled coordinates, as well as the complex weights.
+ *
+ */
 template <std::size_t Dim, typename T> struct SpreaderMemoryInput {
     std::size_t num_points;
     std::array<aligned_unique_ptr<T[]>, Dim> coordinates;
@@ -172,11 +204,19 @@ template <std::size_t Dim, typename T> struct FoldRescaleIdentity {
     }
 };
 
+/** Collect non-uniform points by index into contiguous array, and rescales coordinates.
+ *
+ * To prepare for the spreading operation, non-uniform points are collected according
+ * to the indirect sorting array.
+ * Additionally, the coordinates are processed to a normalized format.
+ *
+ */
 template <std::size_t Dim, typename T, typename IdxT, typename RescaleFn>
 void gather_and_fold(
     SpreaderMemoryInput<Dim, T> const &memory, std::array<std::int64_t, Dim> const &sizes,
     std::size_t num_points, std::array<T const *, Dim> const &coordinates, T const *weights,
     IdxT const *sort_indices, RescaleFn &&fold_rescale) {
+
     for (std::size_t i = 0; i < num_points; ++i) {
         auto idx = sort_indices[i];
 
@@ -191,7 +231,8 @@ void gather_and_fold(
 
 template <typename T>
 void spread_subproblem(
-    SpreaderMemoryInput<1, T> const &input, grid_specification<1> const& grid, T *output, const spread_opts &opts) {
+    SpreaderMemoryInput<1, T> const &input, grid_specification<1> const &grid, T *output,
+    const spread_opts &opts) {
     finufft::spreadinterp::spread_subproblem_1d(
         grid.offsets[0],
         grid.extents[0],
@@ -204,7 +245,8 @@ void spread_subproblem(
 
 template <typename T>
 void spread_subproblem(
-    SpreaderMemoryInput<2, T> const &input, grid_specification<2> const& grid, T *output, const spread_opts &opts) {
+    SpreaderMemoryInput<2, T> const &input, grid_specification<2> const &grid, T *output,
+    const spread_opts &opts) {
     finufft::spreadinterp::spread_subproblem_2d(
         grid.offsets[0],
         grid.offsets[1],
@@ -220,7 +262,8 @@ void spread_subproblem(
 
 template <typename T>
 void spread_subproblem(
-    SpreaderMemoryInput<3, T> const &input, grid_specification<3> const& grid, T *output, const spread_opts &opts) {
+    SpreaderMemoryInput<3, T> const &input, grid_specification<3> const &grid, T *output,
+    const spread_opts &opts) {
     finufft::spreadinterp::spread_subproblem_3d(
         grid.offsets[0],
         grid.offsets[1],
@@ -293,8 +336,18 @@ void add_wrapped_subgrid(
         const_cast<T *>(input));
 }
 
+/** This structure represents weights distributed on a regular grid.
+ * 
+ */
+template <std::size_t Dim, typename T> struct SubgridData {
+    //! Array containing the weights in complex interleaved format.
+    aligned_unique_ptr<T[]> weights;
+    //! Description of the subgrid.
+    grid_specification<Dim> grid;
+};
+
 template <std::size_t Dim, typename T, typename IdxT>
-inline void spread_block(
+inline SubgridData<Dim, T> spread_block(
     IdxT const *sort_indices, std::array<std::int64_t, Dim> const &sizes, std::size_t num_points,
     std::array<T const *, Dim> const &coordinates, T const *weights, T *output,
     const spread_opts &opts, std::mutex &reduction_mutex) {
@@ -329,11 +382,7 @@ inline void spread_block(
     auto spread_weights = allocate_aligned_array<T>(output_size, 64);
 
     spread_subproblem(memory, subgrid, spread_weights.get(), opts);
-
-    {
-        std::scoped_lock lock(reduction_mutex);
-        add_wrapped_subgrid(spread_weights.get(), output, subgrid.num_elements(), subgrid, sizes);
-    }
+    return {std::move(spread_weights), std::move(subgrid)};
 }
 
 template <std::size_t Dim, typename T, typename IdxT>
@@ -371,7 +420,7 @@ inline void spread(
     for (int isub = 0; isub < nb; isub++) {                     // Main loop through the subproblems
         std::size_t num_points_block =
             breaks[isub + 1] - breaks[isub]; // # NU pts in this subproblem
-        spread_block(
+        auto block = spread_block(
             sort_indices + breaks[isub],
             sizes,
             num_points_block,
@@ -380,6 +429,13 @@ inline void spread(
             output,
             opts,
             reduction_mutex);
+
+        {
+            // Simple locked reduction strategy for now
+            std::scoped_lock lock(reduction_mutex);
+            add_wrapped_subgrid(
+                block.weights.get(), output, block.grid.num_elements(), block.grid, sizes);
+        }
     }
 }
 

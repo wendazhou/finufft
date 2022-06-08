@@ -58,6 +58,23 @@ template <std::size_t Dim> struct grid_specification {
     }
 };
 
+/** This structure represents a collection of non-uniform points, and their associated complex
+ * weights.
+ *
+ * @tparam Dim The dimension of the points.
+ * @tparam T The numerical type used to store the points and weights. Typically float or double.
+ * @tparam Holder A template functor which produces the type used to hold the coordinates and
+ * weights. Defaults to a plain pointer, but can also be a smart pointer to own the memory if
+ * desired.
+ *
+ */
+template <std::size_t Dim, typename T, template <typename> typename Holder = std::add_pointer_t>
+struct nu_point_collection {
+    std::size_t num_points;
+    std::array<Holder<T>, Dim> coordinates;
+    Holder<T> weights;
+};
+
 /** This structure represents the output information of the spreading operation.
  *
  * It specifies a set of non-uniform points, by their coordinates and their
@@ -65,11 +82,9 @@ template <std::size_t Dim> struct grid_specification {
  * for the points to be sorted.
  *
  */
-template <std::size_t Dim, typename T> struct spread_problem_input {
-    std::size_t num_points;
-    std::array<T const *, Dim> coordinates;
-    T const *weights;
-    std::int64_t *sorted_idx;
+template <std::size_t Dim, typename T>
+struct spread_problem_input : nu_point_collection<Dim, const T> {
+    std::int64_t const *sorted_idx;
 };
 
 /** Computes subgrid offsets and extents large enough to contain all locations.
@@ -150,27 +165,28 @@ allocate_aligned_arrays(std::size_t size, std::size_t alignment) {
     return std::move(arrays);
 }
 
+template <typename T> using aligned_unique_array = aligned_unique_ptr<T[]>;
+
 /** Input for the spreading sub-operation.
  *
  * This struct is used to track the inputs to the contiguous spreading memory operation.
  * It captures the wrapped and rescaled coordinates, as well as the complex weights.
  *
  */
-template <std::size_t Dim, typename T> struct SpreaderMemoryInput {
-    std::size_t num_points;
-    std::array<aligned_unique_ptr<T[]>, Dim> coordinates;
-    aligned_unique_ptr<T[]> weights;
-
+template <std::size_t Dim, typename T>
+struct SpreaderMemoryInput : nu_point_collection<Dim, T, aligned_unique_array> {
     SpreaderMemoryInput(std::size_t num_points)
-        : num_points(num_points), coordinates(allocate_aligned_arrays<Dim, T>(num_points, 64)),
-          weights(allocate_aligned_array<T>(2 * num_points, 64)) {}
+        : nu_point_collection<Dim, T, aligned_unique_array>(
+              {num_points,
+               allocate_aligned_arrays<Dim, T>(num_points, 64),
+               allocate_aligned_array<T>(2 * num_points, 64)}) {}
     SpreaderMemoryInput(SpreaderMemoryInput const &) = delete;
     SpreaderMemoryInput(SpreaderMemoryInput &&) = default;
 
     std::array<T const *, Dim> get_coordinates() const {
         std::array<T const *, Dim> result;
         for (int i = 0; i < Dim; ++i) {
-            result[i] = coordinates[i].get();
+            result[i] = this->coordinates[i].get();
         }
         return result;
     }
@@ -213,19 +229,18 @@ template <std::size_t Dim, typename T> struct FoldRescaleIdentity {
  */
 template <std::size_t Dim, typename T, typename IdxT, typename RescaleFn>
 void gather_and_fold(
-    SpreaderMemoryInput<Dim, T> const &memory, std::array<std::int64_t, Dim> const &sizes,
-    std::size_t num_points, std::array<T const *, Dim> const &coordinates, T const *weights,
+    SpreaderMemoryInput<Dim, T> const &memory, nu_point_collection<Dim, const T> const &input,
     IdxT const *sort_indices, RescaleFn &&fold_rescale) {
 
-    for (std::size_t i = 0; i < num_points; ++i) {
+    for (std::size_t i = 0; i < input.num_points; ++i) {
         auto idx = sort_indices[i];
 
         for (int j = 0; j < Dim; ++j) {
-            memory.coordinates[j][i] = fold_rescale(coordinates[j][idx], j);
+            memory.coordinates[j][i] = fold_rescale(input.coordinates[j][idx], j);
         }
 
-        memory.weights[2 * i] = weights[2 * idx];
-        memory.weights[2 * i + 1] = weights[2 * idx + 1];
+        memory.weights[2 * i] = input.weights[2 * idx];
+        memory.weights[2 * i + 1] = input.weights[2 * idx + 1];
     }
 }
 
@@ -282,7 +297,7 @@ void spread_subproblem(
 
 template <typename T>
 void add_wrapped_subgrid(
-    T const *input, T *output, size_t num_points, grid_specification<1> const &subgrid,
+    T const *input, T *output, grid_specification<1> const &subgrid,
     std::array<std::int64_t, 1> const &output_grid) {
     finufft::spreadinterp::add_wrapped_subgrid(
         subgrid.offsets[0],
@@ -300,7 +315,7 @@ void add_wrapped_subgrid(
 
 template <typename T>
 void add_wrapped_subgrid(
-    T const *input, T *output, size_t num_points, grid_specification<2> const &subgrid,
+    T const *input, T *output, grid_specification<2> const &subgrid,
     std::array<std::int64_t, 2> const &output_grid) {
 
     finufft::spreadinterp::add_wrapped_subgrid(
@@ -319,7 +334,7 @@ void add_wrapped_subgrid(
 
 template <typename T>
 void add_wrapped_subgrid(
-    T const *input, T *output, size_t num_points, grid_specification<3> const &subgrid,
+    T const *input, T *output, grid_specification<3> const &subgrid,
     std::array<std::int64_t, 3> const &output_grid) {
 
     finufft::spreadinterp::add_wrapped_subgrid(
@@ -337,7 +352,7 @@ void add_wrapped_subgrid(
 }
 
 /** This structure represents weights distributed on a regular grid.
- * 
+ *
  */
 template <std::size_t Dim, typename T> struct SubgridData {
     //! Array containing the weights in complex interleaved format.
@@ -360,19 +375,13 @@ inline SubgridData<Dim, T> spread_block(
     if (opts.pirange) {
         gather_and_fold(
             memory,
-            sizes,
-            num_points,
-            coordinates,
-            weights,
+            {num_points, coordinates, weights},
             sort_indices,
             FoldRescalePi<Dim, T>{sizes_floating});
     } else {
         gather_and_fold(
             memory,
-            sizes,
-            num_points,
-            coordinates,
-            weights,
+            {num_points, coordinates, weights},
             sort_indices,
             FoldRescaleIdentity<Dim, T>{sizes_floating});
     }
@@ -434,7 +443,7 @@ inline void spread(
             // Simple locked reduction strategy for now
             std::scoped_lock lock(reduction_mutex);
             add_wrapped_subgrid(
-                block.weights.get(), output, block.grid.num_elements(), block.grid, sizes);
+                block.weights.get(), output, block.grid, sizes);
         }
     }
 }

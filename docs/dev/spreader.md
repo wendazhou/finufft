@@ -21,6 +21,13 @@ flowchart TB
 ```
 We detail the API for each of the separate components below.
 
+```diff
++ TODO: the current API does not support correctly specifying strided formats for multi-dimensional inputs
++    which is important for better performance. This will be done in a second stage.
++ TODO: in many cases, functions may need to specify their requirement in terms of padding / alignment.
++    Specific APIs should also be defined for such.
+```
+
 ## Input
 
 The input is given in the following fashion
@@ -64,6 +71,10 @@ void gather_and_fold(nu_point_collection<Dim, T>& output, nu_point_collection<Di
 This operation rasterizes the given array of non-uniform points into an appropriately sized and
 padded subgrid by evaluating the kernel at the non-uniform points.
 This function implements the main computational loop of the spreading procedure.
+Note that for best efficiency, this function may request the data to be padded and aligned to specific multiples,
+including:
+1. Ensuring sufficient padding on the sides of the offset grid
+2. Ensuring that the number of non-uniform points is divisible by a given factor
 
 The function has the following signature:
 ```c++

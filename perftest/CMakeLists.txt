@@ -12,3 +12,7 @@ foreach(TEST ${PERFTESTS})
   enable_asan(${TEST})
   enable_asan(${TEST}f)
 endforeach()
+
+
+add_executable(spread_gather_perf spread_gather_perf.cpp)
+target_link_libraries(spread_gather_perf PRIVATE finufft benchmark::benchmark_main)

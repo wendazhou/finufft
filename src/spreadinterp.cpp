@@ -317,7 +317,7 @@ int spreadinterpSorted(BIGINT* sort_indices, BIGINT N1, BIGINT N2, BIGINT N3,
 // Reworked spreadSorted entry point
 int spreadSorted(BIGINT* sort_indices, BIGINT N1, BIGINT N2, BIGINT N3,
           FLT* data_uniform, BIGINT M, FLT *kx, FLT * ky, FLT* kz,
-          FLT* data_nonuniform, spread_opts opts, int did_sort) {
+          FLT* data_nonuniform, finufft_spread_opts opts, int did_sort) {
   int ndims = ndims_from_Ns(N1,N2,N3);
 
   switch (ndims) {

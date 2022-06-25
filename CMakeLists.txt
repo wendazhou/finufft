@@ -10,6 +10,21 @@ if(CMAKE_CXX_COMPILER_ID IN_LIST GNU_LIKE_FRONTENDS)
 endif()
 
 include(CTest)
+include(FetchContent)
+
+set(gtest_force_shared_crt ON CACHE BOOL "" FORCE)
+FetchContent_Declare(
+    googletest
+    URL https://github.com/google/googletest/archive/refs/tags/release-1.12.0.tar.gz
+)
+
+set(BENCHMARK_ENABLE_TESTING OFF)
+set(BENCHMARK_ENABLE_INSTALL OFF)
+FetchContent_Declare(
+    benchmark
+    URL https://github.com/google/benchmark/archive/refs/tags/v1.6.1.tar.gz
+)
+
 
 set(FINUFFT_ARCH_FLAGS "-march=native" CACHE STRING "Compiler flags for specifying target architecture.")
 set(FINUFFT_FFTW_SUFFIX "OpenMP" CACHE STRING "Suffix for FFTW libraries (e.g. OpenMP, Threads etc.)")
@@ -116,6 +131,11 @@ target_include_directories(finufft_static PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/in
 
 # Add tests defined in their own directory
 if(BUILD_TESTING AND FINUFFT_BUILD_TESTS)
+
+# We also fetch googletest and googlebenchmark
+FetchContent_MakeAvailable(googletest)
+FetchContent_MakeAvailable(benchmark)
+
 add_subdirectory(test)
 add_subdirectory(perftest)
 endif()

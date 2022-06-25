@@ -58,3 +58,9 @@ endfunction()
 
 add_tests_with_prec(float 1e-5 2e-4 f)
 add_tests_with_prec(double 1e-12 1e-11 "")
+
+
+# Now add gtest-based tests
+add_executable(spread_gather_test spread_gather_test.cpp)
+target_link_libraries(spread_gather_test PRIVATE finufft gtest_main)
+enable_asan(spread_gather_test)

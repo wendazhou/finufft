@@ -64,3 +64,7 @@ add_tests_with_prec(double 1e-12 1e-11 "")
 add_executable(spread_gather_test spread_gather_test.cpp)
 target_link_libraries(spread_gather_test PRIVATE finufft gtest_main gmock)
 enable_asan(spread_gather_test)
+
+add_executable(spread_subproblem_test spread_subproblem_test.cpp)
+target_link_libraries(spread_subproblem_test PRIVATE finufft gtest_main gmock)
+enable_asan(spread_subproblem_test)

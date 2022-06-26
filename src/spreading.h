@@ -16,6 +16,7 @@
 #include <finufft/defs.h>
 #include <finufft_spread_opts.h>
 
+// Forward declaration of reference implementations.
 namespace finufft {
 namespace spreadinterp {
 void spread_subproblem_1d(
@@ -50,6 +51,15 @@ void add_wrapped_subgrid(
 
 namespace finufft {
 namespace spreading {
+
+/** This structure collects the parameters of the kernel to use when spreading.
+ *
+ */
+struct kernel_specification {
+    double es_c;
+    double es_beta;
+    int width;
+};
 
 template <std::size_t Dim> struct grid_specification {
     std::array<std::int64_t, Dim> offsets;
@@ -202,8 +212,7 @@ struct SpreaderMemoryInput : nu_point_collection<Dim, aligned_unique_array<T>> {
     }
 };
 
-template<typename T>
-struct FoldRescalePi {
+template <typename T> struct FoldRescalePi {
     T operator()(T x, T extent) const {
         if (x < -M_PI) {
             x += M_2PI;
@@ -215,8 +224,7 @@ struct FoldRescalePi {
     }
 };
 
-template<typename T>
-struct FoldRescaleIdentity {
+template <typename T> struct FoldRescaleIdentity {
     T operator()(T x, T extent) const {
         if (x < 0) {
             x += extent;
@@ -282,10 +290,57 @@ void gather_and_fold(
     }
 }
 
+/** Construct legacy options from kernel specification.
+ *
+ * In order to call reference implementation, we construct a legacy options struct
+ * from the bare kernel specification. Note that the reverse engineering is not unique,
+ * and depends on the specific implementation of setup_spreader.
+ *
+ */
+inline finufft_spread_opts construct_opts_from_kernel(const kernel_specification &kernel) {
+    finufft_spread_opts opts;
+
+    opts.nspread = kernel.width;
+    opts.kerevalmeth = 1;
+    opts.kerpad = 1;
+    opts.ES_beta = kernel.es_beta;
+    opts.ES_c = kernel.es_c;
+    opts.ES_halfwidth = (double)kernel.width / 2.0;
+
+    // Reverse engineer upsampling factor from design in `setup_spreader`
+    // This is necessary to call reference implementation, despite the fact
+    // that the kernel is fully specified through the beta, c, and width parameters.
+    double beta_over_ns = kernel.es_beta / kernel.width;
+
+    // Baseline value of beta_over_ns for upsampling factor of 2
+    double baseline_beta_over_ns = 2.3;
+    switch (kernel.width) {
+    case 2:
+        baseline_beta_over_ns = 2.2;
+    case 3:
+        baseline_beta_over_ns = 2.26;
+    case 4:
+        baseline_beta_over_ns = 2.38;
+    }
+
+    if (std::abs(beta_over_ns - baseline_beta_over_ns) < 1e-6) {
+        // Special-cased for upsampling factor of 2
+        opts.upsampfac = 2;
+    } else {
+        // General formula, round obtained value in order to produce exact match if necessary.
+        double upsamp_factor = 0.5 / (1 - beta_over_ns / (0.97 * M_PI));
+        opts.upsampfac = std::round(upsamp_factor * 1000) / 1000;
+    }
+
+    return opts;
+}
+
 template <typename T>
 void spread_subproblem(
     SpreaderMemoryInput<1, T> const &input, grid_specification<1> const &grid, T *output,
-    const finufft_spread_opts &opts) {
+    const kernel_specification &kernel) {
+
+    auto opts = construct_opts_from_kernel(kernel);
     finufft::spreadinterp::spread_subproblem_1d(
         grid.offsets[0],
         grid.extents[0],
@@ -299,7 +354,9 @@ void spread_subproblem(
 template <typename T>
 void spread_subproblem(
     SpreaderMemoryInput<2, T> const &input, grid_specification<2> const &grid, T *output,
-    const finufft_spread_opts &opts) {
+    const kernel_specification &kernel) {
+
+    auto opts = construct_opts_from_kernel(kernel);
     finufft::spreadinterp::spread_subproblem_2d(
         grid.offsets[0],
         grid.offsets[1],
@@ -316,7 +373,9 @@ void spread_subproblem(
 template <typename T>
 void spread_subproblem(
     SpreaderMemoryInput<3, T> const &input, grid_specification<3> const &grid, T *output,
-    const finufft_spread_opts &opts) {
+    const kernel_specification &kernel) {
+
+    auto opts = construct_opts_from_kernel(kernel);
     finufft::spreadinterp::spread_subproblem_3d(
         grid.offsets[0],
         grid.offsets[1],
@@ -418,7 +477,7 @@ inline SubgridData<Dim, T> spread_block(
     auto output_size = 2 * subgrid.num_elements();
     auto spread_weights = allocate_aligned_array<T>(output_size, 64);
 
-    spread_subproblem(memory, subgrid, spread_weights.get(), opts);
+    spread_subproblem(memory, subgrid, spread_weights.get(), {opts.ES_c, opts.ES_beta, opts.nspread});
     return {std::move(spread_weights), std::move(subgrid)};
 }
 

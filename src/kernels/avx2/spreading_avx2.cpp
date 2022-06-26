@@ -9,22 +9,42 @@ namespace spreading {
 
 namespace {
 
+/** Branchless implementation of folding.
+ * 
+ * Implements folding by ensuring that data one period to the right
+ * or to the left of the main period is folded back.
+ * 
+ * Our implementation is branchless to enable vectorization, and
+ * computes both the left-shifted and right-shifted versions of the
+ * input data.
+ * Those versions are then masked according to whether they are
+ * to the left, within, or to the right of the main period, with
+ * only the correct version being not zeroed.
+ * The final output is assembled by summing over all the versions
+ * after they have been masked.
+ * 
+ */
 struct FoldRescaleIdentityAvx2Float : FoldRescaleIdentity<float> {
     using FoldRescaleIdentity<float>::operator();
 
     void operator()(__m256 &v, __m256 const &extent) const {
+        // Compute masks to determine whether folding is needed
         auto mask_smaller = _mm256_cmp_ps(v, _mm256_setzero_ps(), _CMP_LT_OQ);
         auto mask_larger = _mm256_cmp_ps(v, extent, _CMP_GT_OQ);
 
+        // Compute offset versions of the input data
         auto one_left = _mm256_sub_ps(v, extent);
         auto one_right = _mm256_add_ps(v, extent);
 
+        // Mask shifted versions according to comparison
         one_left = _mm256_and_ps(one_left, mask_larger);
         one_right = _mm256_and_ps(one_right, mask_smaller);
 
+        // Mask original versions according to comparison
         v = _mm256_andnot_ps(mask_smaller, v);
         v = _mm256_andnot_ps(mask_larger, v);
 
+        // Assemble output by summing over all versions
         v = _mm256_add_ps(v, one_right);
         v = _mm256_add_ps(v, one_left);
     }

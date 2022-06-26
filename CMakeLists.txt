@@ -129,6 +129,24 @@ set_finufft_options(finufft)
 target_link_libraries(finufft_static PUBLIC finufft_f32 finufft_f64 m)
 target_include_directories(finufft_static PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/include")
 
+
+# Utility function to define a new set of objects for the given kernels
+# These need to be compiled with architecture flags which vary across the different libraries,
+# hence the need to define separate object libraries for each of them.
+function(add_finufft_kernel target)
+    cmake_parse_arguments(PARSE_ARGV 1 FINUFFT_KERNEL "" "" "SOURCES;FLAGS")
+
+    add_library(${target} OBJECT ${FINUFFT_KERNEL_SOURCES})
+    set_finufft_options(${target})
+    target_compile_options(${target} PRIVATE ${FINUFFT_KERNEL_FLAGS})
+    target_link_libraries(finufft PUBLIC ${target})
+    enable_asan(${target})
+endfunction()
+
+
+add_finufft_kernel(finufft_avx512 SOURCES src/kernels/avx512/spreading_avx512.cpp FLAGS -mavx512f -mavx512vl -mavx512dq)
+
+
 # Add tests defined in their own directory
 if(BUILD_TESTING AND FINUFFT_BUILD_TESTS)
 

@@ -13,8 +13,8 @@
 
 #include <omp.h>
 
-#include <finufft_spread_opts.h>
 #include <finufft/defs.h>
+#include <finufft_spread_opts.h>
 
 namespace finufft {
 namespace spreadinterp {
@@ -64,20 +64,18 @@ template <std::size_t Dim> struct grid_specification {
  * strengths.
  *
  * @tparam Dim The dimension of the points.
- * @tparam PtrT The pointer type used to store the points and strengths. Typically *float or *double,
- *         but may be a smart pointer type to manage memory ownership.
+ * @tparam PtrT The pointer type used to store the points and strengths. Typically *float or
+ * *double, but may be a smart pointer type to manage memory ownership.
  *
  */
-template <std::size_t Dim, typename PtrT>
-struct nu_point_collection {
+template <std::size_t Dim, typename PtrT> struct nu_point_collection {
     std::size_t num_points;
     std::array<PtrT, Dim> coordinates;
     PtrT strengths;
 
     template <typename Fn>
-    nu_point_collection<Dim, std::invoke_result_t<Fn, PtrT> >
-    cast(Fn &&fn) const {
-        nu_point_collection<Dim, std::invoke_result_t<Fn, PtrT> > result;
+    nu_point_collection<Dim, std::invoke_result_t<Fn, PtrT>> cast(Fn &&fn) const {
+        nu_point_collection<Dim, std::invoke_result_t<Fn, PtrT>> result;
         result.num_points = num_points;
         for (std::size_t i = 0; i < Dim; ++i) {
             result.coordinates[i] = fn(coordinates[i]);
@@ -204,28 +202,26 @@ struct SpreaderMemoryInput : nu_point_collection<Dim, aligned_unique_array<T>> {
     }
 };
 
-template <std::size_t Dim, typename T> struct FoldRescalePi {
-    std::array<T, Dim> extent;
-
-    T operator()(T x, int dim) const {
+template<typename T>
+struct FoldRescalePi {
+    T operator()(T x, T extent) const {
         if (x < -M_PI) {
             x += 2 * M_PI;
         } else if (x >= M_PI) {
             x -= 2 * M_PI;
         }
 
-        return (x + M_PI) * extent[dim] * M_1_2PI;
+        return (x + M_PI) * extent * M_1_2PI;
     }
 };
 
-template <std::size_t Dim, typename T> struct FoldRescaleIdentity {
-    std::array<T, Dim> extent;
-
-    T operator()(T x, int dim) const {
+template<typename T>
+struct FoldRescaleIdentity {
+    T operator()(T x, T extent) const {
         if (x < 0) {
-            x += extent[dim];
-        } else if (x >= extent[dim]) {
-            x -= extent[dim];
+            x += extent;
+        } else if (x >= extent) {
+            x -= extent;
         }
 
         return x;
@@ -241,14 +237,14 @@ enum class FoldRescaleRange { Identity, Pi };
  */
 template <std::size_t Dim, typename T, typename IdxT, typename RescaleFn>
 void gather_and_fold_impl(
-    SpreaderMemoryInput<Dim, T> const &memory, nu_point_collection<Dim, T const*> const &input,
-    IdxT const *sort_indices, RescaleFn &&fold_rescale) {
+    SpreaderMemoryInput<Dim, T> const &memory, nu_point_collection<Dim, T const *> const &input,
+    std::array<T, Dim> const &extent, IdxT const *sort_indices, RescaleFn &&fold_rescale) {
 
     for (std::size_t i = 0; i < memory.num_points; ++i) {
         auto idx = sort_indices[i];
 
         for (int j = 0; j < Dim; ++j) {
-            memory.coordinates[j][i] = fold_rescale(input.coordinates[j][idx], j);
+            memory.coordinates[j][i] = fold_rescale(input.coordinates[j][idx], extent[j]);
         }
 
         memory.strengths[2 * i] = input.strengths[2 * idx];
@@ -272,7 +268,7 @@ void gather_and_fold_impl(
  */
 template <std::size_t Dim, typename IdxT, typename T>
 void gather_and_fold(
-    SpreaderMemoryInput<Dim, T> const &memory, nu_point_collection<Dim, T const*> const &input,
+    SpreaderMemoryInput<Dim, T> const &memory, nu_point_collection<Dim, T const *> const &input,
     std::array<int64_t, Dim> const &sizes, IdxT const *sort_indices,
     FoldRescaleRange rescale_range) {
 
@@ -280,10 +276,9 @@ void gather_and_fold(
     std::copy(sizes.begin(), sizes.end(), sizes_floating.begin());
 
     if (rescale_range == FoldRescaleRange::Pi) {
-        gather_and_fold_impl(memory, input, sort_indices, FoldRescalePi<Dim, T>{sizes_floating});
+        gather_and_fold_impl(memory, input, sizes_floating, sort_indices, FoldRescalePi<T>{});
     } else {
-        gather_and_fold_impl(
-            memory, input, sort_indices, FoldRescaleIdentity<Dim, T>{sizes_floating});
+        gather_and_fold_impl(memory, input, sizes_floating, sort_indices, FoldRescaleIdentity<T>{});
     }
 }
 

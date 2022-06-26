@@ -1,5 +1,6 @@
-#include "../src/kernels/avx512/spreading_avx512.h"
 #include "../src/spreading.h"
+#include "../src/kernels/avx2/spreading_avx2.h"
+#include "../src/kernels/avx512/spreading_avx512.h"
 
 #include <random>
 #include <tuple>
@@ -51,6 +52,8 @@ template <typename T> class GatherRescaleFixture : public ::testing::Test {
 
 MAKE_INVOKE_FUNCTOR(GatherFoldReferenceFn, finufft::spreading::gather_and_fold)
 MAKE_INVOKE_FUNCTOR(GatherFoldAVX512Fn, finufft::spreading::gather_and_fold_avx512)
+MAKE_INVOKE_FUNCTOR(GatherFoldAVX2Fn, finufft::spreading::gather_and_fold_avx2)
+
 
 // clang-format off
 typedef ::testing::Types<
@@ -62,7 +65,10 @@ typedef ::testing::Types<
     std::tuple<std::integral_constant<std::size_t, 3>, double, GatherFoldReferenceFn>,
     std::tuple<std::integral_constant<std::size_t, 3>, float, GatherFoldAVX512Fn>,
     std::tuple<std::integral_constant<std::size_t, 3>, float, GatherFoldAVX512Fn>,
-    std::tuple<std::integral_constant<std::size_t, 3>, float, GatherFoldAVX512Fn>
+    std::tuple<std::integral_constant<std::size_t, 3>, float, GatherFoldAVX512Fn>,
+    std::tuple<std::integral_constant<std::size_t, 3>, float, GatherFoldAVX2Fn>,
+    std::tuple<std::integral_constant<std::size_t, 3>, float, GatherFoldAVX2Fn>,
+    std::tuple<std::integral_constant<std::size_t, 3>, float, GatherFoldAVX2Fn>
 >
     GatherRescaleTestsParameters;
 // clang-format on
@@ -113,8 +119,8 @@ TYPED_TEST_P(GatherRescaleFixture, GatherRescaleIdentity) {
     }
 
     for (std::size_t i = 0; i < result.num_points; ++i) {
-        EXPECT_EQ(result.strengths[2 * i], result_expected.strengths[2 * i]);
-        EXPECT_EQ(result.strengths[2 * i + 1], result_expected.strengths[2 * i + 1]);
+        EXPECT_EQ(result.strengths[2 * i], result_expected.strengths[2 * i]) << "i = " << i;
+        EXPECT_EQ(result.strengths[2 * i + 1], result_expected.strengths[2 * i + 1]) << "i = " << i;
     }
 }
 

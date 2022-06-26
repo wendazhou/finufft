@@ -49,7 +49,7 @@ struct FoldRescalePiAvx512Float : FoldRescalePi<float> {
 };
 
 template <std::size_t Dim, typename FoldRescale>
-void gather_and_fold_avx512_rescale_identity(
+void gather_and_fold_avx512_rescale(
     SpreaderMemoryInput<Dim, float> const &memory,
     nu_point_collection<Dim, float const *> const &input, std::array<int64_t, Dim> const &sizes,
     std::int64_t const *sort_indices, FoldRescale &&fold_rescale) {
@@ -58,8 +58,6 @@ void gather_and_fold_avx512_rescale_identity(
     std::copy(sizes.begin(), sizes.end(), sizes_floating.begin());
 
     std::size_t i = 0;
-
-    __m512 zero = _mm512_setzero_ps();
 
     for (; i < memory.num_points - 15; i += 16) {
         auto addr1 = _mm512_load_epi64(sort_indices + i);
@@ -102,10 +100,10 @@ void GatherFoldAvx512::operator()(
     FoldRescaleRange rescale_range) const {
 
     if (rescale_range == FoldRescaleRange::Identity) {
-        gather_and_fold_avx512_rescale_identity(
+        gather_and_fold_avx512_rescale(
             memory, input, sizes, sort_indices, FoldRescaleIdentityAvx512Float{});
     } else {
-        gather_and_fold_avx512_rescale_identity(
+        gather_and_fold_avx512_rescale(
             memory, input, sizes, sort_indices, FoldRescalePiAvx512Float{});
     }
 }
@@ -116,10 +114,10 @@ void GatherFoldAvx512::operator()(
     FoldRescaleRange rescale_range) const {
 
     if (rescale_range == FoldRescaleRange::Identity) {
-        gather_and_fold_avx512_rescale_identity(
+        gather_and_fold_avx512_rescale(
             memory, input, sizes, sort_indices, FoldRescaleIdentityAvx512Float{});
     } else {
-        gather_and_fold_avx512_rescale_identity(
+        gather_and_fold_avx512_rescale(
             memory, input, sizes, sort_indices, FoldRescalePiAvx512Float{});
     }
 }
@@ -130,10 +128,10 @@ void GatherFoldAvx512::operator()(
     FoldRescaleRange rescale_range) const {
 
     if (rescale_range == FoldRescaleRange::Identity) {
-        gather_and_fold_avx512_rescale_identity(
+        gather_and_fold_avx512_rescale(
             memory, input, sizes, sort_indices, FoldRescaleIdentityAvx512Float{});
     } else {
-        gather_and_fold_avx512_rescale_identity(
+        gather_and_fold_avx512_rescale(
             memory, input, sizes, sort_indices, FoldRescalePiAvx512Float{});
     }
 }

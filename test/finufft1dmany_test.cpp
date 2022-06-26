@@ -1,3 +1,5 @@
+#include <random>
+
 #include <finufft/test_defs.h>
 // this enforces recompilation, responding to SINGLE...
 #include "directft/dirft1d.cpp"
@@ -45,17 +47,15 @@ int main(int argc, char* argv[])
   CPX* c = (CPX*)malloc(sizeof(CPX)*M*ntransf);   // strengths 
   CPX* F = (CPX*)malloc(sizeof(CPX)*N*ntransf);   // mode ampls
 
-#pragma omp parallel
+  std::minstd_rand rng(2);
+  std::uniform_real_distribution<FLT> unif(-1.0,1.0);
   {
-    unsigned int se=MY_OMP_GET_THREAD_NUM();
-#pragma omp for schedule(static,TEST_RANDCHUNK)
     for (BIGINT j=0; j<M; ++j) {
-      x[j] = M_PI*randm11r(&se);
+      x[j] = M_PI*unif(rng);
     }
-#pragma omp for schedule(static,TEST_RANDCHUNK)
     for (BIGINT j = 0; j<ntransf*M; ++j)
     {
-        c[j] = crandm11r(&se);
+        c[j] = {unif(rng), unif(rng)};
     }
   }
 
@@ -79,6 +79,7 @@ int main(int argc, char* argv[])
   errmax = max(err,errmax);
   printf("\tone mode: rel err in F[%lld] of trans#%d is %.3g\n",
 	 (long long)nt1,i,err);
+  std::cout << "Value at checked point: " << F[it + i * N] << std::endl;
 
   // compare the result with FINUFFT1D1
   FFTW_FORGET_WISDOM();
@@ -114,11 +115,8 @@ int main(int argc, char* argv[])
   printf("test 1d2 many vs repeated single: ------------------------------------\n");
   FFTW_FORGET_WISDOM();
 
-#pragma omp parallel
   {
-    unsigned int se=MY_OMP_GET_THREAD_NUM();  // needed for parallel random #s
-#pragma omp for schedule(static,TEST_RANDCHUNK)
-    for (BIGINT m=0; m<N; ++m) F[m] = crandm11r(&se);
+    for (BIGINT m=0; m<N; ++m) F[m] = {unif(rng), unif(rng)};
   }
   timer.restart();
   ier = FINUFFT1D2MANY(ntransf, M,x,c,isign,tol,N,F,&opts);
@@ -167,24 +165,17 @@ int main(int argc, char* argv[])
   printf("test 1d3 many vs repeated single: ------------------------------------\n");
   FFTW_FORGET_WISDOM();
 
-#pragma omp parallel
   {
-    unsigned int se=MY_OMP_GET_THREAD_NUM();
-#pragma omp for schedule(static,TEST_RANDCHUNK)
-    for (BIGINT j=0; j<M; ++j) x[j] = 2.0 + PI*randm11r(&se);  // new x_j srcs
+    for (BIGINT j=0; j<M; ++j) x[j] = 2.0 + M_PI*unif(rng);  // new x_j srcs
   }
   FLT* s = (FLT*)malloc(sizeof(FLT)*N);    // targ freqs
   FLT S = (FLT)N/2;                   // choose freq range sim to type 1
-#pragma omp parallel
   {
-    unsigned int se=MY_OMP_GET_THREAD_NUM();
-#pragma omp for schedule(static,TEST_RANDCHUNK)
     for (BIGINT k=0; k<N; ++k)
-      s[k] = S*(1.7 + randm11r(&se)); //S*(1.7 + k/(FLT)N); // offset
+      s[k] = S*(1.7 + unif(rng)); //S*(1.7 + k/(FLT)N); // offset
   
-#pragma omp for schedule(static,TEST_RANDCHUNK)
     for (BIGINT j = 0; j<ntransf*M; ++j) 
-        c[j] = crandm11r(&se);
+        c[j] = {unif(rng), unif(rng)};
   }
   
   timer.restart();

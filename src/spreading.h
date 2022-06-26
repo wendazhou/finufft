@@ -206,9 +206,9 @@ template<typename T>
 struct FoldRescalePi {
     T operator()(T x, T extent) const {
         if (x < -M_PI) {
-            x += 2 * M_PI;
+            x += M_2PI;
         } else if (x >= M_PI) {
-            x -= 2 * M_PI;
+            x -= M_2PI;
         }
 
         return (x + M_PI) * extent * M_1_2PI;

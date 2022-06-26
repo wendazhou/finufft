@@ -33,8 +33,8 @@ struct FoldRescalePiAvx512Float : FoldRescalePi<float> {
         __m512 n_pi = _mm512_set1_ps(-M_PI);
         __m512 two_pi = _mm512_set1_ps(M_2PI);
 
-        auto mask_smaller = _mm512_cmp_ps_mask(v, n_pi, _CMP_GT_OQ);
-        auto mask_larger = _mm512_cmp_ps_mask(v, pi, _CMP_LT_OQ);
+        auto mask_smaller = _mm512_cmp_ps_mask(v, n_pi, _CMP_LT_OQ);
+        auto mask_larger = _mm512_cmp_ps_mask(v, pi, _CMP_GT_OQ);
 
         auto one_left = _mm512_sub_ps(v, two_pi);
         auto one_right = _mm512_add_ps(v, two_pi);
@@ -42,6 +42,7 @@ struct FoldRescalePiAvx512Float : FoldRescalePi<float> {
         v = _mm512_mask_blend_ps(mask_smaller, v, one_right);
         v = _mm512_mask_blend_ps(mask_larger, v, one_left);
 
+        v = _mm512_add_ps(v, pi);
         v = _mm512_mul_ps(v, extent);
         v = _mm512_mul_ps(v, _mm512_set1_ps(M_1_2PI));
     }

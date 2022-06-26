@@ -86,11 +86,11 @@ TYPED_TEST_P(GatherRescaleFixture, GatherRescaleIdentity) {
 
     auto range = finufft::spreading::FoldRescaleRange::Identity;
 
-    auto result = run_spreader<Dim>(num_gather_points, points_arg, permutation.data(), range, FnType{});
+    auto result = run_spreader<Dim>(num_gather_points, points_arg, permutation.get(), range, FnType{});
     auto result_expected = run_spreader<Dim>(
         num_gather_points,
         points_arg,
-        permutation.data(),
+        permutation.get(),
         range,
         &finufft::spreading::gather_and_fold<Dim, int64_t, FloatingType>);
 
@@ -134,11 +134,11 @@ TYPED_TEST_P(GatherRescaleFixture, GatherRescalePi) {
 
     auto range = finufft::spreading::FoldRescaleRange::Pi;
 
-    auto result = run_spreader<Dim>(num_gather_points, points_arg, permutation.data(), range, FnType{});
+    auto result = run_spreader<Dim>(num_gather_points, points_arg, permutation.get(), range, FnType{});
     auto result_expected = run_spreader<Dim>(
         num_gather_points,
         points_arg,
-        permutation.data(),
+        permutation.get(),
         range,
         &finufft::spreading::gather_and_fold<Dim, int64_t, FloatingType>);
 

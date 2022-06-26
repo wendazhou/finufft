@@ -37,12 +37,12 @@ make_random_point_collection(std::size_t num_points, uint32_t seed, std::pair<T,
     return points;
 }
 
-std::vector<int64_t> make_random_permutation(std::size_t n, int32_t seed) {
-    std::vector<int64_t> permutation(n);
-    std::iota(permutation.begin(), permutation.end(), 0);
+finufft::spreading::aligned_unique_array<int64_t> make_random_permutation(std::size_t n, int32_t seed) {
+    auto permutation = finufft::spreading::allocate_aligned_array<int64_t>(n, 64);
+    std::iota(permutation.get(), permutation.get() + n, 0);
 
     auto rng = std::minstd_rand(seed);
-    std::shuffle(permutation.begin(), permutation.end(), rng);
+    std::shuffle(permutation.get(), permutation.get() + n, rng);
     return permutation;
 }
 

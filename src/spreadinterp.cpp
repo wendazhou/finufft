@@ -1262,9 +1262,9 @@ void bin_sort_multithread(BIGINT *ret, BIGINT M, FLT *kx, FLT *ky, FLT *kz,
   {    // scope for ct, the 2d array of counts in bins for each thread's NU pts
     std::vector< std::vector<BIGINT> > ct(nt,counts);   // nt * nbins, init to 0
     
-#pragma omp parallel num_threads(nt)
+  #pragma omp parallel for
+  for(int t = 0; t < nt; ++t)
     {  // parallel binning to each thread's count. Block done once per thread
-      int t = MY_OMP_GET_THREAD_NUM();     // (we assume all nt threads created)
       //printf("\tt=%d: [%d,%d]\n",t,jlo[t],jhi[t]);
       for (BIGINT i=brk[t]; i<brk[t+1]; i++) {
         // find the bin index in however many dims are needed
@@ -1295,9 +1295,9 @@ void bin_sort_multithread(BIGINT *ret, BIGINT M, FLT *kx, FLT *ky, FLT *kz,
   }  // scope frees up ct here, before inv alloc
   
   std::vector<BIGINT> inv(M);           // fill inverse map, in parallel
-#pragma omp parallel num_threads(nt)
+  #pragma omp parallel for
+  for (int t = 0; t < nt; ++t)
   {
-    int t = MY_OMP_GET_THREAD_NUM();
     for (BIGINT i=brk[t]; i<brk[t+1]; i++) {
       // find the bin index (again! but better than using RAM)
       BIGINT i1=FOLDRESCALE(kx[i],N1,pirange)/bin_size_x, i2=0, i3=0;

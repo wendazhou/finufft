@@ -214,9 +214,9 @@ void onedim_fseries_kernel(BIGINT nf, FLT *fwkerhalf, finufft_spread_opts opts)
   std::vector<BIGINT> brk(nt+1);        // start indices for each thread
   for (int t=0; t<=nt; ++t)             // split nout mode indices btw threads
     brk[t] = (BIGINT)(0.5 + nout*t/(double)nt);
-#pragma omp parallel num_threads(nt)
+  #pragma omp parallel for
+  for (int t = 0; t < nt; ++t)
   {                                     // each thread gets own chunk to do
-    int t = MY_OMP_GET_THREAD_NUM();
     std::complex<FLT> aj[MAX_NQUAD];    // phase rotator for this thread
     for (int n=0;n<q;++n)
       aj[n] = pow(a[n],(FLT)brk[t]);    // init phase factors for chunk

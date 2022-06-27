@@ -340,6 +340,7 @@ inline finufft_spread_opts construct_opts_from_kernel(const kernel_specification
     opts.ES_beta = kernel.es_beta;
     opts.ES_c = kernel.es_c;
     opts.ES_halfwidth = (double)kernel.width / 2.0;
+    opts.flags = 0;
 
     // Reverse engineer upsampling factor from design in `setup_spreader`
     // This is necessary to call reference implementation, despite the fact

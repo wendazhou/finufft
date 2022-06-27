@@ -1,3 +1,4 @@
+#include "../src/kernels/reference/spreading_reference.h"
 #include "../src/spreading.h"
 
 #include <numeric>
@@ -33,11 +34,11 @@ make_spread_subproblem_input(
 }
 
 /** Adjusts the number of points and the extents of the grid according to alignment requirements.
- * 
+ *
  * Implementations may specify alignment requirements, so that the total number of points and the
  * dimensions of the grid are multiples of some specified value. This function adjusts the given
  * specification to match these requirements.
- * 
+ *
  */
 template <std::size_t Dim, typename Fn1, typename Fn2>
 void adjust_problem_parameters(
@@ -60,13 +61,14 @@ template <std::size_t Dim, typename T> struct evaluation_result {
 };
 
 /** Evaluates an implementation of the subproblem spread compared to the reference implementation.
- * 
+ *
  */
 template <std::size_t Dim, typename T, typename Fn>
-evaluation_result<Dim, T> evaluate_subproblem_implementation(Fn &&fn, uint32_t seed) {
+evaluation_result<Dim, T>
+evaluate_subproblem_implementation(Fn &&fn, std::size_t num_points, uint32_t seed) {
     // Get the kernel specification
     finufft_spread_opts opts;
-    finufft::spreadinterp::setup_spreader(opts, 1e-5, 2, 1, 0, 0, 1);
+    finufft::spreadinterp::setup_spreader(opts, 1e-5, 2, 0, 0, 0, 1);
     finufft::spreading::kernel_specification kernel{opts.ES_c, opts.ES_beta, opts.nspread};
 
     auto reference_fn = finufft::spreading::spread_subproblem_reference;
@@ -75,7 +77,6 @@ evaluation_result<Dim, T> evaluate_subproblem_implementation(Fn &&fn, uint32_t s
     auto offset = 3;
     auto size = 20;
 
-    std::size_t num_points = 100;
     finufft::spreading::grid_specification<Dim> grid;
     for (std::size_t i = 0; i < Dim; ++i) {
         grid.offsets[i] = offset;
@@ -87,7 +88,8 @@ evaluation_result<Dim, T> evaluate_subproblem_implementation(Fn &&fn, uint32_t s
 
     // Create subproblem input.
     // Note that input is not sorted as this is functionality, not performance test.
-    auto input = make_spread_subproblem_input<T>(100, seed, grid, opts.nspread);
+    auto input = make_spread_subproblem_input<T>(num_points, seed, grid, opts.nspread);
+    std::fill_n(input.strengths.get(), 2 * num_points, 1.0);
 
     // Allocate output arrays.
     auto output = finufft::spreading::allocate_aligned_array<T>(2 * grid.num_elements(), 64);
@@ -104,25 +106,62 @@ evaluation_result<Dim, T> evaluate_subproblem_implementation(Fn &&fn, uint32_t s
     return {std::move(output_reference), std::move(output), grid};
 }
 
+/** Computes threshold based on relative value of maximum absolute value in array.
+ * 
+ */
+template <typename U, typename T>
+T compute_max_relative_threshold(U tolerance, T const *data, std::size_t num_points) {
+    auto r_min_max = std::minmax_element(data, data + num_points);
+    auto r_max = std::max(std::abs(*r_min_max.first), std::abs(*r_min_max.second));
+    return static_cast<T>(tolerance * r_max);
+}
+
 } // namespace
 
 TEST(SpreadSubproblem, SpreadSubproblem1df32) {
     // Get the kernel specification
     auto result = evaluate_subproblem_implementation<1, float>(
-        finufft::spreading::spread_subproblem_reference, 0);
+        finufft::spreading::spread_subproblem_reference, 100, 0);
 
+    auto error_level = compute_max_relative_threshold(
+        1e-5, result.output_reference.get(), 2 * result.grid.num_elements());
     for (std::size_t i = 0; i < 2 * result.grid.num_elements(); ++i) {
-        EXPECT_NEAR(result.output_reference[i], result.output[i], std::abs(result.output[i]) * 1e-3);
+        EXPECT_NEAR(result.output_reference[i], result.output[i], error_level);
     }
 }
 
+TEST(SpreadSubproblem, ReferenceDirect1Df32) {
+    // Get the kernel specification
+    auto result = evaluate_subproblem_implementation<1, float>(
+        finufft::spreading::spread_subproblem_direct_reference, 100, 0);
 
-TEST(SpreadSubproblem, SpreadSubproblem1df64) {
+    auto error_level = compute_max_relative_threshold(
+        1e-5, result.output_reference.get(), 2 * result.grid.num_elements());
+    for (std::size_t i = 0; i < 2 * result.grid.num_elements(); ++i) {
+        ASSERT_NEAR(result.output_reference[i], result.output[i], error_level) << "i = " << i;
+    }
+}
+
+TEST(SpreadSubproblem, ReferenceDirect1Df64) {
     // Get the kernel specification
     auto result = evaluate_subproblem_implementation<1, double>(
-        finufft::spreading::spread_subproblem_reference, 0);
+        finufft::spreading::spread_subproblem_direct_reference, 100, 0);
 
+    auto error_level = compute_max_relative_threshold(
+        1e-5, result.output_reference.get(), 2 * result.grid.num_elements());
     for (std::size_t i = 0; i < 2 * result.grid.num_elements(); ++i) {
-        EXPECT_NEAR(result.output_reference[i], result.output[i], std::abs(result.output[i]) * 1e-3);
+        ASSERT_NEAR(result.output_reference[i], result.output[i], error_level) << "i = " << i;
+    }
+}
+
+TEST(SpreadSubproblem, ReferenceDirect2Df32) {
+    // Get the kernel specification
+    auto result = evaluate_subproblem_implementation<2, float>(
+        finufft::spreading::spread_subproblem_direct_reference, 1, 0);
+
+    auto error_level = compute_max_relative_threshold(
+        1e-5, result.output_reference.get(), 2 * result.grid.num_elements());
+    for (std::size_t i = 0; i < 2 * result.grid.num_elements(); ++i) {
+        ASSERT_NEAR(result.output_reference[i], result.output[i], error_level) << "i = " << i;
     }
 }

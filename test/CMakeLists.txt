@@ -59,12 +59,20 @@ endfunction()
 add_tests_with_prec(float 1e-5 2e-4 f)
 add_tests_with_prec(double 1e-12 1e-11 "")
 
+include(GoogleTest)
 
 # Now add gtest-based tests
 add_executable(spread_gather_test spread_gather_test.cpp)
 target_link_libraries(spread_gather_test PRIVATE finufft gtest_main gmock)
 enable_asan(spread_gather_test)
+gtest_discover_tests(spread_gather_test NO_PRETTY_TYPES)
 
 add_executable(spread_subproblem_test spread_subproblem_test.cpp)
 target_link_libraries(spread_subproblem_test PRIVATE finufft gtest_main gmock)
 enable_asan(spread_subproblem_test)
+gtest_discover_tests(spread_subproblem_test)
+
+add_executable(spread_sorted_integration spread_sorted_integration.cpp)
+target_link_libraries(spread_sorted_integration PRIVATE finufft gtest_main gmock)
+enable_asan(spread_sorted_integration)
+gtest_discover_tests(spread_sorted_integration)

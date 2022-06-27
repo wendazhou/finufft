@@ -81,8 +81,8 @@ function(enable_asan target)
 
     if(CMAKE_CXX_COMPILER_ID IN_LIST FINUFFT_GNU_LIKE_COMPILERS)
         # Enable only on clang / gcc compilers.
-        target_compile_options(${target} PRIVATE $<$<CONFIG:DEBUG>:-fsanitize=address>)
-        target_link_options(${target} PRIVATE $<$<CONFIG:DEBUG>:-fsanitize=address>)
+        target_compile_options(${target} PRIVATE $<$<CONFIG:DEBUG>:-fsanitize=undefined>)
+        target_link_options(${target} PRIVATE $<$<CONFIG:DEBUG>:-fsanitize=undefined>)
     endif()
 endfunction()
 

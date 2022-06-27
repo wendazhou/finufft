@@ -1,3 +1,5 @@
+#include <random>
+
 #include <finufft/test_defs.h>
 // this enforces recompilation, responding to SINGLE...
 #include "directft/dirft1d.cpp"
@@ -40,13 +42,13 @@ int main(int argc, char* argv[])
   FLT *x = (FLT*)malloc(sizeof(FLT)*M);        // NU pts
   CPX* c = (CPX*)malloc(sizeof(CPX)*M);   // strengths 
   CPX* F = (CPX*)malloc(sizeof(CPX)*N);   // mode ampls
-#pragma omp parallel
+
+  std::minstd_rand rng(2);
+  std::uniform_real_distribution<FLT> unif(-1.0,1.0);
   {
-    unsigned int se=MY_OMP_GET_THREAD_NUM();  // needed for parallel random #s
-#pragma omp for schedule(static,TEST_RANDCHUNK)   // static => non-stochastic
     for (BIGINT j=0; j<M; ++j) {
-      x[j] = PI*randm11r(&se);   // fills [-pi,pi)
-      c[j] = crandm11r(&se);
+      x[j] = M_PI*unif(rng);   // fills [-pi,pi)
+      c[j] = {unif(rng), unif(rng)};
     }
   }
   //for (BIGINT j=0; j<M; ++j) x[j] = 0.999 * PI*randm11();  // avoid ends
@@ -86,11 +88,8 @@ int main(int argc, char* argv[])
   }
 
   printf("test 1d type 2:\n"); // -------------- type 2
- #pragma omp parallel
   {
-    unsigned int se=MY_OMP_GET_THREAD_NUM();  // needed for parallel random #s
-#pragma omp for schedule(static,TEST_RANDCHUNK)
-    for (BIGINT m=0; m<N; ++m) F[m] = crandm11r(&se);
+    for (BIGINT m=0; m<N; ++m) F[m] = {unif(rng), unif(rng)};
   }
   timer.restart();
   ier = FINUFFT1D2(M,x,c,isign,tol,N,F,&opts);
@@ -123,19 +122,13 @@ int main(int argc, char* argv[])
 
   printf("test 1d type 3:\n"); // -------------- type 3
   // reuse the strengths c, interpret N as number of targs:
-#pragma omp parallel
   {
-    unsigned int se=MY_OMP_GET_THREAD_NUM();
-#pragma omp for schedule(static,TEST_RANDCHUNK)
-    for (BIGINT j=0; j<M; ++j) x[j] = 2.0 + PI*randm11r(&se);  // new x_j srcs
+    for (BIGINT j=0; j<M; ++j) x[j] = 2.0 + PI*unif(rng);  // new x_j srcs
   }
   FLT* s = (FLT*)malloc(sizeof(FLT)*N);    // targ freqs
   FLT S = (FLT)N/2;                   // choose freq range sim to type 1
-#pragma omp parallel
   {
-    unsigned int se=MY_OMP_GET_THREAD_NUM();
-#pragma omp for schedule(static,TEST_RANDCHUNK)
-    for (BIGINT k=0; k<N; ++k) s[k] = S*(1.7 + randm11r(&se)); //S*(1.7 + k/(FLT)N); // offset
+    for (BIGINT k=0; k<N; ++k) s[k] = S*(1.7 + unif(rng)); //S*(1.7 + k/(FLT)N); // offset
   }
   timer.restart();
   ier = FINUFFT1D3(M,x,c,isign,tol,N,s,F,&opts);

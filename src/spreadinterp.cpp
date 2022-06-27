@@ -11,6 +11,8 @@
 #include <math.h>
 #include <stdio.h>
 
+#include <iostream>
+
 #include "spreading.h"
 
 
@@ -320,6 +322,15 @@ int spreadSorted(BIGINT* sort_indices, BIGINT N1, BIGINT N2, BIGINT N3,
           FLT* data_nonuniform, finufft_spread_opts opts, int did_sort) {
   int ndims = ndims_from_Ns(N1,N2,N3);
 
+  std::cout << "spreadSorted: ndims = " << ndims << std::endl;
+  std::cout << "opts.spread_direction = " << opts.spread_direction << std::endl;
+  std::cout << "opts.pirange = " << opts.pirange << std::endl;
+  std::cout << "opts.ES_beta = " << opts.ES_beta << std::endl;
+  std::cout << "opts.ES_c = " << opts.ES_c << std::endl;
+  std::cout << "opts.upsampfac = " << opts.upsampfac << std::endl;
+  std::cout << "opts.kerevalmeth = " << opts.kerevalmeth << std::endl;
+  std::cout << "opts.nspread = " << opts.nspread << std::endl;
+
   switch (ndims) {
     case 1:
       finufft::spreading::spread<1, FLT>(sort_indices, {N1}, M, {kx}, data_nonuniform, data_uniform, opts);
@@ -392,7 +403,7 @@ int spreadSortedOriginal(BIGINT* sort_indices,BIGINT N1, BIGINT N2, BIGINT N3,
     for (int p=0;p<=nb;++p)
       brk[p] = (BIGINT)(0.5 + M*p/(double)nb);
     
-#pragma omp parallel for num_threads(nthr) schedule(dynamic,1)  // each is big
+// #pragma omp parallel for num_threads(nthr) schedule(dynamic,1)  // each is big
       for (int isub=0; isub<nb; isub++) {   // Main loop through the subproblems
         BIGINT M0 = brk[isub+1]-brk[isub];  // # NU pts in this subproblem
         // copy the location and data vectors for the nonuniform points
@@ -439,7 +450,7 @@ int spreadSortedOriginal(BIGINT* sort_indices,BIGINT N1, BIGINT N2, BIGINT N3,
           if (nthr > opts.atomic_threshold)   // see above for debug reporting
             add_wrapped_subgrid_thread_safe(offset1,offset2,offset3,size1,size2,size3,N1,N2,N3,data_uniform,du0);   // R Blackwell's atomic version
           else {
-#pragma omp critical
+// #pragma omp critical
             add_wrapped_subgrid(offset1,offset2,offset3,size1,size2,size3,N1,N2,N3,data_uniform,du0);
           }
         }

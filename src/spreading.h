@@ -11,6 +11,8 @@
 #include <utility>
 #include <vector>
 
+#include <iostream>
+
 #include <omp.h>
 
 #include <finufft/defs.h>
@@ -165,6 +167,11 @@ compute_subgrid(std::size_t M, std::array<T const *, Dim> const &coordinates, in
     return {offsets, sizes};
 }
 
+// Utility function which rounds the given integer value to the next multiple.
+template <typename T, typename U> T round_to_next_multiple(T v, U multiple) {
+    return (v + multiple - 1) / multiple * multiple;
+}
+
 /** Utility deleter which deletes memory allocated with an aligned new operation.
  *
  */
@@ -194,7 +201,7 @@ template <typename T> using aligned_unique_ptr = std::unique_ptr<T, AlignedDelet
 template <typename T>
 aligned_unique_ptr<T[]> allocate_aligned_array(std::size_t size, std::size_t alignment) {
     std::size_t size_bytes = size * sizeof(T);
-    size_bytes = (size_bytes + alignment - 1) / alignment * alignment;
+    size_bytes = round_to_next_multiple(size_bytes, alignment);
     size = size_bytes / sizeof(T);
 
     return aligned_unique_ptr<T[]>(
@@ -371,7 +378,11 @@ inline finufft_spread_opts construct_opts_from_kernel(const kernel_specification
 struct SpreadSubproblemReference {
     // Specifies that the number of points in the input must be a multiple of this value.
     // The caller is required to pad the input with points within the domain and zero strength.
-    const std::size_t num_points_multiple = 1;
+    static const std::size_t num_points_multiple = 1;
+    // Specifies that the size of the output subgrid must be a multiple of this value.
+    // The caller is required to allocate enough memory for the output, and pass in a compatible
+    // grid specification.
+    static const std::size_t extent_multiple = 1;
 
     template <typename T>
     void operator()(
@@ -529,32 +540,32 @@ void pad_nu_point_collection(
 }
 
 template <std::size_t Dim, typename T, typename IdxT>
-inline SubgridData<Dim, T> spread_block(
+SubgridData<Dim, T> spread_block(
     IdxT const *sort_indices, std::array<std::int64_t, Dim> const &sizes, std::size_t num_points,
     std::array<T const *, Dim> const &coordinates, T const *strengths, T *output,
-    const finufft_spread_opts &opts) {
+    const kernel_specification &kernel, FoldRescaleRange range) {
 
     // subproblem implementation being used (TODO: make parameter).
     auto spread_subproblem = spread_subproblem_reference;
 
     // round up to required number of points
-    auto num_points_padded = ((num_points + spread_subproblem.num_points_multiple - 1) /
-                              spread_subproblem.num_points_multiple) *
-                             spread_subproblem.num_points_multiple;
+    auto num_points_padded =
+        round_to_next_multiple(num_points, spread_subproblem.num_points_multiple);
 
     SpreaderMemoryInput<Dim, T> memory(num_points_padded);
+    auto memory_reference = memory.cast(UniqueArrayToConstPtr{});
 
     // Set number of points for now to the values to be provided
-    memory.num_points = num_points;
-    gather_and_fold(
-        memory,
-        {num_points, coordinates, strengths},
-        sizes,
-        sort_indices,
-        opts.pirange ? FoldRescaleRange::Pi : FoldRescaleRange::Identity);
+    // memory.num_points = num_points;
+    gather_and_fold(memory, {num_points, coordinates, strengths}, sizes, sort_indices, range);
 
     // Compute subgrid for given set of points.
-    auto subgrid = compute_subgrid<Dim, T>(num_points, memory.get_coordinates(), opts.nspread);
+    auto subgrid = compute_subgrid<Dim, T>(num_points, memory_reference.coordinates, kernel.width);
+    // Round up subgrid extent to required multiple for subproblem implementation.
+    std::transform(
+        subgrid.extents.begin(), subgrid.extents.end(), subgrid.extents.begin(), [&](auto x) {
+            return round_to_next_multiple(x, spread_subproblem.num_points_multiple);
+        });
 
     // Pad the input points to the required multiple, using a pad coordinate derived from the
     // subgrid. The pad coordinate is given by the leftmost valid coordinate in the subgrid.
@@ -562,7 +573,7 @@ inline SubgridData<Dim, T> spread_block(
         std::array<T, Dim> pad_coordinate;
         std::transform(
             subgrid.offsets.begin(), subgrid.offsets.end(), pad_coordinate.begin(), [&](auto x) {
-                return x + static_cast<T>(opts.ES_halfwidth);
+                return x + static_cast<T>(0.5 * kernel.width);
             });
         pad_nu_point_collection(memory, num_points_padded, pad_coordinate);
     }
@@ -570,12 +581,8 @@ inline SubgridData<Dim, T> spread_block(
     auto output_size = 2 * subgrid.num_elements();
     auto spread_weights = allocate_aligned_array<T>(output_size, 64);
 
-    spread_subproblem_reference(
-        memory.cast(UniqueArrayToConstPtr{}),
-        subgrid,
-        spread_weights.get(),
-        {opts.ES_c, opts.ES_beta, opts.nspread});
-    return {std::move(spread_weights), std::move(subgrid)};
+    spread_subproblem_reference(memory_reference, subgrid, spread_weights.get(), kernel);
+    return {std::move(spread_weights), subgrid};
 }
 
 template <std::size_t Dim, typename T, typename IdxT>
@@ -585,12 +592,13 @@ inline void spread(
     const finufft_spread_opts &opts) {
 
     auto total_size = std::reduce(sizes.begin(), sizes.end(), 1, std::multiplies<>());
-    std::fill_n(output, total_size, 0);
+    std::fill_n(output, 2 * total_size, 0);
 
-    auto nthr = omp_get_num_threads();
+    auto nthr = MY_OMP_GET_NUM_THREADS();
 
     std::size_t nb = std::min(
         {static_cast<std::size_t>(nthr), num_points}); // simply split one subprob per thr...
+
     if (nb * opts.max_subproblem_size < num_points) {  // ...or more subprobs to cap size
         nb = 1 + (num_points - 1) /
                      opts.max_subproblem_size; // int div does ceil(M/opts.max_subproblem_size)
@@ -609,18 +617,19 @@ inline void spread(
 
     std::mutex reduction_mutex;
 
-#pragma omp parallel for num_threads(nthr) schedule(dynamic, 1) // each is big
-    for (int isub = 0; isub < nb; isub++) {                     // Main loop through the subproblems
+#pragma omp parallel for schedule(dynamic, 1) // each is big
+    for (int isub = 0; isub < nb; isub++) {   // Main loop through the subproblems
         std::size_t num_points_block =
             breaks[isub + 1] - breaks[isub]; // # NU pts in this subproblem
-        auto block = spread_block(
+        SubgridData<Dim, T> block = spread_block(
             sort_indices + breaks[isub],
             sizes,
             num_points_block,
             coordinates,
             strengths,
             output,
-            opts);
+            {opts.ES_c, opts.ES_beta, opts.nspread},
+            opts.pirange ? FoldRescaleRange::Pi : FoldRescaleRange::Identity);
 
         {
             // Simple locked reduction strategy for now

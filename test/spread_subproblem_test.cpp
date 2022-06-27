@@ -32,6 +32,13 @@ make_spread_subproblem_input(
     return make_random_point_collection<Dim, T>(num_points, seed, range);
 }
 
+/** Adjusts the number of points and the extents of the grid according to alignment requirements.
+ * 
+ * Implementations may specify alignment requirements, so that the total number of points and the
+ * dimensions of the grid are multiples of some specified value. This function adjusts the given
+ * specification to match these requirements.
+ * 
+ */
 template <std::size_t Dim, typename Fn1, typename Fn2>
 void adjust_problem_parameters(
     std::size_t &num_points, finufft::spreading::grid_specification<Dim> &grid, Fn1 const &fn1,
@@ -52,6 +59,9 @@ template <std::size_t Dim, typename T> struct evaluation_result {
     finufft::spreading::grid_specification<Dim> grid;
 };
 
+/** Evaluates an implementation of the subproblem spread compared to the reference implementation.
+ * 
+ */
 template <std::size_t Dim, typename T, typename Fn>
 evaluation_result<Dim, T> evaluate_subproblem_implementation(Fn &&fn, uint32_t seed) {
     // Get the kernel specification
@@ -61,6 +71,7 @@ evaluation_result<Dim, T> evaluate_subproblem_implementation(Fn &&fn, uint32_t s
 
     auto reference_fn = finufft::spreading::spread_subproblem_reference;
 
+    // Arbitrary grid specification in all dimensions
     auto offset = 3;
     auto size = 20;
 
@@ -71,10 +82,14 @@ evaluation_result<Dim, T> evaluate_subproblem_implementation(Fn &&fn, uint32_t s
         grid.extents[i] = size;
     }
 
+    // Adjust grid and number of points according to padding requirements of target.
     adjust_problem_parameters(num_points, grid, fn, reference_fn);
 
+    // Create subproblem input.
+    // Note that input is not sorted as this is functionality, not performance test.
     auto input = make_spread_subproblem_input<T>(100, seed, grid, opts.nspread);
 
+    // Allocate output arrays.
     auto output = finufft::spreading::allocate_aligned_array<T>(2 * grid.num_elements(), 64);
     auto output_reference =
         finufft::spreading::allocate_aligned_array<T>(2 * grid.num_elements(), 64);

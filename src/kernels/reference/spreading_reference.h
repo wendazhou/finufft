@@ -6,42 +6,20 @@
 namespace finufft {
 namespace spreading {
 
-template <typename T> inline T evaluate_es_kernel_direct(T x, T es_beta, T es_c, int kernel_width) {
+/** Direct evaluation of the exp-sqrt kernel.
+ *
+ * Note that due to the use of transcendental functions, this evaluation
+ * is fairly slow, and polynomial approximations are more performant.
+ *
+ */
+template <typename T> inline T evaluate_es_kernel_direct(T x, T es_beta, T es_c) {
     auto s = std::sqrt(static_cast<T>(1.0) - es_c * x * x);
     return std::exp(es_beta * s);
 }
 
 ///@{
 
-template <typename T, std::size_t Dim> struct WriteSeparableKernelImpl {
-    void operator()(
-        T *output, tcb::span<std::size_t, Dim> strides, tcb::span<T const *, Dim> values,
-        std::size_t width, T k_re, T k_im) {
-        for (std::size_t i = 0; i < width; ++i) {
-            auto k_re_i = k_re * values[Dim - 1][i];
-            auto k_im_i = k_im * values[Dim - 1][i];
-
-            WriteSeparableKernelImpl<T, Dim - 1>{}(
-                output + 2 * i * strides[Dim - 1],
-                strides.template subspan<0, Dim-1>(),
-                values.template subspan<0, Dim-1>(),
-                width,
-                k_re_i,
-                k_im_i);
-        }
-    }
-};
-
-template <typename T> struct WriteSeparableKernelImpl<T, 1> {
-    void operator()(
-        T *output, tcb::span<std::size_t, 1> strides, tcb::span<T const *, 1> values,
-        std::size_t width, T k_re, T k_im) {
-        for (std::size_t i = 0; i < width; ++i) {
-            output[2 * i * strides[0]] += k_re * values[0][i];
-            output[2 * i * strides[0] + 1] += k_im * values[0][i];
-        }
-    }
-};
+template <typename T, std::size_t Dim> struct WriteSeparableKernelImpl;
 
 /** Compute values of a separable kernel in arbitrary dimension and accumulates to the output array.
  *
@@ -49,7 +27,10 @@ template <typename T> struct WriteSeparableKernelImpl<T, 1> {
  * 1-dimension kernels, and accumulates the values into the given output array. The output array is
  * assumed to be in column-major strided format, as an interleaved complex array. The kernel is
  * assumed to be real-valued, and multiplied by a complex scalar given through `k_re` and `k_im`.
- * 
+ *
+ * The implementation is provided in all dimensions using a recursive strategy in column-major order
+ * from slowest to fastest dimension. In order to facilitate the recursive implementation, we make
+ * use of an auxiliary template structure `WriteSeparableKernelImpl`.
  *
  * @param output[in, out] The output array.
  * @param strides Strides of the output array in each dimension.
@@ -65,6 +46,38 @@ void write_separable_kernel(
     std::size_t width, T k_re, T k_im) {
     return WriteSeparableKernelImpl<T, Dim>{}(output, strides, values, width, k_re, k_im);
 }
+
+template <typename T, std::size_t Dim> struct WriteSeparableKernelImpl {
+    void operator()(
+        T *output, tcb::span<std::size_t, Dim> strides, tcb::span<T const *, Dim> values,
+        std::size_t width, T k_re, T k_im) {
+        for (std::size_t i = 0; i < width; ++i) {
+            auto k_re_i = k_re * values[Dim - 1][i];
+            auto k_im_i = k_im * values[Dim - 1][i];
+
+            WriteSeparableKernelImpl<T, Dim - 1>{}(
+                output + 2 * i * strides[Dim - 1],
+                strides.template subspan<0, Dim - 1>(),
+                values.template subspan<0, Dim - 1>(),
+                width,
+                k_re_i,
+                k_im_i);
+        }
+    }
+};
+
+template <typename T> struct WriteSeparableKernelImpl<T, 1> {
+    void operator()(
+        T *output, tcb::span<std::size_t, 1> strides, tcb::span<T const *, 1> values,
+        std::size_t width, T k_re, T k_im) {
+
+        // Base case of the recursion: 1-D kernel accumulation.
+        for (std::size_t i = 0; i < width; ++i) {
+            output[2 * i * strides[0]] += k_re * values[0][i];
+            output[2 * i * strides[0] + 1] += k_im * values[0][i];
+        }
+    }
+};
 
 ///@}
 
@@ -115,8 +128,8 @@ struct SpreadSubproblemDirectReference {
                 auto x_f = x_i - x;
 
                 for (int i = 0; i < kernel.width; ++i) {
-                    kernel_values[dim * kernel_values_stride + i] = evaluate_es_kernel_direct(
-                        x_f + static_cast<T>(i), es_beta, es_c, kernel.width);
+                    kernel_values[dim * kernel_values_stride + i] =
+                        evaluate_es_kernel_direct(x_f + static_cast<T>(i), es_beta, es_c);
                 }
 
                 point_total_offset += (x_i - grid.offsets[dim]) * strides[dim];

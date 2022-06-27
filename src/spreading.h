@@ -83,6 +83,13 @@ template <std::size_t Dim, typename PtrT> struct nu_point_collection {
     std::array<PtrT, Dim> coordinates;
     PtrT strengths;
 
+    /** Converts the structure by casting each array.
+     *
+     * Utility function to create a new `nu_point_collection` where each of the
+     * arrays have been processed by the given function. This can be used to
+     * easily convert between various pointer and smart pointer types if needed.
+     *
+     */
     template <typename Fn>
     nu_point_collection<Dim, std::invoke_result_t<Fn, PtrT>> cast(Fn &&fn) const {
         nu_point_collection<Dim, std::invoke_result_t<Fn, PtrT>> result;
@@ -92,6 +99,26 @@ template <std::size_t Dim, typename PtrT> struct nu_point_collection {
         }
         result.strengths = fn(strengths);
         return result;
+    }
+};
+
+/** Utility functor to get the underlying raw pointer from a `std::unique_ptr`.
+ *
+ */
+struct UniqueArrayToPtr {
+    template <typename T, typename Deleter>
+    T *operator()(std::unique_ptr<T[], Deleter> const &ptr) const {
+        return ptr.get();
+    }
+};
+
+/** Utility functor to get the underlying (const) raw pointer from a `std::unique_ptr`.
+ *
+ */
+struct UniqueArrayToConstPtr {
+    template <typename T, typename Deleter>
+    const T *operator()(std::unique_ptr<T[], Deleter> const &ptr) const {
+        return ptr.get();
     }
 };
 
@@ -335,62 +362,79 @@ inline finufft_spread_opts construct_opts_from_kernel(const kernel_specification
     return opts;
 }
 
-template <typename T>
-void spread_subproblem(
-    SpreaderMemoryInput<1, T> const &input, grid_specification<1> const &grid, T *output,
-    const kernel_specification &kernel) {
+/** This functor dispatches to the current implementation of subproblem spreading.
+ *
+ * The spreading spreading subproblem corresponds to the non-periodized single-threaded
+ * spreading problem.
+ *
+ */
+struct SpreadSubproblemReference {
+    // Specifies that the number of points in the input must be a multiple of this value.
+    // The caller is required to pad the input with points within the domain and zero strength.
+    const std::size_t num_points_multiple = 1;
 
-    auto opts = construct_opts_from_kernel(kernel);
-    finufft::spreadinterp::spread_subproblem_1d(
-        grid.offsets[0],
-        grid.extents[0],
-        output,
-        input.num_points,
-        input.coordinates[0].get(),
-        input.strengths.get(),
-        opts);
-}
+    template <typename T>
+    void operator()(
+        nu_point_collection<1, T const *> const &input, grid_specification<1> const &grid,
+        T *output, const kernel_specification &kernel) const {
 
-template <typename T>
-void spread_subproblem(
-    SpreaderMemoryInput<2, T> const &input, grid_specification<2> const &grid, T *output,
-    const kernel_specification &kernel) {
+        auto opts = construct_opts_from_kernel(kernel);
 
-    auto opts = construct_opts_from_kernel(kernel);
-    finufft::spreadinterp::spread_subproblem_2d(
-        grid.offsets[0],
-        grid.offsets[1],
-        grid.extents[0],
-        grid.extents[1],
-        output,
-        input.num_points,
-        input.coordinates[0].get(),
-        input.coordinates[1].get(),
-        input.strengths.get(),
-        opts);
-}
+        // Note: current implementation not const-correct, so we have to cast the const
+        // specifier away to call the function. It does not actually write to the input.
+        finufft::spreadinterp::spread_subproblem_1d(
+            grid.offsets[0],
+            grid.extents[0],
+            output,
+            input.num_points,
+            const_cast<T *>(input.coordinates[0]),
+            const_cast<T *>(input.strengths),
+            opts);
+    }
 
-template <typename T>
-void spread_subproblem(
-    SpreaderMemoryInput<3, T> const &input, grid_specification<3> const &grid, T *output,
-    const kernel_specification &kernel) {
+    template <typename T>
+    void operator()(
+        nu_point_collection<2, T const *> const &input, grid_specification<2> const &grid,
+        T *output, const kernel_specification &kernel) const {
 
-    auto opts = construct_opts_from_kernel(kernel);
-    finufft::spreadinterp::spread_subproblem_3d(
-        grid.offsets[0],
-        grid.offsets[1],
-        grid.offsets[2],
-        grid.extents[0],
-        grid.extents[1],
-        grid.extents[2],
-        output,
-        input.num_points,
-        input.coordinates[0].get(),
-        input.coordinates[1].get(),
-        input.coordinates[2].get(),
-        input.strengths.get(),
-        opts);
-}
+        auto opts = construct_opts_from_kernel(kernel);
+        finufft::spreadinterp::spread_subproblem_2d(
+            grid.offsets[0],
+            grid.offsets[1],
+            grid.extents[0],
+            grid.extents[1],
+            output,
+            input.num_points,
+            const_cast<T *>(input.coordinates[0]),
+            const_cast<T *>(input.coordinates[1]),
+            const_cast<T *>(input.strengths),
+            opts);
+    }
+
+    template <typename T>
+    void operator()(
+        nu_point_collection<3, T const *> const &input, grid_specification<3> const &grid,
+        T *output, const kernel_specification &kernel) const {
+
+        auto opts = construct_opts_from_kernel(kernel);
+        finufft::spreadinterp::spread_subproblem_3d(
+            grid.offsets[0],
+            grid.offsets[1],
+            grid.offsets[2],
+            grid.extents[0],
+            grid.extents[1],
+            grid.extents[2],
+            output,
+            input.num_points,
+            const_cast<T *>(input.coordinates[0]),
+            const_cast<T *>(input.coordinates[1]),
+            const_cast<T *>(input.coordinates[2]),
+            const_cast<T *>(input.strengths),
+            opts);
+    }
+};
+
+const static SpreadSubproblemReference spread_subproblem_reference;
 
 template <typename T>
 void add_wrapped_subgrid(
@@ -458,14 +502,50 @@ template <std::size_t Dim, typename T> struct SubgridData {
     grid_specification<Dim> grid;
 };
 
+/** Pad the input strengths and coordinates between the current size and the given desired total
+ * size.
+ *
+ * Note that this function uses the existing allocation: the arrays in `points` must have been
+ * allocated to support the desired total size.
+ *
+ * @param points The collection of non-uniform points to pad.
+ * @param total_size The final size of the padded collection.
+ * @param pad_coordinate The coordinate to use for padding.
+ *
+ */
+template <std::size_t Dim, typename PtrT, typename T>
+void pad_nu_point_collection(
+    nu_point_collection<Dim, PtrT> &points, std::size_t total_size,
+    std::array<T, Dim> const &pad_coordinate) {
+    for (std::size_t i = points.num_points; i < total_size; ++i) {
+        for (std::size_t j = 0; j < Dim; ++j) {
+            points.coordinates[j][i] = pad_coordinate[j];
+        }
+        points.strengths[2 * i] = 0;
+        points.strengths[2 * i + 1] = 0;
+    }
+
+    points.num_points = total_size;
+}
+
 template <std::size_t Dim, typename T, typename IdxT>
 inline SubgridData<Dim, T> spread_block(
     IdxT const *sort_indices, std::array<std::int64_t, Dim> const &sizes, std::size_t num_points,
     std::array<T const *, Dim> const &coordinates, T const *strengths, T *output,
-    const finufft_spread_opts &opts, std::mutex &reduction_mutex) {
+    const finufft_spread_opts &opts) {
 
-    SpreaderMemoryInput<Dim, T> memory(num_points);
+    // subproblem implementation being used (TODO: make parameter).
+    auto spread_subproblem = spread_subproblem_reference;
 
+    // round up to required number of points
+    auto num_points_padded = ((num_points + spread_subproblem.num_points_multiple - 1) /
+                              spread_subproblem.num_points_multiple) *
+                             spread_subproblem.num_points_multiple;
+
+    SpreaderMemoryInput<Dim, T> memory(num_points_padded);
+
+    // Set number of points for now to the values to be provided
+    memory.num_points = num_points;
     gather_and_fold(
         memory,
         {num_points, coordinates, strengths},
@@ -473,11 +553,28 @@ inline SubgridData<Dim, T> spread_block(
         sort_indices,
         opts.pirange ? FoldRescaleRange::Pi : FoldRescaleRange::Identity);
 
+    // Compute subgrid for given set of points.
     auto subgrid = compute_subgrid<Dim, T>(num_points, memory.get_coordinates(), opts.nspread);
+
+    // Pad the input points to the required multiple, using a pad coordinate derived from the
+    // subgrid. The pad coordinate is given by the leftmost valid coordinate in the subgrid.
+    {
+        std::array<T, Dim> pad_coordinate;
+        std::transform(
+            subgrid.offsets.begin(), subgrid.offsets.end(), pad_coordinate.begin(), [&](auto x) {
+                return x + static_cast<T>(opts.ES_halfwidth);
+            });
+        pad_nu_point_collection(memory, num_points_padded, pad_coordinate);
+    }
+
     auto output_size = 2 * subgrid.num_elements();
     auto spread_weights = allocate_aligned_array<T>(output_size, 64);
 
-    spread_subproblem(memory, subgrid, spread_weights.get(), {opts.ES_c, opts.ES_beta, opts.nspread});
+    spread_subproblem_reference(
+        memory.cast(UniqueArrayToConstPtr{}),
+        subgrid,
+        spread_weights.get(),
+        {opts.ES_c, opts.ES_beta, opts.nspread});
     return {std::move(spread_weights), std::move(subgrid)};
 }
 
@@ -523,8 +620,7 @@ inline void spread(
             coordinates,
             strengths,
             output,
-            opts,
-            reduction_mutex);
+            opts);
 
         {
             // Simple locked reduction strategy for now

@@ -148,6 +148,24 @@ TEST(SpreadSubproblem, ReferenceDirect1Df32) {
     }
 }
 
+TEST(SpreadSubproblem, ReferencePoly1Df32) {
+    // Get the kernel specification
+    auto result = evaluate_subproblem_implementation<1, float>(
+        [](finufft::spreading::kernel_specification const &k) {
+            return finufft::spreading::get_subproblem_polynomial_reference_functor<float, 1>(k);
+        },
+        100,
+        0);
+
+    auto error_level = compute_max_relative_threshold(
+        1e-5,
+        result.output_reference.get(),
+        result.output_reference.get() + 2 * result.grid.num_elements());
+    for (std::size_t i = 0; i < 2 * result.grid.num_elements(); ++i) {
+        ASSERT_NEAR(result.output_reference[i], result.output[i], error_level) << "i = " << i;
+    }
+}
+
 TEST(SpreadSubproblem, ReferenceDirect1Df64) {
     // Get the kernel specification
     auto result = evaluate_subproblem_implementation<1, double>(

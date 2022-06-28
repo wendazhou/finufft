@@ -1,6 +1,8 @@
 #pragma once
 
 #include <cstddef>
+#include <tuple>
+
 #include "kernels/span.hpp"
 
 namespace finufft {
@@ -34,6 +36,23 @@ struct precomputed_poly_kernel_data {
  * 
  */
 extern const tcb::span<const precomputed_poly_kernel_data> precomputed_poly_kernel_data_table;
+
+/** Utility template to record configurations of polynomial kernels.
+ * 
+ * @tparam Degree The degree of the polynomial
+ * @tparam Width The width of the kernel
+ * 
+ */
+template<std::size_t Degree, std::size_t Width>
+struct poly_kernel_config {
+    static const std::size_t degree = Degree;
+    static const std::size_t width = Width;
+};
+
+// This generated file defines a type poly_kernel_configs_t
+// This type is a tuple of poly_kernel_config<Degree, Width>,
+// with one entry for each degree and width used in the precomputed kernels.
+#include "precomputed_poly_kernel_configs.inl"
 
 } // namespace detail
 } // namespace finufft

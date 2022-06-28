@@ -168,6 +168,8 @@ template <typename T, std::size_t Dim> class SpreadSubproblemFunctor {
         Impl impl_;
 
       public:
+        Model(Impl &&impl) : impl_(std::move(impl)) {}
+
         virtual std::size_t num_points_multiple() const override {
             return impl_.num_points_multiple();
         };

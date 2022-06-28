@@ -1,5 +1,9 @@
 #pragma once
 
+#include <algorithm>
+#include <stdexcept>
+
+#include "../../precomputed_poly_kernel_data.h"
 #include "../../spreading.h"
 #include "../span.hpp"
 
@@ -315,22 +319,135 @@ template <typename T, std::size_t Width, std::size_t Degree> struct PolynomialBa
  * This functor provides an implementation for the spreading subproblem
  * based on a polynomial approximation.
  *
+ * @var kernel_width_ The width of the original kernel. May be smaller than the width of the
+ *                    polynomial approximation.
+ * @var kernel_polynomial_ The polynomial approximation to use for the kernel.
+ *
  */
 template <typename T, std::size_t Width, std::size_t Degree>
 struct SpreadSubproblemPolynomialReference {
-    static const std::size_t num_points_multiple = 1;
-    static const std::size_t extent_multiple = 1;
+    std::size_t kernel_width_;
+    PolynomialBatch<T, Width, Degree> kernel_polynomial_;
 
-    PolynomialBatch<T, Width, Degree> kernel_polynomial;
+    SpreadSubproblemPolynomialReference(SpreadSubproblemPolynomialReference &&) = default;
 
     template <std::size_t Dim>
     void operator()(
         nu_point_collection<Dim, T const *> const &input, grid_specification<Dim> const &grid,
-        T *output, const kernel_specification &kernel) const {
+        T *output) const {
         return spread_subproblem_generic_with_kernel(
-            input, grid, output, kernel_polynomial, static_cast<std::size_t>(kernel.width));
+            input, grid, output, kernel_polynomial_, kernel_width_);
+    }
+
+    std::size_t num_points_multiple() const { return 1; }
+    std::size_t extent_multiple() const { return 1; }
+    std::pair<double, double> target_padding() const {
+        // We only need to pad to the original kernel width,
+        // rather than to the width of the polynomial evaluation.
+        return {0.5 * kernel_width_, 0.5 * kernel_width_};
     }
 };
+
+namespace detail {
+
+/** Helper class to create a polynomial implementation of the spreading subproblem
+ * based on a set of existing kernels.
+ * 
+ * As the kernels may vary in their width and degree, we need to identify the correct
+ * concrete implementation of PolynomialBatch, based on the runtime parameters of the kernel.
+ * This is done through a linear search of the supported kernel configurations (i.e. width x degree).
+ * If no configuration is found, an exception is thrown.
+ * 
+ * In order to support the linear search at compile time, we implement it in a recursive
+ * fashion based on a type list of the supported configurations.
+ * 
+ */
+template <typename... Configs> struct InstantiateFromList;
+
+/** General case of the recursion.
+ * 
+ * Compare the runtime configuration with the configuration of the first element
+ * in the list. If they match, instantiate the polynomial implementation. Otherwise,
+ * recurse to the next element in the list.
+ * 
+ */
+template <std::size_t Degree, std::size_t Width, typename... Configs>
+struct InstantiateFromList<finufft::detail::poly_kernel_config<Degree, Width>, Configs...> {
+    template <typename T, std::size_t Dim>
+    SpreadSubproblemFunctor<T, Dim>
+    make(finufft::detail::precomputed_poly_kernel_data const &data) const {
+        if (data.width == Width && data.degree == Degree) {
+            // Check if runtime request matches with compile-time configuration.
+            // Note: polynomial width padded to next multiple of 4 for auto-vectorization.
+            const std::size_t PadWidth = (Width + 3) / 4 * 4;
+            return SpreadSubproblemPolynomialReference<T, PadWidth, Degree>{
+                data.width, PolynomialBatch<T, PadWidth, Degree>(data.coefficients, data.width)};
+        } else {
+            return InstantiateFromList<Configs...>{}.template make<T, Dim>(data);
+        }
+    }
+};
+
+/** Base case of the recursion.
+ * 
+ * No more configurations to compare, so we throw an exception.
+ */
+template <> struct InstantiateFromList<> {
+    template <typename T, std::size_t Dim>
+    SpreadSubproblemFunctor<T, Dim>
+    make(finufft::detail::precomputed_poly_kernel_data const &) const {
+        throw std::runtime_error("No suitable kernel found");
+    }
+};
+
+/** Helper template to convert from a single tuple to variadic pack.
+ * We simply use this to instantiate from the tuple of supported configurations
+ * provided to us in the generated headers.
+ * 
+ */
+template <typename T> struct InstantiateFromTupleList;
+
+template <typename... Configs>
+struct InstantiateFromTupleList<std::tuple<Configs...>> : InstantiateFromList<Configs...> {
+    using InstantiateFromList<Configs...>::make;
+};
+} // namespace detail
+
+
+/** Instantiate a functor for the spreading subproblem based on a polynomial approximation.
+ * 
+ * This function searches through the pre-generated polynomial approximations for one
+ * that matches, and instantiates a functor accordingly. If no matches are found, an
+ * exception is thrown.
+ * 
+ * @tparam T The data type of the input and output data.
+ * @tparam Dim The dimension of the problem.
+ * 
+ * @param kernel Specification of the kernel to use.
+ * 
+ */
+template <typename T, std::size_t Dim>
+SpreadSubproblemFunctor<T, Dim>
+get_subproblem_polynomial_reference_functor(kernel_specification const &kernel) {
+    // Search through list of pre-generated kernels for matching configuration.
+    // To avoid floating-point issues, we match on a quantized version of the beta parameter.
+    auto it = std::find_if(
+        finufft::detail::precomputed_poly_kernel_data_table.begin(),
+        finufft::detail::precomputed_poly_kernel_data_table.end(),
+        [&kernel](finufft::detail::precomputed_poly_kernel_data const &entry) {
+            return (entry.width == kernel.width) &&
+                   (entry.beta_1000 == static_cast<std::size_t>(kernel.es_beta * 1000));
+        });
+
+    // Could not find matching kernel, throw an exception.
+    if (it == finufft::detail::precomputed_poly_kernel_data_table.end()) {
+        throw std::runtime_error("No precomputed polynomial kernel data found for given kernel.");
+    }
+
+    // Instantiate functor based on the found kernel.
+    auto factory = detail::InstantiateFromTupleList<finufft::detail::poly_kernel_configs_t>{};
+    return factory.template make<T, Dim>(*it);
+}
 
 } // namespace spreading
 } // namespace finufft

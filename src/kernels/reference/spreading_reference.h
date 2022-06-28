@@ -56,9 +56,11 @@ template <typename T, std::size_t Dim> struct WriteSeparableKernelImpl {
         T *output, tcb::span<std::size_t, Dim> strides, tcb::span<T const *, Dim> values,
         std::size_t width, T k_re, T k_im) {
         for (std::size_t i = 0; i < width; ++i) {
+            // Set-up values for the current slice in the slowest dimension
             auto k_re_i = k_re * values[Dim - 1][i];
             auto k_im_i = k_im * values[Dim - 1][i];
 
+            // Dispatch to accumulate in current slice.
             WriteSeparableKernelImpl<T, Dim - 1>{}(
                 output + 2 * i * strides[Dim - 1],
                 strides.template subspan<0, Dim - 1>(),
@@ -93,7 +95,7 @@ template <typename T> struct WriteSeparableKernelImpl<T, 1> {
  * direct evaluation of the exp-sqrt function, or through some polynomial approximation strategy
  * for better performance.
  *
- * The kernel evaluation is required to be a batched multi-point evaluation, where
+ * The kernel evaluation is required to be a grid-batched evaluation, where
  * a single call to the function evaluates the kernel at a grid of points separated
  * by 1 / kernel_width. The offset of that grid with respect to the center of the segment
  * is specified by the input to the kernel evaluation, as a floating point number in the
@@ -106,7 +108,7 @@ template <typename T> struct WriteSeparableKernelImpl<T, 1> {
  *     `void (T*, T)`, and additionally have a member `width` indicating the width of
  *      the output of the kernel. When called, the function is guaranteed that its
  *      first argument is a pointer to a contiguous array of length `width`. Note that
- *      this width may be larger than the true width of the kernel to enable padding
+ *      this width may be larger than `kernel_width` of the kernel to enable padding
  *      and related optimizations.
  * @param kernel_width The width of the kernel being evaluated.
  *

@@ -88,7 +88,7 @@ template <typename T> struct WriteSeparableKernelImpl<T, 1> {
  * It is parametrized by the kernel evaluation function, which may be implemented as either
  * direct evaluation of the exp-sqrt function, or through some polynomial approximation strategy
  * for better performance.
- * 
+ *
  * The kernel evaluation is required to be a batched multi-point evaluation, where
  * a single call to the function evaluates the kernel at a grid of points separated
  * by 1 / kernel_width. The offset of that grid with respect to the center of the segment
@@ -185,35 +185,38 @@ template <typename T> struct KernelDirectReference {
  *
  */
 struct SpreadSubproblemDirectReference {
-    static const std::size_t num_points_multiple = 1;
-    static const std::size_t extent_multiple = 1;
+    kernel_specification kernel_;
 
     template <std::size_t Dim, typename T>
     void operator()(
         nu_point_collection<Dim, T const *> const &input, grid_specification<Dim> const &grid,
-        T *output, const kernel_specification &kernel) const {
+        T *output) const {
         KernelDirectReference<T> kernel_fn{
-            static_cast<T>(kernel.es_beta),
-            static_cast<std::size_t>(kernel.width)};
+            static_cast<T>(kernel_.es_beta), static_cast<std::size_t>(kernel_.width)};
         spread_subproblem_generic_with_kernel(
-            input, grid, output, kernel_fn, static_cast<std::size_t>(kernel.width));
+            input, grid, output, kernel_fn, static_cast<std::size_t>(kernel_.width));
+    }
+
+    std::size_t num_points_multiple() const { return 1; }
+    std::size_t extent_multiple() const { return 1; }
+    std::pair<double, double> target_padding() const {
+        return {0.5 * kernel_.width, 0.5 * kernel_.width};
     }
 };
-
-static const SpreadSubproblemDirectReference spread_subproblem_direct_reference;
 
 // @{
 
 /** Implementation of Horner scheme for polynomial evaluation through a recursive strategy.
  * This structure implements a recursive for polynomial evaluation.
- * 
+ *
  * @param x The value to evaluate the polynomial at.
- * @param coeffs The coefficients of the polynomial in reverse order. Note: must be array of length `degree + 1`.
- * 
+ * @param coeffs The coefficients of the polynomial in reverse order. Note: must be array of length
+ * `degree + 1`.
+ *
  * @tparam T The type of the evaluation.
  * @tparam Arr The type of the array of coefficients. Must produce a result compatible
  *    with the `T` type when indexed.
- * 
+ *
  */
 template <typename T, std::size_t Degree> struct HornerPolynomialEvaluation {
     template <typename Arr> T operator()(T x, Arr const &coeffs) const {
@@ -245,7 +248,7 @@ template <typename T> struct StridedArray {
  * In order to accelerate evaluation of the kernel, we may make use of
  * a polynomial approximation. This structure provides an implementation
  * for polynomial evaluation through Horner's method in a generic setting.
- * 
+ *
  * @tparam T Floating point type used for evaluation.
  * @tparam Width The number of polynomials to evaluate.
  * @tparam Degree The degree of each polynomial.
@@ -253,12 +256,12 @@ template <typename T> struct StridedArray {
  */
 template <typename T, std::size_t Width, std::size_t Degree> struct PolynomialBatch {
     /** Array of coefficients for each of the polynomial to evaluate.
-     * 
+     *
      * The array contains the coefficients with the faster dimension corresponding
      * to the width, and the slower dimension corresponding to the degree. Additionally,
      * the coefficients are stored in reverse order in the degree dimension, such that the
      * coefficient of the highest degree monomial is stored first.
-     * 
+     *
      */
     aligned_unique_array<T> coefficients;
     static const std::size_t width = Width;
@@ -266,21 +269,23 @@ template <typename T, std::size_t Width, std::size_t Degree> struct PolynomialBa
     PolynomialBatch() : coefficients(allocate_aligned_array<T>(Width * (Degree + 1), 64)) {}
 
     /** Create a polynomial from the given coefficients.
-     * 
+     *
      * This constructor gathers the weights from the given array of coefficients,
      * expressed in standard order with the degree being the slower dimension.
      * Additionally, this may be used to expand the number of polynomials evaluated
      * by padding with zero coefficients beyond the specified width, in order
      * to facilitate vectorization of the kernel.
-     * 
-     * @param coefficients Array of coefficients of the polynomial. Must be of length `width * (degree + 1)`,
-     *     and contain the coefficients with the width being the faster dimension and the degree being the slower dimension.
-     * @param width The width of the polynomial provided in the coefficients array. Must be less or equal to Width.
-     * 
+     *
+     * @param coefficients Array of coefficients of the polynomial. Must be of length `width *
+     * (degree + 1)`, and contain the coefficients with the width being the faster dimension and the
+     * degree being the slower dimension.
+     * @param width The width of the polynomial provided in the coefficients array. Must be less or
+     * equal to Width.
+     *
      */
-    template<typename U>
-    PolynomialBatch(U const* coefficients, std::size_t width = Width) : PolynomialBatch() {
-        for(std::size_t i = 0; i < Degree + 1; ++i) {
+    template <typename U>
+    PolynomialBatch(U const *coefficients, std::size_t width = Width) : PolynomialBatch() {
+        for (std::size_t i = 0; i < Degree + 1; ++i) {
             auto deg_coeffs = this->coefficients.get() + (Degree - i) * Width;
             std::copy(coefficients + i * width, coefficients + (i + 1) * width, deg_coeffs);
             std::fill(deg_coeffs + width, deg_coeffs + Width, static_cast<T>(0));
@@ -288,8 +293,7 @@ template <typename T, std::size_t Width, std::size_t Degree> struct PolynomialBa
     }
 
     // Need copy-constructor for compatibility with std::function
-    PolynomialBatch(PolynomialBatch const &other)
-        : PolynomialBatch() {
+    PolynomialBatch(PolynomialBatch const &other) : PolynomialBatch() {
         std::copy(
             other.coefficients.get(),
             other.coefficients.get() + Width * (Degree + 1),
@@ -307,10 +311,10 @@ template <typename T, std::size_t Width, std::size_t Degree> struct PolynomialBa
 };
 
 /** Reference implementation for subproblem with polynomial approximation.
- * 
+ *
  * This functor provides an implementation for the spreading subproblem
  * based on a polynomial approximation.
- * 
+ *
  */
 template <typename T, std::size_t Width, std::size_t Degree>
 struct SpreadSubproblemPolynomialReference {

@@ -106,16 +106,6 @@ evaluate_subproblem_implementation(Fn &&fn, std::size_t num_points, uint32_t see
     return {std::move(output_reference), std::move(output), grid};
 }
 
-/** Computes threshold based on relative value of maximum absolute value in array.
- * 
- */
-template <typename U, typename T>
-T compute_max_relative_threshold(U tolerance, T const *data, std::size_t num_points) {
-    auto r_min_max = std::minmax_element(data, data + num_points);
-    auto r_max = std::max(std::abs(*r_min_max.first), std::abs(*r_min_max.second));
-    return static_cast<T>(tolerance * r_max);
-}
-
 } // namespace
 
 TEST(SpreadSubproblem, SpreadSubproblem1df32) {
@@ -124,7 +114,7 @@ TEST(SpreadSubproblem, SpreadSubproblem1df32) {
         finufft::spreading::spread_subproblem_reference, 100, 0);
 
     auto error_level = compute_max_relative_threshold(
-        1e-5, result.output_reference.get(), 2 * result.grid.num_elements());
+        1e-5, result.output_reference.get(), result.output_reference.get() + 2 * result.grid.num_elements());
     for (std::size_t i = 0; i < 2 * result.grid.num_elements(); ++i) {
         EXPECT_NEAR(result.output_reference[i], result.output[i], error_level);
     }
@@ -136,7 +126,7 @@ TEST(SpreadSubproblem, ReferenceDirect1Df32) {
         finufft::spreading::spread_subproblem_direct_reference, 100, 0);
 
     auto error_level = compute_max_relative_threshold(
-        1e-5, result.output_reference.get(), 2 * result.grid.num_elements());
+        1e-5, result.output_reference.get(), result.output_reference.get() + 2 * result.grid.num_elements());
     for (std::size_t i = 0; i < 2 * result.grid.num_elements(); ++i) {
         ASSERT_NEAR(result.output_reference[i], result.output[i], error_level) << "i = " << i;
     }
@@ -148,7 +138,7 @@ TEST(SpreadSubproblem, ReferenceDirect1Df64) {
         finufft::spreading::spread_subproblem_direct_reference, 100, 0);
 
     auto error_level = compute_max_relative_threshold(
-        1e-5, result.output_reference.get(), 2 * result.grid.num_elements());
+        1e-5, result.output_reference.get(), result.output_reference.get() + 2 * result.grid.num_elements());
     for (std::size_t i = 0; i < 2 * result.grid.num_elements(); ++i) {
         ASSERT_NEAR(result.output_reference[i], result.output[i], error_level) << "i = " << i;
     }
@@ -160,7 +150,7 @@ TEST(SpreadSubproblem, ReferenceDirect2Df32) {
         finufft::spreading::spread_subproblem_direct_reference, 1, 0);
 
     auto error_level = compute_max_relative_threshold(
-        1e-5, result.output_reference.get(), 2 * result.grid.num_elements());
+        1e-5, result.output_reference.get(), result.output_reference.get() + 2 * result.grid.num_elements());
     for (std::size_t i = 0; i < 2 * result.grid.num_elements(); ++i) {
         ASSERT_NEAR(result.output_reference[i], result.output[i], error_level) << "i = " << i;
     }

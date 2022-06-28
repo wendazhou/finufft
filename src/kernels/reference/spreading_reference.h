@@ -195,6 +195,19 @@ struct SpreadSubproblemDirectReference {
 
 static const SpreadSubproblemDirectReference spread_subproblem_direct_reference;
 
+// @{
+
+/** Implementation of Horner scheme for polynomial evaluation through a recursive strategy.
+ * This structure implements a recursive for polynomial evaluation.
+ * 
+ * @param x The value to evaluate the polynomial at.
+ * @param coeffs The coefficients of the polynomial in reverse order. Note: must be array of length `degree + 1`.
+ * 
+ * @tparam T The type of the evaluation.
+ * @tparam Arr The type of the array of coefficients. Must produce a result compatible
+ *    with the `T` type when indexed.
+ * 
+ */
 template <typename T, std::size_t Degree> struct HornerPolynomialEvaluation {
     template <typename Arr> T operator()(T x, Arr const &coeffs) const {
         // Note: will dispatch to efficient FMA implementation if available on most compilers.
@@ -206,6 +219,8 @@ template <typename T, std::size_t Degree> struct HornerPolynomialEvaluation {
 template <typename T> struct HornerPolynomialEvaluation<T, 0> {
     template <typename Arr> T operator()(T x, Arr const &coeffs) const { return coeffs[0]; }
 };
+
+// @}
 
 /** Helper structure to provide a strided view over an array.
  *
@@ -226,24 +241,53 @@ template <typename T> struct StridedArray {
  *
  */
 template <typename T, std::size_t Width, std::size_t Degree> struct KernelPolynomialReference {
+    /** Array of coefficients for each of the polynomial to evaluate.
+     * 
+     * The array contains the coefficients with the faster dimension corresponding
+     * to the width, and the slower dimension corresponding to the degree. Additionally,
+     * the coefficients are stored in reverse order in the degree dimension, such that the
+     * coefficient of the highest degree monomial is stored first.
+     * 
+     */
     aligned_unique_array<T> coefficients;
     static const std::size_t width = Width;
 
-    KernelPolynomialReference() : coefficients(allocate_aligned_array<T>(Width * Degree, 64)) {}
+    KernelPolynomialReference() : coefficients(allocate_aligned_array<T>(Width * (Degree + 1), 64)) {}
+
+    /** Create a polynomial from the given coefficients.
+     * 
+     * This constructor gathers the weights from the given array of coefficients,
+     * expressed in standard order with the degree being the slower dimension.
+     * Additionally, this may be used to expand the number of polynomials evaluated
+     * by padding with zero coefficients beyond the specified width, in order
+     * to facilitate vectorization of the kernel.
+     * 
+     * @param coefficients Array of coefficients of the polynomial. Must be of length `width * (degree + 1)`,
+     *     and contain the coefficients with the width being the faster dimension and the degree being the slower dimension.
+     * @param width The width of the polynomial provided in the coefficients array. Must be less or equal to Width.
+     * 
+     */
+    template<typename U>
+    KernelPolynomialReference(U const* coefficients, std::size_t width = Width) : KernelPolynomialReference() {
+        for(std::size_t i = 0; i < Degree + 1; ++i) {
+            auto deg_coeffs = this->coefficients.get() + (Degree - i) * Width;
+            std::copy(coefficients + i * width, coefficients + (i + 1) * width, deg_coeffs);
+            std::fill(deg_coeffs + width, deg_coeffs + Width, static_cast<T>(0));
+        }
+    }
 
     // Need copy-constructor for compatibility with std::function
     KernelPolynomialReference(KernelPolynomialReference const &other)
-        : coefficients(allocate_aligned_array<T>(Width * Degree, 64)) {
+        : KernelPolynomialReference() {
         std::copy(
             other.coefficients.get(),
-            other.coefficients.get() + Width * Degree,
+            other.coefficients.get() + Width * (Degree + 1),
             coefficients.get());
     };
+
     KernelPolynomialReference(KernelPolynomialReference &&) noexcept = default;
 
     void operator()(T *__restrict output, T x) const {
-        auto z = 2 * x - Width + 1;
-
         for (std::size_t i = 0; i < Width; ++i) {
             output[i] = HornerPolynomialEvaluation<T, Degree>{}(
                 x, StridedArray<T const>{coefficients.get() + i, Width});

@@ -76,3 +76,8 @@ add_executable(spread_sorted_integration spread_sorted_integration.cpp)
 target_link_libraries(spread_sorted_integration PRIVATE finufft gtest_main gmock)
 enable_asan(spread_sorted_integration)
 gtest_discover_tests(spread_sorted_integration)
+
+add_executable(spread_poly_eval spread_poly_eval_test.cpp)
+target_link_libraries(spread_poly_eval PRIVATE finufft gtest_main gmock)
+enable_asan(spread_poly_eval)
+gtest_discover_tests(spread_poly_eval)

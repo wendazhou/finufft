@@ -130,32 +130,33 @@ template <typename T, std::size_t Dim> class SpreadSubproblemFunctor {
         virtual ~Concept() = default;
 
         /** Specify the requirement for the number of points in the subproblem input.
-         * 
+         *
          * Callers must ensure that the number of points in the input is divisible by the
          * specified number. Points should be padded by points within the problem of strengths
          * 0 as necessary to satisfy this requirement.
          */
         virtual std::size_t num_points_multiple() const = 0;
         /** Specify the requirement for the extent of the target buffer.
-         * 
+         *
          * Callers must ensure that the extent of the target buffer in each dimension is divisible
          * by the specified value. The target buffer should be enlarged to satisfy this requirement.
          */
         virtual std::size_t extent_multiple() const = 0;
         /** Specify the requirement for the padding of the target buffer.
-         * 
+         *
          * Callers must ensure that the grid specification of the target buffer is such that
-         * in each dimension, the coordinates lie in the range [offset + padding.first, offset + extent - padding.second - 1].
-         * The caller should adjust the grid specification to satisfy this requirement.
+         * in each dimension, the coordinates lie in the range [offset + padding.first, offset +
+         * extent - padding.second - 1]. The caller should adjust the grid specification to satisfy
+         * this requirement.
          */
         virtual std::pair<double, double> target_padding() const = 0;
 
         /** Performs the given subproblem operation.
-         * 
+         *
          * @param input The input data to the subproblem.
          * @param grid The grid specification of the target buffer.
          * @param output[out] The target buffer to write to.
-         * 
+         *
          */
         virtual void operator()(
             nu_point_collection<Dim, T const *> const &input, grid_specification<Dim> const &grid,
@@ -171,7 +172,9 @@ template <typename T, std::size_t Dim> class SpreadSubproblemFunctor {
             return impl_.num_points_multiple();
         };
         virtual std::size_t extent_multiple() const override { return impl_.extent_multiple(); };
-        virtual std::pair<double, double> target_padding() const override { return impl_.target_padding(); };
+        virtual std::pair<double, double> target_padding() const override {
+            return impl_.target_padding();
+        };
         virtual void operator()(
             nu_point_collection<Dim, T const *> const &input, grid_specification<Dim> const &grid,
             T *output) const override {
@@ -232,29 +235,31 @@ struct spread_problem_input : nu_point_collection<Dim, const T> {
 /** Computes subgrid offsets and extents large enough to contain all locations.
  *
  * We compute a rectangular subgrid specified as offsets and sizes which is large
- * enough to contain all non-uniform points, padded up to half the kernel width.
+ * enough to contain all non-uniform points, padded as per the specification.
+ * The computed subgrid satisfies that in each dimension, the coordinate lies in:
+ *    [offset + padding.first, offset + extent - padding.second - 1]
+ * 
  *
  * @param M Number of points.
  * @param coordinates Array containing coordinates of non-uniform points.
  *      coordinates[i][j] contains the ith coordinate of the jth point.
- * @param ns Width of the kernel in pixels.
+ * @param padding_left The required amount of padding on the left side of the subgrid.
+ * @param padding_right The required amount of padding on the right side of the subgrid.
  *
  */
 template <std::size_t Dim, typename T>
 grid_specification<Dim>
-compute_subgrid(std::size_t M, std::array<T const *, Dim> const &coordinates, int ns) {
+compute_subgrid(std::size_t M, std::array<T const *, Dim> const &coordinates, T padding_left, T padding_right) {
     std::array<std::int64_t, Dim> offsets;
     std::array<std::int64_t, Dim> sizes;
-
-    T ns_half = static_cast<T>(ns) / 2;
 
     for (int i = 0; i < Dim; ++i) {
         auto minmax = std::minmax_element(coordinates[i], coordinates[i] + M);
         auto min_val = *minmax.first;
         auto max_val = *minmax.second;
 
-        offsets[i] = std::ceil(min_val - ns_half);
-        sizes[i] = static_cast<std::size_t>(std::ceil(max_val - ns_half)) - offsets[i] + ns;
+        offsets[i] = static_cast<int64_t>(std::ceil(min_val - padding_left));
+        sizes[i] = static_cast<int64_t>(std::ceil(max_val - offsets[i] + padding_right + 1));
     }
 
     return {offsets, sizes};
@@ -469,7 +474,7 @@ inline finufft_spread_opts construct_opts_from_kernel(const kernel_specification
  * spreading problem.
  *
  */
-struct SpreadSubproblemReference {
+struct SpreadSubproblemLegacy {
     // Specifies that the number of points in the input must be a multiple of this value.
     // The caller is required to pad the input with points within the domain and zero strength.
     static const std::size_t num_points_multiple = 1;
@@ -539,7 +544,28 @@ struct SpreadSubproblemReference {
     }
 };
 
-const static SpreadSubproblemReference spread_subproblem_reference;
+const static SpreadSubproblemLegacy spread_subproblem_legacy;
+
+/** Dispatches to the current implementation of the subproblem
+ * through the `SpreadSubproblemFunctor` interface.
+ * 
+ */
+struct SpreadSubproblemLegacyFunctor {
+    kernel_specification kernel;
+
+    std::size_t num_points_multiple() const { return 1; }
+    std::size_t extent_multiple() const { return 1; }
+    std::pair<double, double> target_padding() const {
+        return {0.5 * kernel.width, 0.5 * kernel.width};
+    }
+
+    template <typename T, std::size_t Dim>
+    void operator()(
+        nu_point_collection<Dim, T const *> const &input, grid_specification<Dim> const &grid,
+        T *output) const {
+        spread_subproblem_legacy(input, grid, output, kernel);
+    }
+};
 
 template <typename T>
 void add_wrapped_subgrid(
@@ -640,11 +666,11 @@ SubgridData<Dim, T> spread_block(
     const kernel_specification &kernel, FoldRescaleRange range) {
 
     // subproblem implementation being used (TODO: make parameter).
-    auto spread_subproblem = spread_subproblem_reference;
+    auto spread_subproblem = SpreadSubproblemLegacyFunctor{kernel};
 
     // round up to required number of points
     auto num_points_padded =
-        round_to_next_multiple(num_points, spread_subproblem.num_points_multiple);
+        round_to_next_multiple(num_points, spread_subproblem.num_points_multiple());
 
     SpreaderMemoryInput<Dim, T> memory(num_points_padded);
     auto memory_reference = memory.cast(UniqueArrayToConstPtr{});
@@ -654,11 +680,12 @@ SubgridData<Dim, T> spread_block(
     gather_and_fold(memory, {num_points, coordinates, strengths}, sizes, sort_indices, range);
 
     // Compute subgrid for given set of points.
-    auto subgrid = compute_subgrid<Dim, T>(num_points, memory_reference.coordinates, kernel.width);
+    auto padding = spread_subproblem.target_padding();
+    auto subgrid = compute_subgrid<Dim, T>(num_points, memory_reference.coordinates, padding.first, padding.second);
     // Round up subgrid extent to required multiple for subproblem implementation.
     std::transform(
         subgrid.extents.begin(), subgrid.extents.end(), subgrid.extents.begin(), [&](auto x) {
-            return round_to_next_multiple(x, spread_subproblem.num_points_multiple);
+            return round_to_next_multiple(x, spread_subproblem.extent_multiple());
         });
 
     // Pad the input points to the required multiple, using a pad coordinate derived from the
@@ -675,7 +702,7 @@ SubgridData<Dim, T> spread_block(
     auto output_size = 2 * subgrid.num_elements();
     auto spread_weights = allocate_aligned_array<T>(output_size, 64);
 
-    spread_subproblem_reference(memory_reference, subgrid, spread_weights.get(), kernel);
+    spread_subproblem(memory_reference, subgrid, spread_weights.get());
     return {std::move(spread_weights), subgrid};
 }
 

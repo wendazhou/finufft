@@ -71,7 +71,7 @@ evaluate_subproblem_implementation(Fn &&fn, std::size_t num_points, uint32_t see
     finufft::spreadinterp::setup_spreader(opts, 1e-5, 2, 0, 0, 0, 1);
     finufft::spreading::kernel_specification kernel{opts.ES_beta, opts.nspread};
 
-    auto reference_fn = finufft::spreading::spread_subproblem_reference;
+    auto reference_fn = finufft::spreading::spread_subproblem_legacy;
 
     // Arbitrary grid specification in all dimensions
     auto offset = 3;
@@ -111,7 +111,7 @@ evaluate_subproblem_implementation(Fn &&fn, std::size_t num_points, uint32_t see
 TEST(SpreadSubproblem, SpreadSubproblem1df32) {
     // Get the kernel specification
     auto result = evaluate_subproblem_implementation<1, float>(
-        finufft::spreading::spread_subproblem_reference, 100, 0);
+        finufft::spreading::spread_subproblem_legacy, 100, 0);
 
     auto error_level = compute_max_relative_threshold(
         1e-5, result.output_reference.get(), result.output_reference.get() + 2 * result.grid.num_elements());

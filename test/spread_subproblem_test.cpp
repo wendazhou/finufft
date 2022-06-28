@@ -69,7 +69,7 @@ evaluate_subproblem_implementation(Fn &&fn, std::size_t num_points, uint32_t see
     // Get the kernel specification
     finufft_spread_opts opts;
     finufft::spreadinterp::setup_spreader(opts, 1e-5, 2, 0, 0, 0, 1);
-    finufft::spreading::kernel_specification kernel{opts.ES_c, opts.ES_beta, opts.nspread};
+    finufft::spreading::kernel_specification kernel{opts.ES_beta, opts.nspread};
 
     auto reference_fn = finufft::spreading::spread_subproblem_reference;
 

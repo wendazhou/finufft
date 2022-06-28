@@ -56,9 +56,11 @@ namespace spreading {
 
 /** This structure collects the parameters of the kernel to use when spreading.
  *
+ * @var es_beta The exponent of the beta term in the kernel.
+ * @var width The width of the kernel in grid units.
+ *
  */
 struct kernel_specification {
-    double es_c;
     double es_beta;
     int width;
 };
@@ -77,7 +79,11 @@ template <std::size_t Dim> struct grid_specification {
  *
  * @tparam Dim The dimension of the points.
  * @tparam PtrT The pointer type used to store the points and strengths. Typically *float or
- * *double, but may be a smart pointer type to manage memory ownership.
+ *    *double, but may be a smart pointer type to manage memory ownership.
+ *
+ * @var num_points The number of points in the collection.
+ * @var coordinates An array representing the coordinates of the points in each dimension
+ * @var strengths An array representing the strengths of the points in complex interleaved format
  *
  */
 template <std::size_t Dim, typename PtrT> struct nu_point_collection {
@@ -101,6 +107,93 @@ template <std::size_t Dim, typename PtrT> struct nu_point_collection {
         }
         result.strengths = fn(strengths);
         return result;
+    }
+};
+
+/** Main type-erased holder for subproblem functor.
+ *
+ * This is the main type-erased holder for performing the spreading subproblem.
+ * It also defines the concept for providing custom implementations of the inner
+ * loop of the spreader.
+ *
+ */
+template <typename T, std::size_t Dim> class SpreadSubproblemFunctor {
+  public:
+    /** Main concept for subproblem implementations.
+     *
+     * In addition to the main operation, the subproblem must specify
+     * three additional values corresponding to the various amounts
+     * of padding required.
+     *
+     */
+    struct Concept {
+        virtual ~Concept() = default;
+
+        /** Specify the requirement for the number of points in the subproblem input.
+         * 
+         * Callers must ensure that the number of points in the input is divisible by the
+         * specified number. Points should be padded by points within the problem of strengths
+         * 0 as necessary to satisfy this requirement.
+         */
+        virtual std::size_t num_points_multiple() const = 0;
+        /** Specify the requirement for the extent of the target buffer.
+         * 
+         * Callers must ensure that the extent of the target buffer in each dimension is divisible
+         * by the specified value. The target buffer should be enlarged to satisfy this requirement.
+         */
+        virtual std::size_t extent_multiple() const = 0;
+        /** Specify the requirement for the padding of the target buffer.
+         * 
+         * Callers must ensure that the grid specification of the target buffer is such that
+         * in each dimension, the coordinates lie in the range [offset + padding.first, offset + extent - padding.second - 1].
+         * The caller should adjust the grid specification to satisfy this requirement.
+         */
+        virtual std::pair<double, double> target_padding() const = 0;
+
+        /** Performs the given subproblem operation.
+         * 
+         * @param input The input data to the subproblem.
+         * @param grid The grid specification of the target buffer.
+         * @param output[out] The target buffer to write to.
+         * 
+         */
+        virtual void operator()(
+            nu_point_collection<Dim, T const *> const &input, grid_specification<Dim> const &grid,
+            T *output) const = 0;
+    };
+
+    template <typename Impl> class Model : public Concept {
+      private:
+        Impl impl_;
+
+      public:
+        virtual std::size_t num_points_multiple() const override {
+            return impl_.num_points_multiple();
+        };
+        virtual std::size_t extent_multiple() const override { return impl_.extent_multiple(); };
+        virtual std::pair<double, double> target_padding() const override { return impl_.target_padding(); };
+        virtual void operator()(
+            nu_point_collection<Dim, T const *> const &input, grid_specification<Dim> const &grid,
+            T *output) const override {
+            return impl_(input, grid, output);
+        }
+    };
+
+  private:
+    std::unique_ptr<Concept> impl_;
+
+  public:
+    template <typename Impl>
+    SpreadSubproblemFunctor(Impl &&impl)
+        : impl_(std::make_unique<Model<Impl>>(std::forward<Impl>(impl))) {}
+
+    std::size_t num_points_multiple() const { return impl_->num_points_multiple(); }
+    std::size_t extent_multiple() const { return impl_->extent_multiple(); }
+    std::pair<double, double> target_padding() const { return impl_->target_padding(); }
+    void operator()(
+        nu_point_collection<Dim, T const *> const &input, grid_specification<Dim> const &grid,
+        T *output) const {
+        impl_->operator()(input, grid, output);
     }
 };
 
@@ -338,7 +431,7 @@ inline finufft_spread_opts construct_opts_from_kernel(const kernel_specification
     opts.kerevalmeth = 1;
     opts.kerpad = 1;
     opts.ES_beta = kernel.es_beta;
-    opts.ES_c = kernel.es_c;
+    opts.ES_c = 4.0 / (kernel.width * kernel.width);
     opts.ES_halfwidth = (double)kernel.width / 2.0;
     opts.flags = 0;
 
@@ -600,7 +693,7 @@ inline void spread(
     std::size_t nb = std::min(
         {static_cast<std::size_t>(nthr), num_points}); // simply split one subprob per thr...
 
-    if (nb * opts.max_subproblem_size < num_points) {  // ...or more subprobs to cap size
+    if (nb * opts.max_subproblem_size < num_points) { // ...or more subprobs to cap size
         nb = 1 + (num_points - 1) /
                      opts.max_subproblem_size; // int div does ceil(M/opts.max_subproblem_size)
         if (opts.debug)
@@ -629,7 +722,7 @@ inline void spread(
             coordinates,
             strengths,
             output,
-            {opts.ES_c, opts.ES_beta, opts.nspread},
+            {opts.ES_beta, opts.nspread},
             opts.pirange ? FoldRescaleRange::Pi : FoldRescaleRange::Identity);
 
         {

@@ -40,7 +40,7 @@ TEST(KernelPolyEvaluation, KernelPolySingle) {
             continue;
         }
 
-        finufft::spreading::KernelPolynomialReference<float, out_width, degree> kernel(poly_kernel_data.coefficients, poly_kernel_data.width);
+        finufft::spreading::PolynomialBatch<float, out_width, degree> kernel(poly_kernel_data.coefficients, poly_kernel_data.width);
         float beta = poly_kernel_data.beta_1000 / 1000.;
 
         for (std::size_t i = 0; i < 100; ++i) {

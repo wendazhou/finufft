@@ -12,9 +12,9 @@ namespace spreading {
  * is fairly slow, and polynomial approximations are more performant.
  *
  */
-template <typename T> inline T evaluate_es_kernel_direct(T x, T es_beta, T es_c) {
-    auto s = std::sqrt(static_cast<T>(1.0) - es_c * x * x);
-    return std::exp(es_beta * s);
+template <typename T> inline T evaluate_es_kernel_direct(T x, T beta) {
+    auto s = std::sqrt(static_cast<T>(1.0) - x * x);
+    return std::exp(beta * s);
 }
 
 ///@{
@@ -88,6 +88,12 @@ template <typename T> struct WriteSeparableKernelImpl<T, 1> {
  * It is parametrized by the kernel evaluation function, which may be implemented as either
  * direct evaluation of the exp-sqrt function, or through some polynomial approximation strategy
  * for better performance.
+ * 
+ * The kernel evaluation is required to be a batched multi-point evaluation, where
+ * a single call to the function evaluates the kernel at a grid of points separated
+ * by 1 / kernel_width. The offset of that grid with respect to the center of the segment
+ * is specified by the input to the kernel evaluation, as a floating point number in the
+ * range [-1, 1].
  *
  * @param input Non-uniform points to spread.
  * @param grid Grid specification.
@@ -135,8 +141,8 @@ void spread_subproblem_generic_with_kernel(
             auto x = input.coordinates[dim][i];
             auto x_i = static_cast<int64_t>(std::ceil(x - ns2));
             auto x_f = x_i - x;
-
-            kernel(kernel_values.get() + dim * kernel_values_stride, x_f);
+            auto z = 2 * x_f + kernel_width - 1;
+            kernel(kernel_values.get() + dim * kernel_values_stride, z);
 
             point_total_offset += (x_i - grid.offsets[dim]) * strides[dim];
         }
@@ -160,12 +166,14 @@ void spread_subproblem_generic_with_kernel(
  */
 template <typename T> struct KernelDirectReference {
     T es_beta;
-    T es_c;
     std::size_t width;
 
     void operator()(T *output, T x) const {
+        T z = x / width;
+
         for (std::size_t i = 0; i < width; ++i) {
-            output[i] = evaluate_es_kernel_direct(x + static_cast<T>(i), es_beta, es_c);
+            T center = 2 * (i + static_cast<T>(0.5)) / width - 1;
+            output[i] = evaluate_es_kernel_direct(center + z, es_beta);
         }
     }
 };
@@ -186,7 +194,6 @@ struct SpreadSubproblemDirectReference {
         T *output, const kernel_specification &kernel) const {
         KernelDirectReference<T> kernel_fn{
             static_cast<T>(kernel.es_beta),
-            static_cast<T>(kernel.es_c),
             static_cast<std::size_t>(kernel.width)};
         spread_subproblem_generic_with_kernel(
             input, grid, output, kernel_fn, static_cast<std::size_t>(kernel.width));
@@ -233,14 +240,18 @@ template <typename T> struct StridedArray {
     T const &operator[](std::size_t i) const { return data[i * stride]; }
 };
 
-/** Structure for evaluating a set of polynomials of the given degree.
+/** Structure for evaluating a batch of polynomials of the given degree.
  *
  * In order to accelerate evaluation of the kernel, we may make use of
  * a polynomial approximation. This structure provides an implementation
  * for polynomial evaluation through Horner's method in a generic setting.
+ * 
+ * @tparam T Floating point type used for evaluation.
+ * @tparam Width The number of polynomials to evaluate.
+ * @tparam Degree The degree of each polynomial.
  *
  */
-template <typename T, std::size_t Width, std::size_t Degree> struct KernelPolynomialReference {
+template <typename T, std::size_t Width, std::size_t Degree> struct PolynomialBatch {
     /** Array of coefficients for each of the polynomial to evaluate.
      * 
      * The array contains the coefficients with the faster dimension corresponding
@@ -252,7 +263,7 @@ template <typename T, std::size_t Width, std::size_t Degree> struct KernelPolyno
     aligned_unique_array<T> coefficients;
     static const std::size_t width = Width;
 
-    KernelPolynomialReference() : coefficients(allocate_aligned_array<T>(Width * (Degree + 1), 64)) {}
+    PolynomialBatch() : coefficients(allocate_aligned_array<T>(Width * (Degree + 1), 64)) {}
 
     /** Create a polynomial from the given coefficients.
      * 
@@ -268,7 +279,7 @@ template <typename T, std::size_t Width, std::size_t Degree> struct KernelPolyno
      * 
      */
     template<typename U>
-    KernelPolynomialReference(U const* coefficients, std::size_t width = Width) : KernelPolynomialReference() {
+    PolynomialBatch(U const* coefficients, std::size_t width = Width) : PolynomialBatch() {
         for(std::size_t i = 0; i < Degree + 1; ++i) {
             auto deg_coeffs = this->coefficients.get() + (Degree - i) * Width;
             std::copy(coefficients + i * width, coefficients + (i + 1) * width, deg_coeffs);
@@ -277,15 +288,15 @@ template <typename T, std::size_t Width, std::size_t Degree> struct KernelPolyno
     }
 
     // Need copy-constructor for compatibility with std::function
-    KernelPolynomialReference(KernelPolynomialReference const &other)
-        : KernelPolynomialReference() {
+    PolynomialBatch(PolynomialBatch const &other)
+        : PolynomialBatch() {
         std::copy(
             other.coefficients.get(),
             other.coefficients.get() + Width * (Degree + 1),
             coefficients.get());
     };
 
-    KernelPolynomialReference(KernelPolynomialReference &&) noexcept = default;
+    PolynomialBatch(PolynomialBatch &&) noexcept = default;
 
     void operator()(T *__restrict output, T x) const {
         for (std::size_t i = 0; i < Width; ++i) {
@@ -306,7 +317,7 @@ struct SpreadSubproblemPolynomialReference {
     static const std::size_t num_points_multiple = 1;
     static const std::size_t extent_multiple = 1;
 
-    KernelPolynomialReference<T, Width, Degree> kernel_polynomial;
+    PolynomialBatch<T, Width, Degree> kernel_polynomial;
 
     template <std::size_t Dim>
     void operator()(

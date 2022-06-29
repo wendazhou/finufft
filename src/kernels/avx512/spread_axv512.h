@@ -16,6 +16,10 @@ namespace spreading {
 SpreadSubproblemFunctor<float, 1>
 get_subproblem_polynomial_avx512_1d_fp32_functor(kernel_specification const &kernel);
 
+SpreadSubproblemFunctor<double, 1>
+get_subproblem_polynomial_avx512_1d_fp64_functor(kernel_specification const &kernel);
+
+
 /** Utility generic function to obtain AVX-512 implementation of the subproblem.
  * 
  * Note that this function template dispatches to supported implementations,
@@ -32,6 +36,12 @@ template <>
 SpreadSubproblemFunctor<float, 1>
 get_subproblem_polynomial_avx512_functor<float, 1>(kernel_specification const &kernel) {
     return get_subproblem_polynomial_avx512_1d_fp32_functor(kernel);
+}
+
+template <>
+SpreadSubproblemFunctor<double, 1>
+get_subproblem_polynomial_avx512_functor<double, 1>(kernel_specification const &kernel) {
+    return get_subproblem_polynomial_avx512_1d_fp64_functor(kernel);
 }
 
 } // namespace spreading

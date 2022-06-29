@@ -39,7 +39,7 @@ namespace avx512 {
  *  s s 0 1       2 3 s s
  *  s s s 0       1 2 3 s
  */
-alignas(64) static constexpr std::array<int, 16 * 8> align_shuffles_low = ([]{
+alignas(64) static constexpr std::array<int, 16 * 8> align_shuffles_low = ([] {
     std::array<int, 16 * 8> result = {};
 
     for (int i = 0; i < 8; ++i) {
@@ -175,24 +175,119 @@ inline void accumulate_add_complex_interleaved_aligned(float *du, int i, __m256 
     _mm256_store_ps(out + 8, out_hi);
 }
 
+alignas(64) std::array<int64_t, 8 * 4> align_shuffles_low_fp64_w8 = ([]() {
+    std::array<int64_t, 8 * 4> result = {};
+    for (int i = 0; i < 4; ++i) {
+        for (int j = 0; j < i; ++j) {
+            result[i * 8 + 2 * j] = 0b1000;
+            result[i * 8 + 2 * j + 1] = 0b1000;
+        }
+
+        for (int j = i; j < 4; ++j) {
+            result[i * 8 + 2 * j] = 2 * (j - i);
+            result[i * 8 + 2 * j + 1] = 2 * (j - i) + 1;
+        }
+    }
+
+    return result;
+})();
+
+alignas(64) std::array<int64_t, 8 * 4> align_shuffles_high_fp64_w8 = ([]() {
+    std::array<int64_t, 8 * 4> result = {};
+
+    for (int i = 0; i < 4; ++i) {
+        for (int j = 0; j < i; ++j) {
+            result[i * 8 + 2 * j] = 2 * (4 - i) + 2 * j;
+            result[i * 8 + 2 * j + 1] = 2 * (4 - i) + 2 * j + 1;
+        }
+
+        for (int j = i; j < 4; ++j) {
+            result[i * 8 + 2 * j] = 0b1000;
+            result[i * 8 + 2 * j + 1] = 0b1000;
+        }
+    }
+
+    return result;
+})();
+
+alignas(64) std::array<int64_t, 8 * 4> align_shuffles_mid_fp64_w8 = ([]() {
+    std::array<int64_t, 8 * 4> result = {};
+
+    for (int i = 0; i < 4; ++i) {
+        for (int j = 0; j < i; ++j) {
+            result[i * 8 + 2 * j] = 2 * (4 - i) + 2 * j;
+            result[i * 8 + 2 * j + 1] = 2 * (4 - i) + 2 * j + 1;
+        }
+
+        for (int j = i; j < 4; ++j) {
+            result[i * 8 + 2 * j] = 2 * (j - i) + 0b1000;
+            result[i * 8 + 2 * j + 1] = 2 * (j - i) + 1 + 0b1000;
+        }
+    }
+
+    return result;
+})();
+
+inline void accumulate_add_complex_interleaved_aligned(
+    double *du, int64_t i, __m512d const &v1, __m512d const &v2) {
+    int64_t i_aligned = i & ~3;
+    int i_remainder = i - i_aligned;
+
+    __m512d v_lo = _mm512_permutex2var_pd(
+        v1,
+        _mm512_load_epi64(align_shuffles_low_fp64_w8.data() + i_remainder * 8),
+        _mm512_setzero_pd());
+    __m512d v_hi = _mm512_permutex2var_pd(
+        v2,
+        _mm512_load_epi64(align_shuffles_high_fp64_w8.data() + i_remainder * 8),
+        _mm512_setzero_pd());
+    __m512d v_mid = _mm512_permutex2var_pd(
+        v1, _mm512_load_epi64(align_shuffles_mid_fp64_w8.data() + i_remainder * 8), v2);
+
+    __m512d out_lo = _mm512_load_pd(du + 2 * i_aligned);
+    __m512d out_mid = _mm512_load_pd(du + 2 * i_aligned + 8);
+    __m512d out_hi = _mm512_load_pd(du + 2 * i_aligned + 16);
+
+    out_lo = _mm512_add_pd(out_lo, v_lo);
+    out_mid = _mm512_add_pd(out_mid, v_mid);
+    out_hi = _mm512_add_pd(out_hi, v_hi);
+
+    _mm512_store_pd(du + 2 * i_aligned, out_lo);
+    _mm512_store_pd(du + 2 * i_aligned + 8, out_mid);
+    _mm512_store_pd(du + 2 * i_aligned + 16, out_hi);
+}
+
 template <std::size_t Degree> struct Avx512HornerPolynomialEvaluation {
     template <typename C> __m512 operator()(__m512 z, C const &coeffs) const {
         return _mm512_fmadd_ps(
+            Avx512HornerPolynomialEvaluation<Degree - 1>()(z, coeffs), z, coeffs[Degree]);
+    }
+
+    template <typename C> __m512d operator()(__m512d z, C const &coeffs) const {
+        return _mm512_fmadd_pd(
             Avx512HornerPolynomialEvaluation<Degree - 1>()(z, coeffs), z, coeffs[Degree]);
     }
 };
 
 template <> struct Avx512HornerPolynomialEvaluation<0> {
     template <typename C> __m512 operator()(__m512 z, C const &coeffs) const { return coeffs[0]; }
+    template <typename C> __m512d operator()(__m512d z, C const &coeffs) const { return coeffs[0]; }
 };
 
 /** Utility class for loading a set of coefficients into a vector.
  *
  * This class is principally intended to be used with `Avx512HornerPolynomialEvaluation`.
  */
-struct VectorLoader {
+template <typename T> struct VectorLoader;
+
+template <> struct VectorLoader<float> {
     float const *data;
     __m512 operator[](std::size_t i) const { return _mm512_load_ps(data + i * 16); }
+};
+
+template <> struct VectorLoader<double> {
+    double const *data;
+    __m512d operator[](std::size_t i) const { return _mm512_load_pd(data + i * 8); }
 };
 
 /** Spreading functor for width-8 polynomial.
@@ -241,7 +336,8 @@ template <std::size_t Degree> struct SpreadSubproblemPolyW8 {
      *
      */
     void compute(__m512 z, float const *dd, __m512 &v1, __m512 &v2) const {
-        __m512 k = Avx512HornerPolynomialEvaluation<Degree>{}(z, VectorLoader{coefficients.get()});
+        __m512 k =
+            Avx512HornerPolynomialEvaluation<Degree>{}(z, VectorLoader<float>{coefficients.get()});
 
         // Load real and imaginary coefficients, split by 256-bit lane.
         __m512 w_re = _mm512_insertf32x8(_mm512_set1_ps(dd[0]), _mm256_set1_ps(dd[2]), 1);
@@ -396,7 +492,8 @@ template <std::size_t Degree> struct SpreadSubproblemPolyW4 {
     }
 
     void compute(__m512 z, float const *dd, __m512 &v1, __m512 &v2) const {
-        __m512 k = Avx512HornerPolynomialEvaluation<Degree>{}(z, VectorLoader{coefficients.get()});
+        __m512 k =
+            Avx512HornerPolynomialEvaluation<Degree>{}(z, VectorLoader<float>{coefficients.get()});
 
         // Load weights for the 4 points
         __m256 w = _mm256_load_ps(dd);
@@ -515,6 +612,137 @@ extern template struct SpreadSubproblemPolyW4<4>;
 extern template struct SpreadSubproblemPolyW4<5>;
 extern template struct SpreadSubproblemPolyW4<6>;
 extern template struct SpreadSubproblemPolyW4<7>;
+
+template <std::size_t Degree> struct SpreadSubproblemPolyW8F64 {
+    aligned_unique_array<double> coefficients;
+    double kernel_width;
+
+    template <typename U>
+    SpreadSubproblemPolyW8F64(U const *coefficients, std::size_t width)
+        : coefficients(allocate_aligned_array<double>(8 * (Degree + 1), 64)), kernel_width(width) {
+        fill_polynomial_coefficients(Degree, coefficients, width, this->coefficients.get(), 8);
+
+        // We need to adjust the coefficients at each degree to reorder in the width dimension.
+        // The array is given to use in the standard order:
+        //   a_1 a_2 a_3 a_4 a_5 a_6 a_7 a_8
+        // and we wish to use it in the following order:
+        //   a_1 a_4 a_2 a_6 a_3 a_7 a_4 a_8
+        // To apply the permutation, we use the following factorization into cycles
+        //   (1) (2 3 5) (4 7 6) (8)
+        for (std::size_t i = 1; i < Degree + 1; ++i) {
+            auto coeffs_d = this->coefficients.get() + i * 8;
+            {
+                double t = coeffs_d[1];
+                coeffs_d[1] = coeffs_d[4];
+                coeffs_d[4] = coeffs_d[2];
+                coeffs_d[2] = t;
+            }
+
+            {
+                double t = coeffs_d[3];
+                coeffs_d[3] = coeffs_d[5];
+                coeffs_d[5] = coeffs_d[6];
+                coeffs_d[6] = t;
+            }
+        }
+    }
+
+    void compute(__m512d z, double const *dd, __m512d &v1, __m512d &v2) const {
+        __m512d k =
+            Avx512HornerPolynomialEvaluation<Degree>{}(z, VectorLoader<double>{coefficients.get()});
+
+        // Load real and imaginary coefficients
+        __m512d w_re = _mm512_set1_pd(dd[0]);
+        __m512d w_im = _mm512_set1_pd(dd[1]);
+
+        // Multiply by coefficients in lane.
+        __m512d k_re = _mm512_mul_pd(k, w_re);
+        __m512d k_im = _mm512_mul_pd(k, w_im);
+
+        // To finish, we need to write out the results in interleaved format
+        // Note that we rely on pre-shuffled coefficients to ensure that
+        // the results are unpacked correctly.
+        v1 = _mm512_unpacklo_pd(k_re, k_im);
+        v2 = _mm512_unpackhi_pd(k_re, k_im);
+    }
+
+    /** Function for a single unrolled iteration of the subproblem.
+     *
+     * This is the core loop of the kernel, and operates on 8 points at a time
+     * in order to leverage vectorization in the computation of the index into the grid.
+     *
+     */
+    void process_4(
+        double *__restrict output, double const *coord_x, double const *strengths, int64_t offset,
+        std::size_t i) const {
+        // Load position of 8 non-uniform points, compute grid and subgrid offsets (vectorized)
+        __m256d x = _mm256_load_pd(coord_x + i);
+        __m256d x_ceil = _mm256_ceil_pd(_mm256_sub_pd(x, _mm256_set1_pd(0.5 * kernel_width)));
+        __m256i x_ceili = _mm256_cvtpd_epi64(x_ceil);
+        __m256d xi = _mm256_sub_pd(x_ceil, x);
+
+        // Normalized subgrid position for each point
+        // [z_0, z_1, ...]
+        __m256d z = _mm256_add_pd(_mm256_add_pd(xi, xi), _mm256_set1_pd(kernel_width - 1.0));
+
+        // Prepare zd register so that we can obtain pairs using vpermilps
+        // This vector now contains the subgrid offsets for the 8 points,
+        // duplicated once in order to facilitate future shuffling.
+        // [z_0, z_2, ..., z_0, z_2, ..., z_1, z_3, ..., z_1, z_3, ...]
+        __m512d zd = _mm512_permutexvar_pd(
+            _mm512_setr_epi64(0, 1, 2, 3, 0, 1, 2, 3), _mm512_castpd256_pd512(z));
+
+        __m512d v1;
+        __m512d v2;
+
+        // Store integer coordinates for accumulation later (adjust indices to account for offset)
+        alignas(16) int64_t indices[4];
+        _mm256_store_epi64(indices, _mm256_sub_epi64(x_ceili, _mm256_set1_epi64x(offset)));
+
+        // Unrolled loop to compute 8 values, two at once.
+        // At each stage, we permute from xid into a register
+        // which contains z_0 in the lower 256-bit, and z_1 in the upper 256-bit.
+        compute(_mm512_permutex_pd(zd, 0b00000000), strengths + 2 * i, v1, v2);
+        accumulate_add_complex_interleaved_aligned(output, indices[0], v1, v2);
+
+        compute(_mm512_permutex_pd(zd, 0b01010101), strengths + 2 * i + 2, v1, v2);
+        accumulate_add_complex_interleaved_aligned(output, indices[1], v1, v2);
+
+        compute(_mm512_permutex_pd(zd, 0b10101010), strengths + 2 * i + 4, v1, v2);
+        accumulate_add_complex_interleaved_aligned(output, indices[2], v1, v2);
+
+        compute(_mm512_permutex_pd(zd, 0b11111111), strengths + 2 * i + 6, v1, v2);
+        accumulate_add_complex_interleaved_aligned(output, indices[3], v1, v2);
+    }
+
+    void operator()(
+        nu_point_collection<1, double const *> const &input, grid_specification<1> const &grid,
+        double *__restrict output) const {
+
+        std::fill_n(output, grid.num_elements(), 0.0f);
+
+        double const *coord_x = input.coordinates[0];
+        double const *strengths = input.strengths;
+
+        auto offset = grid.offsets[0];
+
+        for (std::size_t i = 0; i < input.num_points; i += 4) {
+            process_4(output, coord_x, strengths, offset, i);
+        }
+    }
+
+    std::size_t num_points_multiple() const { return 4; }
+    std::size_t extent_multiple() const { return 1; }
+    std::pair<double, double> target_padding() const {
+        return {0.5 * kernel_width, 0.5 * kernel_width + 4};
+    }
+};
+
+extern template struct SpreadSubproblemPolyW8F64<7>;
+extern template struct SpreadSubproblemPolyW8F64<8>;
+extern template struct SpreadSubproblemPolyW8F64<9>;
+extern template struct SpreadSubproblemPolyW8F64<10>;
+extern template struct SpreadSubproblemPolyW8F64<11>;
 
 } // namespace avx512
 } // namespace spreading

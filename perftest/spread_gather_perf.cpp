@@ -1,8 +1,8 @@
 #include <benchmark/benchmark.h>
 
 #include "../test/spread_test_utils.h"
-#include "../src/kernels/avx2/spreading_avx2.h"
-#include "../src/kernels/avx512/spreading_avx512.h"
+#include "../src/kernels/avx2/gather_fold_avx2.h"
+#include "../src/kernels/avx512/gather_fold_avx512.h"
 
 namespace {
 

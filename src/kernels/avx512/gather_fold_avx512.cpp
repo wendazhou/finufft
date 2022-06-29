@@ -1,4 +1,4 @@
-#include "spreading_avx512.h"
+#include "gather_fold_avx512.h"
 
 #include <cmath>
 #include <immintrin.h>

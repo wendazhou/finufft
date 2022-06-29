@@ -144,8 +144,8 @@ function(add_finufft_kernel target)
 endfunction()
 
 
-add_finufft_kernel(finufft_avx512 SOURCES src/kernels/avx512/spreading_avx512.cpp FLAGS -mavx512f -mavx512vl -mavx512dq)
-add_finufft_kernel(finufft_avx2 SOURCES src/kernels/avx2/spreading_avx2.cpp FLAGS -mavx -mavx2 -mfma)
+add_finufft_kernel(finufft_avx512 SOURCES src/kernels/avx512/gather_fold_avx512.cpp FLAGS -mavx512f -mavx512vl -mavx512dq)
+add_finufft_kernel(finufft_avx2 SOURCES src/kernels/avx2/gather_fold_avx2.cpp FLAGS -mavx -mavx2 -mfma)
 
 
 # Add tests defined in their own directory

@@ -18,27 +18,28 @@ namespace finufft {
 namespace spreading {
 namespace avx512 {
 
-// @{
-// The next two functions compute the lookup table for shuffles
-// corresponding to element shifts of the given number of elements.
-// Note that this is similar to valignd, except that we are able to
-// specify the shift amount at runtime, whereas valignd uses an immediate value.
-//
-// The constructed table conceptually shifts quadword elements (i.e. two floats at a time)
-// as the values held in the registers conceptually represent interleaved complex numbers.
-//
-// I have reproduced a 4-wide version of the tables below, with a single offset between lines.
-// The true tables are 16-wide, and offset by 2 each line. Note that here, s denotes an index
-// which fetches from the second vector of the shuffle, whereas all other indices fetch from
-// the first vector of the shuffle. We use a zero vector as the second vector, so s denotes zero
-// values.
-//
-// shuffle_low   shuffle_high
-//  0 1 2 3       s s s s
-//  s 0 1 2       3 s s s
-//  s s 0 1       2 3 s s
-//  s s s 0       1 2 3 s
-inline constexpr std::array<int, 16 * 8> make_shuffle_low() {
+/// @{
+/** The next two fields contain table for shuffles
+ * corresponding to element shifts of the given number of elements.
+ * Note that this is similar to valignd, except that we are able to
+ * specify the shift amount at runtime, whereas valignd uses an immediate value.
+ *
+ * The constructed table conceptually shifts quadword elements (i.e. two floats at a time)
+ * as the values held in the registers conceptually represent interleaved complex numbers.
+ *
+ * I have reproduced a 4-wide version of the tables below, with a single offset between lines.
+ * The true tables are 16-wide, and offset by 2 each line. Note that here, s denotes an index
+ * which fetches from the second vector of the shuffle, whereas all other indices fetch from
+ * the first vector of the shuffle. We use a zero vector as the second vector, so s denotes zero
+ * values.
+ *
+ * shuffle_low   shuffle_high
+ *  0 1 2 3       s s s s
+ *  s 0 1 2       3 s s s
+ *  s s 0 1       2 3 s s
+ *  s s s 0       1 2 3 s
+ */
+alignas(64) static constexpr std::array<int, 16 * 8> align_shuffles_low = ([]{
     std::array<int, 16 * 8> result = {};
 
     for (int i = 0; i < 8; ++i) {
@@ -54,9 +55,9 @@ inline constexpr std::array<int, 16 * 8> make_shuffle_low() {
     }
 
     return result;
-}
+})();
 
-inline constexpr std::array<int, 16 * 8> make_shuffle_high() {
+alignas(64) static constexpr std::array<int, 16 * 8> align_shuffles_high = ([]() {
     std::array<int, 16 * 8> result = {};
 
     for (int i = 0; i < 8; ++i) {
@@ -72,13 +73,8 @@ inline constexpr std::array<int, 16 * 8> make_shuffle_high() {
     }
 
     return result;
-}
-
-alignas(64) static constexpr std::array<int, 16 * 8> align_shuffles_low = make_shuffle_low();
-alignas(64) static constexpr std::array<int, 16 * 8> align_shuffles_high = make_shuffle_high();
-// @}
-
-/// @{
+})();
+/// @}
 
 /** Compute a rotation lookup table for use with vpermps
  *
@@ -87,7 +83,7 @@ alignas(64) static constexpr std::array<int, 16 * 8> align_shuffles_high = make_
  * is cyclic.
  *
  */
-inline constexpr std::array<int, 16 * 4> make_rotate_lookup_table() {
+alignas(64) static constexpr std::array<int, 16 * 4> align_rotate_lookup_table = ([]() {
     std::array<int, 16 * 4> result = {};
 
     for (int i = 0; i < 4; ++i) {
@@ -96,10 +92,7 @@ inline constexpr std::array<int, 16 * 4> make_rotate_lookup_table() {
         }
     }
     return result;
-}
-alignas(64) static constexpr std::array<int, 16 * 4> align_rotate_lookup_table =
-    make_rotate_lookup_table();
-/// @}
+})();
 
 /** Accumulates and stores the given vector into du at the given index.
  * This function splits the stores to ensure that they are aligned,
@@ -156,8 +149,9 @@ inline void accumulate_add_complex_interleaved_aligned(float *du, int i, __m512 
     _mm512_store_ps(out + 16, out_hi);
 }
 
-/** Similar to its __m512 counterpart, but functionally works with a vector which is half the length.
- * 
+/** Similar to its __m512 counterpart, but functionally works with a vector which is half the
+ * length.
+ *
  */
 inline void accumulate_add_complex_interleaved_aligned(float *du, int i, __m256 v) {
     int i_aligned = i & ~3;
@@ -374,7 +368,7 @@ extern template struct SpreadSubproblemPolyW8<10>;
 extern template struct SpreadSubproblemPolyW8<11>;
 
 /** Spreading functor for width-4 polynomial
- * 
+ *
  * This functor implements a AVX-512 vectorized strategy for spreading based on
  * a width-8 polynomial approximation to the kernel function.
  *
@@ -382,7 +376,7 @@ extern template struct SpreadSubproblemPolyW8<11>;
  * into a single 16-wide vector. Additionally, the computation of the base
  * index for accumulation is vectorized, so that in total 8 elements are
  * processed at a time in the inner loop, in 2 groups of 4.
- * 
+ *
  */
 template <std::size_t Degree> struct SpreadSubproblemPolyW4 {
     finufft::spreading::aligned_unique_array<float> coefficients;

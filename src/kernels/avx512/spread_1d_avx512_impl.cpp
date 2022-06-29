@@ -11,6 +11,11 @@ template struct SpreadSubproblemPolyW8<9>;
 template struct SpreadSubproblemPolyW8<10>;
 template struct SpreadSubproblemPolyW8<11>;
 
+template struct SpreadSubproblemPolyW4<4>;
+template struct SpreadSubproblemPolyW4<5>;
+template struct SpreadSubproblemPolyW4<6>;
+template struct SpreadSubproblemPolyW4<7>;
+
 } // namespace avx512
 
 SpreadSubproblemFunctor<float, 1>
@@ -32,6 +37,21 @@ get_subproblem_polynomial_avx512_1d_fp32_functor(kernel_specification const &ker
 
     if (it->width > 8) {
         throw std::runtime_error("Precomputed polynomial kernel data for width > 8 not supported.");
+    }
+
+    if (it->width <= 4) {
+        switch (it->degree) {
+        case 4:
+            return avx512::SpreadSubproblemPolyW4<4>(it->coefficients, it->width);
+        case 5:
+            return avx512::SpreadSubproblemPolyW4<5>(it->coefficients, it->width);
+        case 6:
+            return avx512::SpreadSubproblemPolyW4<6>(it->coefficients, it->width);
+        case 7:
+            return avx512::SpreadSubproblemPolyW4<7>(it->coefficients, it->width);
+        }
+
+        // Fall through? Valid but performance may be sub-par.
     }
 
     switch (it->degree) {

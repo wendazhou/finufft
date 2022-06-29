@@ -255,3 +255,10 @@ TEST(SpreadSubproblem, Avx5121Df32) {
             return finufft::spreading::get_subproblem_polynomial_avx512_1d_fp32_functor(k);
         });
 }
+
+TEST(SpreadSubproblem, Avx5121Df32_Short) {
+    test_subproblem_implementation<float, 1>(
+        4, [](finufft::spreading::kernel_specification const &k) {
+            return finufft::spreading::get_subproblem_polynomial_avx512_1d_fp32_functor(k);
+        });
+}

@@ -78,6 +78,29 @@ alignas(64) static constexpr std::array<int, 16 * 8> align_shuffles_low = make_s
 alignas(64) static constexpr std::array<int, 16 * 8> align_shuffles_high = make_shuffle_high();
 // @}
 
+/// @{
+
+/** Compute a rotation lookup table for use with vpermps
+ *
+ * The ith row of the table corresponds to a permutation which rotates
+ * the elements of a 16-element vector by 2 * i elements. The rotation
+ * is cyclic.
+ *
+ */
+inline constexpr std::array<int, 16 * 4> make_rotate_lookup_table() {
+    std::array<int, 16 * 4> result = {};
+
+    for (int i = 0; i < 4; ++i) {
+        for (int j = 0; j < 16; ++j) {
+            result[i * 16 + j] = (j - 2 * i) % 16;
+        }
+    }
+    return result;
+}
+alignas(64) static constexpr std::array<int, 16 * 4> align_rotate_lookup_table =
+    make_rotate_lookup_table();
+/// @}
+
 /** Accumulates and stores the given vector into du at the given index.
  * This function splits the stores to ensure that they are aligned,
  * and ensuring that store-to-load forwarding may be successful (as all stores
@@ -133,6 +156,31 @@ inline void accumulate_add_complex_interleaved_aligned(float *du, int i, __m512 
     _mm512_store_ps(out + 16, out_hi);
 }
 
+/** Similar to its __m512 counterpart, but functionally works with a vector which is half the length.
+ * 
+ */
+inline void accumulate_add_complex_interleaved_aligned(float *du, int i, __m256 v) {
+    int i_aligned = i & ~3;
+    int i_remainder = i - i_aligned;
+
+    float *out = du + 2 * i_aligned;
+
+    __m512 v_offset = _mm512_permutexvar_ps(
+        _mm512_load_epi32(align_rotate_lookup_table.data() + i_remainder * 16),
+        _mm512_castps256_ps512(v));
+
+    // Accumulate and store
+    // Note that we drop down to 256-bit operations to enable the use of aligned operations
+    // and to ensure that we can make full use of the store-to-load forwarding.
+    // This yields a ~15% improvement in total performance on the subproblem spreading with width 4.
+    __m256 out_lo = _mm256_load_ps(out);
+    __m256 out_hi = _mm256_load_ps(out + 8);
+    out_lo = _mm256_add_ps(out_lo, _mm512_castps512_ps256(v_offset));
+    out_hi = _mm256_add_ps(out_hi, _mm512_extractf32x8_ps(v_offset, 1));
+    _mm256_store_ps(out, out_lo);
+    _mm256_store_ps(out + 8, out_hi);
+}
+
 template <std::size_t Degree> struct Avx512HornerPolynomialEvaluation {
     template <typename C> __m512 operator()(__m512 z, C const &coeffs) const {
         return _mm512_fmadd_ps(
@@ -145,7 +193,7 @@ template <> struct Avx512HornerPolynomialEvaluation<0> {
 };
 
 /** Utility class for loading a set of coefficients into a vector.
- * 
+ *
  * This class is principally intended to be used with `Avx512HornerPolynomialEvaluation`.
  */
 struct VectorLoader {
@@ -239,7 +287,7 @@ template <std::size_t Degree> struct SpreadSubproblemPolyW8 {
      * in order to leverage vectorization in the computation of the index into the grid.
      *
      */
-    void process_4(
+    void process_8(
         float *__restrict output, float const *coord_x, float const *strengths, int64_t offset,
         std::size_t i) const {
         // Load position of 8 non-uniform points, compute grid and subgrid offsets (vectorized)
@@ -293,13 +341,16 @@ template <std::size_t Degree> struct SpreadSubproblemPolyW8 {
     void operator()(
         nu_point_collection<1, float const *> const &input, grid_specification<1> const &grid,
         float *__restrict output) const {
+
+        std::fill_n(output, grid.num_elements(), 0.0f);
+
         float const *coord_x = input.coordinates[0];
         float const *strengths = input.strengths;
 
         auto offset = grid.offsets[0];
 
         for (std::size_t i = 0; i < input.num_points; i += 8) {
-            process_4(output, coord_x, strengths, offset, i);
+            process_8(output, coord_x, strengths, offset, i);
         }
     }
 
@@ -321,6 +372,155 @@ extern template struct SpreadSubproblemPolyW8<8>;
 extern template struct SpreadSubproblemPolyW8<9>;
 extern template struct SpreadSubproblemPolyW8<10>;
 extern template struct SpreadSubproblemPolyW8<11>;
+
+/** Spreading functor for width-4 polynomial
+ * 
+ * This functor implements a AVX-512 vectorized strategy for spreading based on
+ * a width-8 polynomial approximation to the kernel function.
+ *
+ * The current implementation packs the evaluation of 4 4-wide polynomials
+ * into a single 16-wide vector. Additionally, the computation of the base
+ * index for accumulation is vectorized, so that in total 8 elements are
+ * processed at a time in the inner loop, in 2 groups of 4.
+ * 
+ */
+template <std::size_t Degree> struct SpreadSubproblemPolyW4 {
+    finufft::spreading::aligned_unique_array<float> coefficients;
+    float kernel_width;
+
+    template <typename U>
+    SpreadSubproblemPolyW4(U const *coefficients, std::size_t width)
+        : coefficients(allocate_aligned_array<float>((Degree + 1) * 16, 64)),
+          kernel_width(static_cast<float>(width)) {
+
+        // Replicate the polynomial coefficients 4 times as we will be evaluating the same
+        // polynomial 4 times, one in each 128-bit lane.
+        for (std::size_t i = 0; i < 4; ++i) {
+            fill_polynomial_coefficients(
+                Degree, coefficients, width, this->coefficients.get() + 4 * i, 4, 16);
+        }
+    }
+
+    void compute(__m512 z, float const *dd, __m512 &v1, __m512 &v2) const {
+        __m512 k = Avx512HornerPolynomialEvaluation<Degree>{}(z, VectorLoader{coefficients.get()});
+
+        // Load weights for the 4 points
+        __m256 w = _mm256_load_ps(dd);
+        __m512 w_re = _mm512_permutexvar_ps(
+            _mm512_setr_epi32(0, 0, 0, 0, 2, 2, 2, 2, 4, 4, 4, 4, 6, 6, 6, 6),
+            _mm512_castps256_ps512(w));
+        __m512 w_im = _mm512_permutexvar_ps(
+            _mm512_setr_epi32(1, 1, 1, 1, 3, 3, 3, 3, 5, 5, 5, 5, 7, 7, 7, 7),
+            _mm512_castps256_ps512(w));
+
+        // Compute real and imaginary parts of kernel for each point
+        __m512 k_re = _mm512_mul_ps(k, w_re);
+        __m512 k_im = _mm512_mul_ps(k, w_im);
+
+        // Interleave real and imaginary parts for each point by pair
+        const int from_b = (1 << 4);
+        const int from_a = (0 << 4);
+
+        // clang-format off
+        v1 = _mm512_permutex2var_ps(
+            k_re,
+            _mm512_setr_epi32(
+                from_a | 0, from_b | 0, from_a | 1, from_b | 1, from_a | 2, from_b | 2, from_a | 3, from_b | 3,
+                from_a | 4, from_b | 4, from_a | 5, from_b | 5, from_a | 6, from_b | 6, from_a | 7, from_b | 7),
+            k_im);
+        v2 = _mm512_permutex2var_ps(
+            k_re,
+            _mm512_setr_epi32(
+                from_a | 8, from_b | 8, from_a | 9, from_b | 9, from_a | 10, from_b | 10, from_a | 11, from_b | 11,
+                from_a | 12, from_b | 12, from_a | 13, from_b | 13, from_a | 14, from_b | 14, from_a | 15, from_b | 15),
+            k_im);
+        // clang-format on
+    }
+
+    void process_8(
+        float *__restrict output, float const *coord_x, float const *strengths, int64_t offset,
+        std::size_t i) const {
+        // Load position of 8 non-uniform points, compute grid and subgrid offsets (vectorized)
+        __m256 x = _mm256_load_ps(coord_x + i);
+        __m256 x_ceil = _mm256_ceil_ps(_mm256_sub_ps(x, _mm256_set1_ps(0.5f * kernel_width)));
+        __m256i x_ceili = _mm256_cvtps_epi32(x_ceil);
+        __m256 xi = _mm256_sub_ps(x_ceil, x);
+
+        // Normalized subgrid position for each point
+        // [z_0, z_1, ...]
+        __m256 z = _mm256_add_ps(_mm256_add_ps(xi, xi), _mm256_set1_ps(kernel_width - 1.0f));
+
+        // Prepare zd register so that we can obtain pairs using vpermilps
+        // This vector now contains the subgrid offsets for the 8 points,
+        // duplicated once in order to facilitate future shuffling.
+        // [z_0, z_2, ..., z_0, z_2, ..., z_1, z_3, ..., z_1, z_3, ...]
+        __m512 zd = _mm512_permutexvar_ps(
+            _mm512_setr_epi32(0, 4, 0, 4, 1, 5, 1, 5, 2, 6, 2, 6, 3, 7, 3, 7),
+            _mm512_castps256_ps512(z));
+
+        __m512 v1;
+        __m512 v2;
+
+        // Store integer coordinates for accumulation later (adjust indices to account for offset)
+        alignas(16) int indices[8];
+        _mm256_store_epi32(indices, _mm256_sub_epi32(x_ceili, _mm256_set1_epi32(offset)));
+
+        // Unrolled loop to compute 8 values, four at once.
+        // At each stage, we permute from zd into a register
+        // which contains [z_0 x4, z_1 x4, z_2 x4, z_3 x4]
+        compute(_mm512_permute_ps(zd, 0), strengths + 2 * i, v1, v2);
+        accumulate_add_complex_interleaved_aligned(
+            output, indices[0], _mm512_extractf32x8_ps(v1, 0));
+        accumulate_add_complex_interleaved_aligned(
+            output, indices[1], _mm512_extractf32x8_ps(v1, 1));
+        accumulate_add_complex_interleaved_aligned(
+            output, indices[2], _mm512_extractf32x8_ps(v2, 0));
+        accumulate_add_complex_interleaved_aligned(
+            output, indices[3], _mm512_extractf32x8_ps(v2, 1));
+
+        compute(_mm512_permute_ps(zd, 0b11111111), strengths + 2 * i + 8, v1, v2);
+        accumulate_add_complex_interleaved_aligned(
+            output, indices[4], _mm512_extractf32x8_ps(v1, 0));
+        accumulate_add_complex_interleaved_aligned(
+            output, indices[5], _mm512_extractf32x8_ps(v1, 1));
+        accumulate_add_complex_interleaved_aligned(
+            output, indices[6], _mm512_extractf32x8_ps(v2, 0));
+        accumulate_add_complex_interleaved_aligned(
+            output, indices[7], _mm512_extractf32x8_ps(v2, 1));
+    }
+
+    void operator()(
+        nu_point_collection<1, float const *> const &input, grid_specification<1> const &grid,
+        float *__restrict output) const {
+
+        std::fill_n(output, grid.num_elements(), 0.0f);
+
+        float const *coord_x = input.coordinates[0];
+        float const *strengths = input.strengths;
+
+        auto offset = grid.offsets[0];
+
+        for (std::size_t i = 0; i < input.num_points; i += 8) {
+            process_8(output, coord_x, strengths, offset, i);
+        }
+    }
+
+    std::size_t num_points_multiple() const {
+        // We process 8 points at a time.
+        return 8;
+    }
+    std::size_t extent_multiple() const { return 8; }
+    std::pair<double, double> target_padding() const {
+        // We exceed the standard padding on the right by at most 4
+        // Due to the split writing of the kernel.
+        return {0.5 * kernel_width, 0.5 * kernel_width + 4};
+    }
+};
+
+extern template struct SpreadSubproblemPolyW4<4>;
+extern template struct SpreadSubproblemPolyW4<5>;
+extern template struct SpreadSubproblemPolyW4<6>;
+extern template struct SpreadSubproblemPolyW4<7>;
 
 } // namespace avx512
 } // namespace spreading

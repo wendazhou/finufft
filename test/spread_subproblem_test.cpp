@@ -93,8 +93,54 @@ evaluation_result<Dim, T> evaluate_subproblem_implementation(
     return {std::move(output_reference), std::move(output), grid};
 }
 
+/** Calls the given implementation of the subproblem with data
+ * at the boundary of the grid. This function is mostly intended
+ * to test the implementation for memory correctness, however,
+ * it might only be effective when run under address-sanitizer
+ * or a similar tool.
+ * 
+ */
+template <std::size_t Dim, typename T, typename Fn>
+void evaluate_subproblem_limits(int width, Fn &&factory) {
+    auto kernel_spec = specification_from_width(width, 2.0);
+    auto fn = factory(kernel_spec);
+
+    // Arbitrary grid specification
+    auto offset = 5;
+    auto extent = 100;
+
+    extent = finufft::spreading::round_to_next_multiple(extent, fn.extent_multiple());
+
+    finufft::spreading::grid_specification<Dim> grid;
+    for (std::size_t i = 0; i < Dim; ++i) {
+        grid.offsets[i] = offset;
+        grid.extents[i] = extent;
+    }
+
+    auto num_points = finufft::spreading::round_to_next_multiple(2, fn.num_points_multiple());
+    auto padding = fn.target_padding();
+
+    finufft::spreading::SpreaderMemoryInput<Dim, T> input(num_points);
+    auto input_view = input.cast(finufft::spreading::UniqueArrayToConstPtr{});
+
+    auto min_x = offset + padding.first;
+    auto max_x = offset + extent - padding.second - 1;
+
+    for (std::size_t i = 0; i < Dim; ++i) {
+        std::fill_n(input.coordinates[i].get(), num_points / 2, min_x);
+        std::fill_n(input.coordinates[i].get() + num_points / 2, num_points - num_points / 2, max_x);
+    }
+    std::fill_n(input.strengths.get(), 2 * num_points, 1.0);
+
+    auto output = finufft::spreading::allocate_aligned_array<T>(2 * grid.num_elements(), 64);
+    fn(input_view, grid, output.get());
+}
+
 template <typename T, std::size_t Dim, typename Fn>
 void test_subproblem_implementation(int width, Fn &&factory) {
+    // Evaluate memory correctness first
+    evaluate_subproblem_limits<Dim, T>(width, factory);
+
     auto result = evaluate_subproblem_implementation<Dim, T>(factory, 100, 0, width);
     auto error_level = compute_max_relative_threshold(
         std::pow(10, -width + 1),

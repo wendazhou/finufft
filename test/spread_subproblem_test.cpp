@@ -1,3 +1,4 @@
+#include "../src/kernels/avx512/spread_axv512.h"
 #include "../src/kernels/reference/spreading_reference.h"
 #include "../src/spreading.h"
 
@@ -98,7 +99,7 @@ evaluation_result<Dim, T> evaluate_subproblem_implementation(
  * to test the implementation for memory correctness, however,
  * it might only be effective when run under address-sanitizer
  * or a similar tool.
- * 
+ *
  */
 template <std::size_t Dim, typename T, typename Fn>
 void evaluate_subproblem_limits(int width, Fn &&factory) {
@@ -128,7 +129,8 @@ void evaluate_subproblem_limits(int width, Fn &&factory) {
 
     for (std::size_t i = 0; i < Dim; ++i) {
         std::fill_n(input.coordinates[i].get(), num_points / 2, min_x);
-        std::fill_n(input.coordinates[i].get() + num_points / 2, num_points - num_points / 2, max_x);
+        std::fill_n(
+            input.coordinates[i].get() + num_points / 2, num_points - num_points / 2, max_x);
     }
     std::fill_n(input.strengths.get(), 2 * num_points, 1.0);
 
@@ -244,5 +246,12 @@ TEST(SpreadSubproblem, ReferencePoly3Df64) {
     test_subproblem_implementation<double, 3>(
         5, [](finufft::spreading::kernel_specification const &k) {
             return finufft::spreading::get_subproblem_polynomial_reference_functor<double, 3>(k);
+        });
+}
+
+TEST(SpreadSubproblem, Avx5121Df32) {
+    test_subproblem_implementation<float, 1>(
+        5, [](finufft::spreading::kernel_specification const &k) {
+            return finufft::spreading::get_subproblem_polynomial_avx512_1d_fp32_functor(k);
         });
 }

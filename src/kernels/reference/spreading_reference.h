@@ -260,18 +260,31 @@ template <typename T> struct StridedArray {
  *   the coefficient of x^d of the i-th polynomial.
  * - target_coefficients, a target_width x degree + 1 array of coefficients in column-major order,
  *   representing a set of polynomials of given degree such that target_coefficients[i, d] denotes
- *   the coefficient of x^(degree - d) of the i-th polynomial.
+ *   the coefficient of x^(degree - d) of the i-th polynomial. Additionally, `target_stride` may
+ *   be used to specify a stride larger than `target_width`.
  *
  * The target coefficients are filled from the source coefficients, and if the width of the target
  * is larger than the width of the source, the coefficients in the target are padded with zeros.
+ * 
+ * @param degree The degree of the polynomials to copy.
+ * @param source_coefficients The source coefficients in column-major order.
+ * @param source_width The width of the source coefficients.
+ * @param target_coefficients The target coefficients in strided column-major order.
+ * @param target_width The width of the target coefficients.
+ * @param target_stride The stride of the target coefficients (between each column).
  *
  */
 template <typename ItS, typename ItT>
 void fill_polynomial_coefficients(
     std::size_t degree, ItS source_coefficients, std::size_t source_width, ItT target_coefficients,
-    std::size_t target_width) {
+    std::size_t target_width, std::size_t target_stride=-1) {
+
+    if (target_stride == -1) {
+        target_stride = target_width;
+    }
+
     for (std::size_t i = 0; i < degree + 1; ++i) {
-        auto target_coeffs_i = target_coefficients + (degree - i) * target_width;
+        auto target_coeffs_i = target_coefficients + (degree - i) * target_stride;
         std::copy(
             source_coefficients + i * source_width,
             source_coefficients + (i + 1) * source_width,

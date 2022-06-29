@@ -119,7 +119,7 @@ add_library(finufft_f64 OBJECT ${FINUFFT_PRECISION_DEPENDENT_SOURCES})
 set_finufft_options(finufft_f64)
 target_link_libraries(finufft_f64 PUBLIC ${FINUFFT_FFTW_LIBRARIES})
 
-add_library(finufft SHARED src/utils_precindep.cpp contrib/legendre_rule_fast.cpp src/precomputed_poly_kernel_data.cpp)
+add_library(finufft SHARED src/utils_precindep.cpp contrib/legendre_rule_fast.cpp src/precomputed_poly_kernel_data.cpp src/kernels/reference/spreading_reference.cpp)
 set_finufft_options(finufft)
 target_link_libraries(finufft PUBLIC finufft_f32 finufft_f64 m)
 target_include_directories(finufft PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/include")
@@ -145,7 +145,7 @@ endfunction()
 
 
 add_finufft_kernel(finufft_avx512 SOURCES src/kernels/avx512/spreading_avx512.cpp FLAGS -mavx512f -mavx512vl -mavx512dq)
-add_finufft_kernel(finufft_avx2 SOURCES src/kernels/avx2/spreading_avx2.cpp FLAGS -mavx -mavx2)
+add_finufft_kernel(finufft_avx2 SOURCES src/kernels/avx2/spreading_avx2.cpp FLAGS -mavx -mavx2 -mfma)
 
 
 # Add tests defined in their own directory

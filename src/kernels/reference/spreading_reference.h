@@ -145,7 +145,9 @@ void spread_subproblem_generic_with_kernel(
         for (std::size_t dim = 0; dim < Dim; ++dim) {
             // Compute kernel values in each dimension
             auto x = input.coordinates[dim][i];
+            // Compute integer grid index
             auto x_i = static_cast<int64_t>(std::ceil(x - ns2));
+            // Compute offset in subgrid
             auto x_f = x_i - x;
             auto z = 2 * x_f + kernel_width - 1;
             kernel(kernel_values.get() + dim * kernel_values_stride, z);
@@ -450,6 +452,14 @@ get_subproblem_polynomial_reference_functor(kernel_specification const &kernel) 
     auto factory = detail::InstantiateFromTupleList<finufft::detail::poly_kernel_configs_t>{};
     return factory.template make<T, Dim>(*it);
 }
+
+// Explicit instantiation of the functor in common dimension and data types.
+extern template SpreadSubproblemFunctor<float, 1> get_subproblem_polynomial_reference_functor<float, 1>(kernel_specification const &);
+extern template SpreadSubproblemFunctor<float, 2> get_subproblem_polynomial_reference_functor<float, 2>(kernel_specification const &);
+extern template SpreadSubproblemFunctor<float, 3> get_subproblem_polynomial_reference_functor<float, 3>(kernel_specification const &);
+extern template SpreadSubproblemFunctor<double, 1> get_subproblem_polynomial_reference_functor<double, 1>(kernel_specification const &);
+extern template SpreadSubproblemFunctor<double, 2> get_subproblem_polynomial_reference_functor<double, 2>(kernel_specification const &);
+extern template SpreadSubproblemFunctor<double, 3> get_subproblem_polynomial_reference_functor<double, 3>(kernel_specification const &);
 
 } // namespace spreading
 } // namespace finufft

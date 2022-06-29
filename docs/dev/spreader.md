@@ -74,7 +74,13 @@ This function implements the main computational loop of the spreading procedure.
 Note that for best efficiency, this function may request the data to be padded and aligned to specific multiples,
 including:
 1. Ensuring sufficient padding on the sides of the offset grid
-2. Ensuring that the number of non-uniform points is divisible by a given factor
+2. Ensuring that the extents are divisible by a given factor
+3. Ensuring that the number of non-uniform points is divisible by a given factor
+
+As some implementation may need to amortize setup time for a given kernel specification,
+(e.g. copying / computing polynomial weights), the subproblem functionality is split
+into a setup phase and a computation phase.
+We eventually plan for this setup phase to be performed during plan creation.
 
 The function has the following signature:
 ```c++
@@ -85,13 +91,21 @@ struct grid_specification {
 };
 
 struct kernel_specification {
-   double es_c;
    double es_beta;
    int width;
 };
 
-template<size_t Dim, typename T>
-void spread_subproblem(nu_point_collection<Dim, T> const& points, grid_specification<T> const& grid, T* output, kernel_specification const& kernel);
+template<typename T, size_t Dim>
+struct SpreadSubproblemFunctor {
+   size_t num_points_multiple() const;
+   size_t extent_multiple() const;
+   std::pair<double, double> extent_padding();
+
+   void operator()(nu_point_collection<Dim, T> const& points, grid_specification<T> const& grid, T* output)
+};
+
+template<typename T, size_t Dim>
+SpreadSubproblemFunctor<T, Dim> setup_spreader(kernel_specification const& kernel);
 ```
 
 ## Aggregation

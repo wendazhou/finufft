@@ -53,7 +53,7 @@ void write_separable_kernel(
 
 template <typename T, std::size_t Dim> struct WriteSeparableKernelImpl {
     void operator()(
-        T *output, tcb::span<std::size_t, Dim> strides, tcb::span<T const *, Dim> values,
+        T *__restrict output, tcb::span<std::size_t, Dim> strides, tcb::span<T const *, Dim> values,
         std::size_t width, T k_re, T k_im) {
         for (std::size_t i = 0; i < width; ++i) {
             // Set-up values for the current slice in the slowest dimension
@@ -74,7 +74,7 @@ template <typename T, std::size_t Dim> struct WriteSeparableKernelImpl {
 
 template <typename T> struct WriteSeparableKernelImpl<T, 1> {
     void operator()(
-        T *output, tcb::span<std::size_t, 1> strides, tcb::span<T const *, 1> values,
+        T *__restrict output, tcb::span<std::size_t, 1> strides, tcb::span<T const *, 1> values,
         std::size_t width, T k_re, T k_im) {
 
         // Base case of the recursion: 1-D kernel accumulation.
@@ -251,6 +251,35 @@ template <typename T> struct StridedArray {
     T const &operator[](std::size_t i) const { return data[i * stride]; }
 };
 
+/** Fills target batch polynomial coefficients from given source coefficients.
+ *
+ * This function fills the target polynomial coefficients in reverse order from the source
+ * coefficients presented in standard order. More precisely, it considers the following:
+ * - source_coefficients, a source_width x degree + 1 array of coefficients in column-major order,
+ *   representing a set of polynomials of given degree such that source_coefficients[i, d] denotes
+ *   the coefficient of x^d of the i-th polynomial.
+ * - target_coefficients, a target_width x degree + 1 array of coefficients in column-major order,
+ *   representing a set of polynomials of given degree such that target_coefficients[i, d] denotes
+ *   the coefficient of x^(degree - d) of the i-th polynomial.
+ *
+ * The target coefficients are filled from the source coefficients, and if the width of the target
+ * is larger than the width of the source, the coefficients in the target are padded with zeros.
+ *
+ */
+template <typename ItS, typename ItT>
+void fill_polynomial_coefficients(
+    std::size_t degree, ItS source_coefficients, std::size_t source_width, ItT target_coefficients,
+    std::size_t target_width) {
+    for (std::size_t i = 0; i < degree + 1; ++i) {
+        auto target_coeffs_i = target_coefficients + (degree - i) * target_width;
+        std::copy(
+            source_coefficients + i * source_width,
+            source_coefficients + (i + 1) * source_width,
+            target_coeffs_i);
+        std::fill(target_coeffs_i + source_width, target_coeffs_i + target_width, 0);
+    }
+};
+
 /** Structure for evaluating a batch of polynomials of the given degree.
  *
  * In order to accelerate evaluation of the kernel, we may make use of
@@ -293,11 +322,7 @@ template <typename T, std::size_t Width, std::size_t Degree> struct PolynomialBa
      */
     template <typename U>
     PolynomialBatch(U const *coefficients, std::size_t width = Width) : PolynomialBatch() {
-        for (std::size_t i = 0; i < Degree + 1; ++i) {
-            auto deg_coeffs = this->coefficients.get() + (Degree - i) * Width;
-            std::copy(coefficients + i * width, coefficients + (i + 1) * width, deg_coeffs);
-            std::fill(deg_coeffs + width, deg_coeffs + Width, static_cast<T>(0));
-        }
+        fill_polynomial_coefficients(Degree, coefficients, width, this->coefficients.get(), Width);
     }
 
     // Need copy-constructor for compatibility with std::function
@@ -356,24 +381,24 @@ namespace detail {
 
 /** Helper class to create a polynomial implementation of the spreading subproblem
  * based on a set of existing kernels.
- * 
+ *
  * As the kernels may vary in their width and degree, we need to identify the correct
  * concrete implementation of PolynomialBatch, based on the runtime parameters of the kernel.
- * This is done through a linear search of the supported kernel configurations (i.e. width x degree).
- * If no configuration is found, an exception is thrown.
- * 
+ * This is done through a linear search of the supported kernel configurations (i.e. width x
+ * degree). If no configuration is found, an exception is thrown.
+ *
  * In order to support the linear search at compile time, we implement it in a recursive
  * fashion based on a type list of the supported configurations.
- * 
+ *
  */
 template <typename... Configs> struct InstantiateFromList;
 
 /** General case of the recursion.
- * 
+ *
  * Compare the runtime configuration with the configuration of the first element
  * in the list. If they match, instantiate the polynomial implementation. Otherwise,
  * recurse to the next element in the list.
- * 
+ *
  */
 template <std::size_t Degree, std::size_t Width, typename... Configs>
 struct InstantiateFromList<finufft::detail::poly_kernel_config<Degree, Width>, Configs...> {
@@ -393,7 +418,7 @@ struct InstantiateFromList<finufft::detail::poly_kernel_config<Degree, Width>, C
 };
 
 /** Base case of the recursion.
- * 
+ *
  * No more configurations to compare, so we throw an exception.
  */
 template <> struct InstantiateFromList<> {
@@ -407,7 +432,7 @@ template <> struct InstantiateFromList<> {
 /** Helper template to convert from a single tuple to variadic pack.
  * We simply use this to instantiate from the tuple of supported configurations
  * provided to us in the generated headers.
- * 
+ *
  */
 template <typename T> struct InstantiateFromTupleList;
 
@@ -417,18 +442,17 @@ struct InstantiateFromTupleList<std::tuple<Configs...>> : InstantiateFromList<Co
 };
 } // namespace detail
 
-
 /** Instantiate a functor for the spreading subproblem based on a polynomial approximation.
- * 
+ *
  * This function searches through the pre-generated polynomial approximations for one
  * that matches, and instantiates a functor accordingly. If no matches are found, an
  * exception is thrown.
- * 
+ *
  * @tparam T The data type of the input and output data.
  * @tparam Dim The dimension of the problem.
- * 
+ *
  * @param kernel Specification of the kernel to use.
- * 
+ *
  */
 template <typename T, std::size_t Dim>
 SpreadSubproblemFunctor<T, Dim>
@@ -454,12 +478,18 @@ get_subproblem_polynomial_reference_functor(kernel_specification const &kernel) 
 }
 
 // Explicit instantiation of the functor in common dimension and data types.
-extern template SpreadSubproblemFunctor<float, 1> get_subproblem_polynomial_reference_functor<float, 1>(kernel_specification const &);
-extern template SpreadSubproblemFunctor<float, 2> get_subproblem_polynomial_reference_functor<float, 2>(kernel_specification const &);
-extern template SpreadSubproblemFunctor<float, 3> get_subproblem_polynomial_reference_functor<float, 3>(kernel_specification const &);
-extern template SpreadSubproblemFunctor<double, 1> get_subproblem_polynomial_reference_functor<double, 1>(kernel_specification const &);
-extern template SpreadSubproblemFunctor<double, 2> get_subproblem_polynomial_reference_functor<double, 2>(kernel_specification const &);
-extern template SpreadSubproblemFunctor<double, 3> get_subproblem_polynomial_reference_functor<double, 3>(kernel_specification const &);
+extern template SpreadSubproblemFunctor<float, 1>
+get_subproblem_polynomial_reference_functor<float, 1>(kernel_specification const &);
+extern template SpreadSubproblemFunctor<float, 2>
+get_subproblem_polynomial_reference_functor<float, 2>(kernel_specification const &);
+extern template SpreadSubproblemFunctor<float, 3>
+get_subproblem_polynomial_reference_functor<float, 3>(kernel_specification const &);
+extern template SpreadSubproblemFunctor<double, 1>
+get_subproblem_polynomial_reference_functor<double, 1>(kernel_specification const &);
+extern template SpreadSubproblemFunctor<double, 2>
+get_subproblem_polynomial_reference_functor<double, 2>(kernel_specification const &);
+extern template SpreadSubproblemFunctor<double, 3>
+get_subproblem_polynomial_reference_functor<double, 3>(kernel_specification const &);
 
 } // namespace spreading
 } // namespace finufft

@@ -49,15 +49,13 @@ template <std::size_t Dim, typename T> struct evaluation_result {
  *
  */
 template <std::size_t Dim, typename T, typename Fn>
-evaluation_result<Dim, T>
-evaluate_subproblem_implementation(Fn &&fn_factory, std::size_t num_points, uint32_t seed) {
+evaluation_result<Dim, T> evaluate_subproblem_implementation(
+    Fn &&fn_factory, std::size_t num_points, uint32_t seed, int width) {
     // Get the kernel specification
-    finufft_spread_opts opts;
-    finufft::spreadinterp::setup_spreader(opts, 1e-5, 2, 0, 0, 0, 1);
-    finufft::spreading::kernel_specification kernel{opts.ES_beta, opts.nspread};
+    auto kernel_spec = specification_from_width(width, 2.0);
 
-    auto reference_fn = finufft::spreading::SpreadSubproblemLegacyFunctor{kernel};
-    auto fn = fn_factory(kernel);
+    auto reference_fn = finufft::spreading::SpreadSubproblemLegacyFunctor{kernel_spec};
+    auto fn = fn_factory(kernel_spec);
 
     // Arbitrary grid specification in all dimensions
     auto offset = 3;
@@ -95,94 +93,110 @@ evaluate_subproblem_implementation(Fn &&fn_factory, std::size_t num_points, uint
     return {std::move(output_reference), std::move(output), grid};
 }
 
+template <typename T, std::size_t Dim, typename Fn>
+void test_subproblem_implementation(int width, Fn &&factory) {
+    auto result = evaluate_subproblem_implementation<Dim, T>(factory, 100, 0, width);
+    auto error_level = compute_max_relative_threshold(
+        std::pow(10, -width + 1),
+        result.output_reference.get(),
+        result.output_reference.get() + 2 * result.grid.num_elements());
+
+    for (std::size_t i = 0; i < 2 * result.grid.num_elements(); ++i) {
+        ASSERT_NEAR(result.output_reference[i], result.output[i], error_level)
+            << "i = " << i << "; "
+            << "width = " << width;
+    }
+}
+
 } // namespace
 
 TEST(SpreadSubproblem, SpreadSubproblem1df32) {
-    // Get the kernel specification
-    auto result = evaluate_subproblem_implementation<1, float>(
-        [](finufft::spreading::kernel_specification const &k) {
+    test_subproblem_implementation<float, 1>(
+        5, [](finufft::spreading::kernel_specification const &k) {
             return finufft::spreading::SpreadSubproblemLegacyFunctor{k};
-        },
-        100,
-        0);
-
-    auto error_level = compute_max_relative_threshold(
-        1e-5,
-        result.output_reference.get(),
-        result.output_reference.get() + 2 * result.grid.num_elements());
-    for (std::size_t i = 0; i < 2 * result.grid.num_elements(); ++i) {
-        EXPECT_NEAR(result.output_reference[i], result.output[i], error_level);
-    }
+        });
 }
 
 TEST(SpreadSubproblem, ReferenceDirect1Df32) {
-    // Get the kernel specification
-    auto result = evaluate_subproblem_implementation<1, float>(
-        [](finufft::spreading::kernel_specification const &k) {
+    test_subproblem_implementation<float, 1>(
+        5, [](finufft::spreading::kernel_specification const &k) {
             return finufft::spreading::SpreadSubproblemDirectReference{k};
-        },
-        100,
-        0);
-
-    auto error_level = compute_max_relative_threshold(
-        1e-5,
-        result.output_reference.get(),
-        result.output_reference.get() + 2 * result.grid.num_elements());
-    for (std::size_t i = 0; i < 2 * result.grid.num_elements(); ++i) {
-        ASSERT_NEAR(result.output_reference[i], result.output[i], error_level) << "i = " << i;
-    }
-}
-
-TEST(SpreadSubproblem, ReferencePoly1Df32) {
-    // Get the kernel specification
-    auto result = evaluate_subproblem_implementation<1, float>(
-        [](finufft::spreading::kernel_specification const &k) {
-            return finufft::spreading::get_subproblem_polynomial_reference_functor<float, 1>(k);
-        },
-        100,
-        0);
-
-    auto error_level = compute_max_relative_threshold(
-        1e-5,
-        result.output_reference.get(),
-        result.output_reference.get() + 2 * result.grid.num_elements());
-    for (std::size_t i = 0; i < 2 * result.grid.num_elements(); ++i) {
-        ASSERT_NEAR(result.output_reference[i], result.output[i], error_level) << "i = " << i;
-    }
+        });
 }
 
 TEST(SpreadSubproblem, ReferenceDirect1Df64) {
-    // Get the kernel specification
-    auto result = evaluate_subproblem_implementation<1, double>(
-        [](finufft::spreading::kernel_specification const &k) {
+    test_subproblem_implementation<double, 1>(
+        5, [](finufft::spreading::kernel_specification const &k) {
             return finufft::spreading::SpreadSubproblemDirectReference{k};
-        },
-        100,
-        0);
-
-    auto error_level = compute_max_relative_threshold(
-        1e-5,
-        result.output_reference.get(),
-        result.output_reference.get() + 2 * result.grid.num_elements());
-    for (std::size_t i = 0; i < 2 * result.grid.num_elements(); ++i) {
-        ASSERT_NEAR(result.output_reference[i], result.output[i], error_level) << "i = " << i;
-    }
+        });
 }
 
 TEST(SpreadSubproblem, ReferenceDirect2Df32) {
-    // Get the kernel specification
-    auto result = evaluate_subproblem_implementation<2, float>(
-        [](finufft::spreading::kernel_specification const &k) {
+    test_subproblem_implementation<float, 2>(
+        5, [](finufft::spreading::kernel_specification const &k) {
             return finufft::spreading::SpreadSubproblemDirectReference{k};
-        },
-        1,
-        0);
+        });
+}
 
-    auto error_level = compute_max_relative_threshold(
-        1e-5,
-        result.output_reference.get(),
-        result.output_reference.get() + 2 * result.grid.num_elements());
-    for (std::size_t i = 0; i < 2 * result.grid.num_elements(); ++i) {
-        ASSERT_NEAR(result.output_reference[i], result.output[i], error_level) << "i = " << i;
-    }
+TEST(SpreadSubproblem, ReferenceDirect2Df64) {
+    test_subproblem_implementation<double, 2>(
+        5, [](finufft::spreading::kernel_specification const &k) {
+            return finufft::spreading::SpreadSubproblemDirectReference{k};
+        });
+}
+
+TEST(SpreadSubproblem, ReferenceDirect3Df32) {
+    test_subproblem_implementation<float, 3>(
+        5, [](finufft::spreading::kernel_specification const &k) {
+            return finufft::spreading::SpreadSubproblemDirectReference{k};
+        });
+}
+
+TEST(SpreadSubproblem, ReferenceDirect3Df64) {
+    test_subproblem_implementation<double, 3>(
+        5, [](finufft::spreading::kernel_specification const &k) {
+            return finufft::spreading::SpreadSubproblemDirectReference{k};
+        });
+}
+
+TEST(SpreadSubproblem, ReferencePoly1Df32) {
+    test_subproblem_implementation<float, 1>(
+        5, [](finufft::spreading::kernel_specification const &k) {
+            return finufft::spreading::get_subproblem_polynomial_reference_functor<float, 1>(k);
+        });
+}
+
+TEST(SpreadSubproblem, ReferencePoly1Df64) {
+    test_subproblem_implementation<double, 1>(
+        5, [](finufft::spreading::kernel_specification const &k) {
+            return finufft::spreading::get_subproblem_polynomial_reference_functor<double, 1>(k);
+        });
+}
+
+TEST(SpreadSubproblem, ReferencePoly2Df32) {
+    test_subproblem_implementation<float, 2>(
+        5, [](finufft::spreading::kernel_specification const &k) {
+            return finufft::spreading::get_subproblem_polynomial_reference_functor<float, 2>(k);
+        });
+}
+
+TEST(SpreadSubproblem, ReferencePoly2Df64) {
+    test_subproblem_implementation<double, 2>(
+        5, [](finufft::spreading::kernel_specification const &k) {
+            return finufft::spreading::get_subproblem_polynomial_reference_functor<double, 2>(k);
+        });
+}
+
+TEST(SpreadSubproblem, ReferencePoly3Df32) {
+    test_subproblem_implementation<float, 3>(
+        5, [](finufft::spreading::kernel_specification const &k) {
+            return finufft::spreading::get_subproblem_polynomial_reference_functor<float, 3>(k);
+        });
+}
+
+TEST(SpreadSubproblem, ReferencePoly3Df64) {
+    test_subproblem_implementation<double, 3>(
+        5, [](finufft::spreading::kernel_specification const &k) {
+            return finufft::spreading::get_subproblem_polynomial_reference_functor<double, 3>(k);
+        });
 }

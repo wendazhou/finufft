@@ -8,36 +8,6 @@ namespace fs = finufft::spreading;
 
 namespace {
 
-/** Utility function to compute specification (in particular beta) from width.
- *
- * Note that the choices here are matched from `setup_spreader`, and should
- * be kept in sync to ensure that pre-generated kernels can be found.
- */
-fs::kernel_specification specification_from_width(int kernel_width, double upsampling_factor) {
-    double beta_over_width;
-
-    switch (kernel_width) {
-    case 2:
-        beta_over_width = 2.20;
-        break;
-    case 3:
-        beta_over_width = 2.26;
-        break;
-    case 4:
-        beta_over_width = 2.38;
-        break;
-    default:
-        beta_over_width = 2.30;
-        break;
-    }
-
-    if (upsampling_factor != 2.0) {
-        beta_over_width = 0.97 * M_PI * (1.0 - 0.5 / upsampling_factor);
-    }
-
-    return fs::kernel_specification{beta_over_width * kernel_width, kernel_width};
-}
-
 template <typename T, std::size_t Dim>
 void benchmark_spread_subroblem(
     benchmark::State &state, fs::SpreadSubproblemFunctor<T, Dim> const &functor) {

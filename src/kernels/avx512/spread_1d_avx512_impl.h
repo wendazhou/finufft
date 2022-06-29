@@ -8,6 +8,8 @@
  *
  */
 
+#include "align_split_routines.h"
+
 #include <cstddef>
 #include <immintrin.h>
 
@@ -17,82 +19,6 @@
 namespace finufft {
 namespace spreading {
 namespace avx512 {
-
-/// @{
-/** The next two fields contain table for shuffles
- * corresponding to element shifts of the given number of elements.
- * Note that this is similar to valignd, except that we are able to
- * specify the shift amount at runtime, whereas valignd uses an immediate value.
- *
- * The constructed table conceptually shifts quadword elements (i.e. two floats at a time)
- * as the values held in the registers conceptually represent interleaved complex numbers.
- *
- * I have reproduced a 4-wide version of the tables below, with a single offset between lines.
- * The true tables are 16-wide, and offset by 2 each line. Note that here, s denotes an index
- * which fetches from the second vector of the shuffle, whereas all other indices fetch from
- * the first vector of the shuffle. We use a zero vector as the second vector, so s denotes zero
- * values.
- *
- * shuffle_low   shuffle_high
- *  0 1 2 3       s s s s
- *  s 0 1 2       3 s s s
- *  s s 0 1       2 3 s s
- *  s s s 0       1 2 3 s
- */
-alignas(64) static constexpr std::array<int, 16 * 8> align_shuffles_low = ([] {
-    std::array<int, 16 * 8> result = {};
-
-    for (int i = 0; i < 8; ++i) {
-        for (int j = 0; j < i; ++j) {
-            result[i * 16 + 2 * j] = 0b10000;
-            result[i * 16 + 2 * j + 1] = 0b10000;
-        }
-
-        for (int j = i; j < 8; ++j) {
-            result[i * 16 + 2 * j] = 2 * (j - i);
-            result[i * 16 + 2 * j + 1] = 2 * (j - i) + 1;
-        }
-    }
-
-    return result;
-})();
-
-alignas(64) static constexpr std::array<int, 16 * 8> align_shuffles_high = ([]() {
-    std::array<int, 16 * 8> result = {};
-
-    for (int i = 0; i < 8; ++i) {
-        for (int j = 0; j < i; ++j) {
-            result[i * 16 + 2 * j] = 2 * (8 - i) + 2 * j;
-            result[i * 16 + 2 * j + 1] = 2 * (8 - i) + 2 * j + 1;
-        }
-
-        for (int j = i; j < 8; ++j) {
-            result[i * 16 + 2 * j] = 0b10000;
-            result[i * 16 + 2 * j + 1] = 0b10000;
-        }
-    }
-
-    return result;
-})();
-/// @}
-
-/** Compute a rotation lookup table for use with vpermps
- *
- * The ith row of the table corresponds to a permutation which rotates
- * the elements of a 16-element vector by 2 * i elements. The rotation
- * is cyclic.
- *
- */
-alignas(64) static constexpr std::array<int, 16 * 4> align_rotate_lookup_table = ([]() {
-    std::array<int, 16 * 4> result = {};
-
-    for (int i = 0; i < 4; ++i) {
-        for (int j = 0; j < 16; ++j) {
-            result[i * 16 + j] = (j - 2 * i) % 16;
-        }
-    }
-    return result;
-})();
 
 /** Accumulates and stores the given vector into du at the given index.
  * This function splits the stores to ensure that they are aligned,
@@ -128,22 +54,23 @@ alignas(64) static constexpr std::array<int, 16 * 4> align_rotate_lookup_table =
  *
  */
 inline void accumulate_add_complex_interleaved_aligned(float *du, int i, __m512 v) {
+    // Compute index as base index to aligned location
+    // and offset from aligned location to actual index.
     int i_aligned = i & ~7;
     int i_remainder = i - i_aligned;
 
     float *out = du + 2 * i_aligned;
 
-    __m512 v_lo = _mm512_permutex2var_ps(
-        v, _mm512_load_epi32(align_shuffles_low.data() + i_remainder * 16), _mm512_setzero_ps());
-
-    __m512 v_hi = _mm512_permutex2var_ps(
-        v, _mm512_load_epi32(align_shuffles_high.data() + i_remainder * 16), _mm512_setzero_ps());
+    // Split using double operation in order to shuffle pairs
+    // of fp32 values (representing a complex number).
+    __m512d v_lo, v_hi;
+    split_unaligned_vector(_mm512_castps_pd(v), i_remainder, v_lo, v_hi);
 
     __m512 out_lo = _mm512_load_ps(out);
     __m512 out_hi = _mm512_load_ps(out + 16);
 
-    out_lo = _mm512_add_ps(out_lo, v_lo);
-    out_hi = _mm512_add_ps(out_hi, v_hi);
+    out_lo = _mm512_add_ps(out_lo, _mm512_castpd_ps(v_lo));
+    out_hi = _mm512_add_ps(out_hi, _mm512_castpd_ps(v_hi));
 
     _mm512_store_ps(out, out_lo);
     _mm512_store_ps(out + 16, out_hi);
@@ -159,90 +86,30 @@ inline void accumulate_add_complex_interleaved_aligned(float *du, int i, __m256 
 
     float *out = du + 2 * i_aligned;
 
-    __m512 v_offset = _mm512_permutexvar_ps(
-        _mm512_load_epi32(align_rotate_lookup_table.data() + i_remainder * 16),
-        _mm512_castps256_ps512(v));
+    // Split using double operation in order to shuffle pairs
+    // of fp32 values (representing a complex number).
+    __m256d v_lo, v_hi;
+    split_unaligned_vector(_mm256_castps_pd(v), i_remainder, v_lo, v_hi);
 
     // Accumulate and store
-    // Note that we drop down to 256-bit operations to enable the use of aligned operations
-    // and to ensure that we can make full use of the store-to-load forwarding.
-    // This yields a ~15% improvement in total performance on the subproblem spreading with width 4.
     __m256 out_lo = _mm256_load_ps(out);
     __m256 out_hi = _mm256_load_ps(out + 8);
-    out_lo = _mm256_add_ps(out_lo, _mm512_castps512_ps256(v_offset));
-    out_hi = _mm256_add_ps(out_hi, _mm512_extractf32x8_ps(v_offset, 1));
+    out_lo = _mm256_add_ps(out_lo, _mm256_castpd_ps(v_lo));
+    out_hi = _mm256_add_ps(out_hi, _mm256_castpd_ps(v_hi));
     _mm256_store_ps(out, out_lo);
     _mm256_store_ps(out + 8, out_hi);
 }
 
-alignas(64) std::array<int64_t, 8 * 4> align_shuffles_low_fp64_w8 = ([]() {
-    std::array<int64_t, 8 * 4> result = {};
-    for (int i = 0; i < 4; ++i) {
-        for (int j = 0; j < i; ++j) {
-            result[i * 8 + 2 * j] = 0b1000;
-            result[i * 8 + 2 * j + 1] = 0b1000;
-        }
-
-        for (int j = i; j < 4; ++j) {
-            result[i * 8 + 2 * j] = 2 * (j - i);
-            result[i * 8 + 2 * j + 1] = 2 * (j - i) + 1;
-        }
-    }
-
-    return result;
-})();
-
-alignas(64) std::array<int64_t, 8 * 4> align_shuffles_high_fp64_w8 = ([]() {
-    std::array<int64_t, 8 * 4> result = {};
-
-    for (int i = 0; i < 4; ++i) {
-        for (int j = 0; j < i; ++j) {
-            result[i * 8 + 2 * j] = 2 * (4 - i) + 2 * j;
-            result[i * 8 + 2 * j + 1] = 2 * (4 - i) + 2 * j + 1;
-        }
-
-        for (int j = i; j < 4; ++j) {
-            result[i * 8 + 2 * j] = 0b1000;
-            result[i * 8 + 2 * j + 1] = 0b1000;
-        }
-    }
-
-    return result;
-})();
-
-alignas(64) std::array<int64_t, 8 * 4> align_shuffles_mid_fp64_w8 = ([]() {
-    std::array<int64_t, 8 * 4> result = {};
-
-    for (int i = 0; i < 4; ++i) {
-        for (int j = 0; j < i; ++j) {
-            result[i * 8 + 2 * j] = 2 * (4 - i) + 2 * j;
-            result[i * 8 + 2 * j + 1] = 2 * (4 - i) + 2 * j + 1;
-        }
-
-        for (int j = i; j < 4; ++j) {
-            result[i * 8 + 2 * j] = 2 * (j - i) + 0b1000;
-            result[i * 8 + 2 * j + 1] = 2 * (j - i) + 1 + 0b1000;
-        }
-    }
-
-    return result;
-})();
 
 inline void accumulate_add_complex_interleaved_aligned(
     double *du, int64_t i, __m512d const &v1, __m512d const &v2) {
     int64_t i_aligned = i & ~3;
     int i_remainder = i - i_aligned;
 
-    __m512d v_lo = _mm512_permutex2var_pd(
-        v1,
-        _mm512_load_epi64(align_shuffles_low_fp64_w8.data() + i_remainder * 8),
-        _mm512_setzero_pd());
-    __m512d v_hi = _mm512_permutex2var_pd(
-        v2,
-        _mm512_load_epi64(align_shuffles_high_fp64_w8.data() + i_remainder * 8),
-        _mm512_setzero_pd());
-    __m512d v_mid = _mm512_permutex2var_pd(
-        v1, _mm512_load_epi64(align_shuffles_mid_fp64_w8.data() + i_remainder * 8), v2);
+    __m512d v_lo, v_hi, v_mid;
+    // Offset multiplied by 2 to account for the fact that we are
+    // working with interleaved complex values
+    split_unaligned_vector(v1, v2, 2 * i_remainder, v_lo, v_hi, v_mid);
 
     __m512d out_lo = _mm512_load_pd(du + 2 * i_aligned);
     __m512d out_mid = _mm512_load_pd(du + 2 * i_aligned + 8);

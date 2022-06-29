@@ -103,13 +103,13 @@ alignas(64) static constexpr std::array<int, 16 * 8> align_shuffles_high = make_
  * and store each one separately at w, and w + 8.
  * This ensures that our load / stores are aligned, and
  * may benefit from store-to-load forwarding.
- * 
+ *
  * @param du The vector to store the data into. Must be aligned to 64 bytes.
  * @param i The index at which to store the data at. Note that this is interpreted
  *    as an index into the vector of complex interleaved elements.
  * @param v The vector of elements to store. Interpreted as 8 complex elements
- *    in interleaved format. 
- * 
+ *    in interleaved format.
+ *
  */
 inline void accumulate_add_complex_interleaved_aligned(float *du, int i, __m512 v) {
     int i_aligned = i & ~7;
@@ -144,6 +144,10 @@ template <> struct Avx512HornerPolynomialEvaluation<0> {
     template <typename C> __m512 operator()(__m512 z, C const &coeffs) const { return coeffs[0]; }
 };
 
+/** Utility class for loading a set of coefficients into a vector.
+ * 
+ * This class is principally intended to be used with `Avx512HornerPolynomialEvaluation`.
+ */
 struct VectorLoader {
     float const *data;
     __m512 operator[](std::size_t i) const { return _mm512_load_ps(data + i * 16); }
@@ -176,6 +180,24 @@ template <std::size_t Degree> struct SpreadSubproblemPolyW8 {
             Degree, coefficients, width, this->coefficients.get() + 8, 8, 16);
     }
 
+    /** Computes the kernel for two points, multiplies and interleaves to produce complex
+     * interleaved output.
+     *
+     * This function computes the polynomial kernel for two points with width 8, for 16 values
+     * total. It then evaluates then multiplies by the real and imaginary strengths, and interleaves
+     * the computed parts to produce a result in complex interleaved format.
+     *
+     * @param z The points to evaluate the kernel for. The vector is expected to be of the form:
+     *   [z_1, z_1, ..., z_2, z_2, ...], where z_1 and z_2 denote the two values for which
+     *   the kernel is to be evaluated.
+     * @param dd Pointer to the interleaved strengths. The first two elements correspond to the real
+     *   and imaginary strengths of the the point at z_1, and the second two elements correspond to
+     * the those of the point at z_2.
+     * @param v1 The first output, corresponds to the complex interleaved kernel for z_1.
+     *   [r^1_1, i^1_1, r^2_2, i^2_2, ...]
+     * @param v2 The second output, corresponds to the complex interleaved kernel for z_2.
+     *
+     */
     void compute(__m512 z, float const *dd, __m512 &v1, __m512 &v2) const {
         __m512 k = Avx512HornerPolynomialEvaluation<Degree>{}(z, VectorLoader{coefficients.get()});
 
@@ -211,6 +233,12 @@ template <std::size_t Degree> struct SpreadSubproblemPolyW8 {
         // clang-format on
     }
 
+    /** Function for a single unrolled iteration of the subproblem.
+     *
+     * This is the core loop of the kernel, and operates on 8 points at a time
+     * in order to leverage vectorization in the computation of the index into the grid.
+     *
+     */
     void process_4(
         float *__restrict output, float const *coord_x, float const *strengths, int64_t offset,
         std::size_t i) const {
@@ -235,7 +263,7 @@ template <std::size_t Degree> struct SpreadSubproblemPolyW8 {
         __m512 v1;
         __m512 v2;
 
-        // Store integer coordinates for accumulation later.
+        // Store integer coordinates for accumulation later (adjust indices to account for offset)
         alignas(16) int indices[8];
         _mm256_store_epi32(indices, _mm256_sub_epi32(x_ceili, _mm256_set1_epi32(offset)));
 
@@ -275,9 +303,14 @@ template <std::size_t Degree> struct SpreadSubproblemPolyW8 {
         }
     }
 
-    std::size_t num_points_multiple() const { return 8; }
+    std::size_t num_points_multiple() const {
+        // We process 8 points at a time.
+        return 8;
+    }
     std::size_t extent_multiple() const { return 8; }
     std::pair<double, double> target_padding() const {
+        // We exceed the standard padding on the right by at most 8
+        // Due to the split writing of the kernel.
         return {0.5 * kernel_width, 0.5 * kernel_width + 8};
     }
 };

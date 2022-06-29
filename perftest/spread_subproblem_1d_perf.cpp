@@ -1,5 +1,6 @@
 #include <benchmark/benchmark.h>
 
+#include "../src/kernels/avx512/spread_axv512.h"
 #include "../src/kernels/reference/spreading_reference.h"
 #include "../src/spreading.h"
 #include "../test/spread_test_utils.h"
@@ -67,8 +68,17 @@ template <typename T, std::size_t Dim> void benchmark_reference(benchmark::State
     });
 }
 
+template <typename T, std::size_t Dim> void benchmark_avx512(benchmark::State &state) {
+    benchmark_for_width<T, Dim>(state, [](fs::kernel_specification const &kernel_spec) {
+        return fs::get_subproblem_polynomial_avx512_functor<T, Dim>(kernel_spec);
+    });
+}
+
 } // namespace
 
+BENCHMARK(benchmark_avx512<float, 1>)
+    ->ArgsProduct({{1 << 12}, {4, 5, 6, 7, 8}})
+    ->Unit(benchmark::kMicrosecond);
 BENCHMARK(benchmark_reference<float, 1>)
     ->ArgsProduct({{1 << 12}, {4, 5, 6, 7, 8}})
     ->Unit(benchmark::kMicrosecond);

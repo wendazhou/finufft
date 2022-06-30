@@ -124,6 +124,12 @@ set_finufft_options(finufft)
 target_link_libraries(finufft PUBLIC finufft_f32 finufft_f64)
 target_include_directories(finufft PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/include")
 
+if(MSVC)
+    # Visibility not currently handled well, simply export all symbols
+    # TODO: fix visibility in shared library.
+    set_property(TARGET finufft PROPERTY WINDOWS_EXPORT_ALL_SYMBOLS ON)
+endif()
+
 add_library(finufft_static STATIC src/utils_precindep.cpp contrib/legendre_rule_fast.cpp)
 set_finufft_options(finufft)
 target_link_libraries(finufft_static PUBLIC finufft_f32 finufft_f64)

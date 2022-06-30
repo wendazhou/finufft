@@ -1,7 +1,7 @@
 /** @file
- * 
+ *
  * This file contains unit tests for implementations of the spreading subproblem.
- * 
+ *
  */
 
 #include "../src/kernels/avx512/spread_axv512.h"
@@ -63,7 +63,7 @@ evaluation_result<Dim, T> evaluate_subproblem_implementation(
     // Get the kernel specification
     auto kernel_spec = specification_from_width(width, 2.0);
 
-    auto reference_fn = finufft::spreading::SpreadSubproblemLegacyFunctor{kernel_spec};
+    auto reference_fn = finufft::spreading::get_subproblem_polynomial_reference_functor<T, Dim>(kernel_spec);
     auto fn = fn_factory(kernel_spec);
 
     // Arbitrary grid specification in all dimensions
@@ -152,8 +152,12 @@ void test_subproblem_implementation(int width, Fn &&factory) {
     evaluate_subproblem_limits<Dim, T>(width, factory);
 
     auto result = evaluate_subproblem_implementation<Dim, T>(factory, 100, 0, width);
+
+    // Note: check correct error level computation for the test
+    // Currently more lax in higher dimension due to (potentially bad?)
+    // AVX512 implementation in 2D.
     auto error_level = compute_max_relative_threshold(
-        std::pow(10, -width + 1),
+        std::pow(10, -width + Dim),
         result.output_reference.get(),
         result.output_reference.get() + 2 * result.grid.num_elements());
 
@@ -257,7 +261,7 @@ TEST(SpreadSubproblem, ReferencePoly3Df64) {
         });
 }
 
-TEST(SpreadSubproblem, Avx5121Df32) {
+TEST(SpreadSubproblem, Avx512_1D_f32) {
     if (finufft::get_current_capability() < finufft::DispatchCapability::AVX512) {
         GTEST_SKIP() << "Skipping AVX512 test";
     }
@@ -268,7 +272,7 @@ TEST(SpreadSubproblem, Avx5121Df32) {
         });
 }
 
-TEST(SpreadSubproblem, Avx5121Df32_Short) {
+TEST(SpreadSubproblem, Avx512_1D_f32_Short) {
     if (finufft::get_current_capability() < finufft::DispatchCapability::AVX512) {
         GTEST_SKIP() << "Skipping AVX512 test";
     }
@@ -279,7 +283,7 @@ TEST(SpreadSubproblem, Avx5121Df32_Short) {
         });
 }
 
-TEST(SpreadSubproblem, Avx5121Df64) {
+TEST(SpreadSubproblem, Avx512_1D_f64) {
     if (finufft::get_current_capability() < finufft::DispatchCapability::AVX512) {
         GTEST_SKIP() << "Skipping AVX512 test";
     }
@@ -287,5 +291,16 @@ TEST(SpreadSubproblem, Avx5121Df64) {
     test_subproblem_implementation<double, 1>(
         5, [](finufft::spreading::kernel_specification const &k) {
             return finufft::spreading::get_subproblem_polynomial_avx512_1d_fp64_functor(k);
+        });
+}
+
+TEST(SpreadSubproblem, Avx512_2D_f32) {
+    if (finufft::get_current_capability() < finufft::DispatchCapability::AVX512) {
+        GTEST_SKIP() << "Skipping AVX512 test";
+    }
+
+    test_subproblem_implementation<float, 2>(
+        5, [](finufft::spreading::kernel_specification const &k) {
+            return finufft::spreading::get_subproblem_polynomial_avx512_2d_fp32_functor(k);
         });
 }

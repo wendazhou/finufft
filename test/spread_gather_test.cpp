@@ -1,5 +1,6 @@
 #include "../src/kernels/avx2/gather_fold_avx2.h"
 #include "../src/kernels/avx512/gather_fold_avx512.h"
+#include "../src/kernels/dispatch.h"
 #include "../src/spreading.h"
 
 #include <random>
@@ -31,7 +32,7 @@ finufft::spreading::SpreaderMemoryInput<Dim, T> run_spreader(
 
 } // namespace
 
-#define MAKE_INVOKE_FUNCTOR(Name, Fn)                                                              \
+#define MAKE_INVOKE_FUNCTOR(Name, Fn, DispatchLevel)                                               \
     struct Name {                                                                                  \
         template <std::size_t Dim, typename T>                                                     \
         void operator()(                                                                           \
@@ -41,6 +42,8 @@ finufft::spreading::SpreaderMemoryInput<Dim, T> run_spreader(
             finufft::spreading::FoldRescaleRange rescale_range) {                                  \
             Fn(memory, input, sizes, sort_indices, rescale_range);                                 \
         }                                                                                          \
+                                                                                                   \
+        static const finufft::DispatchCapability dispatch_level = DispatchLevel;                   \
     };
 
 namespace {
@@ -51,9 +54,13 @@ template <typename T> class GatherRescaleFixture : public ::testing::Test {
     typedef std::tuple_element_t<2, T> FnType;
 };
 
-MAKE_INVOKE_FUNCTOR(GatherFoldReferenceFn, finufft::spreading::gather_and_fold)
-MAKE_INVOKE_FUNCTOR(GatherFoldAVX512Fn, finufft::spreading::gather_and_fold_avx512)
-MAKE_INVOKE_FUNCTOR(GatherFoldAVX2Fn, finufft::spreading::gather_and_fold_avx2)
+MAKE_INVOKE_FUNCTOR(
+    GatherFoldReferenceFn, finufft::spreading::gather_and_fold, finufft::DispatchCapability::Scalar)
+MAKE_INVOKE_FUNCTOR(
+    GatherFoldAVX2Fn, finufft::spreading::gather_and_fold_avx2, finufft::DispatchCapability::AVX2)
+MAKE_INVOKE_FUNCTOR(
+    GatherFoldAVX512Fn, finufft::spreading::gather_and_fold_avx512,
+    finufft::DispatchCapability::AVX512)
 
 // clang-format off
 typedef ::testing::Types<
@@ -81,6 +88,11 @@ TYPED_TEST_P(GatherRescaleFixture, GatherRescaleIdentity) {
     constexpr std::size_t Dim = std::tuple_element_t<0, TypeParam>::value;
     typedef std::tuple_element_t<1, TypeParam> FloatingType;
     typedef std::tuple_element_t<2, TypeParam> FnType;
+
+    if (FnType::dispatch_level > finufft::get_current_capability()) {
+        GTEST_SKIP() << "Skipping test because it requires a higher instruction set than currently "
+                        "supported.";
+    }
 
     std::size_t num_points = 100;
     std::size_t num_gather_points = 20;

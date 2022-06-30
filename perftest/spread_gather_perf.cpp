@@ -1,8 +1,9 @@
 #include <benchmark/benchmark.h>
 
-#include "../test/spread_test_utils.h"
 #include "../src/kernels/avx2/gather_fold_avx2.h"
 #include "../src/kernels/avx512/gather_fold_avx512.h"
+#include "../src/kernels/dispatch.h"
+#include "../test/spread_test_utils.h"
 
 namespace {
 
@@ -42,13 +43,22 @@ template <std::size_t Dim, typename T> void gather_rescale_reference(benchmark::
 }
 
 template <std::size_t Dim, typename T> void gather_rescale_avx2(benchmark::State &state) {
+    if (finufft::get_current_capability() < finufft::DispatchCapability::AVX2) {
+        state.SkipWithError("AVX2 not supported");
+        return;
+    }
+
     gather_rescale_impl<Dim, T>(state, finufft::spreading::gather_and_fold_avx2);
 }
 
 template <std::size_t Dim, typename T> void gather_rescale_avx512(benchmark::State &state) {
+    if (finufft::get_current_capability() < finufft::DispatchCapability::AVX512) {
+        state.SkipWithError("AVX512 not supported");
+        return;
+    }
+
     gather_rescale_impl<Dim, T>(state, finufft::spreading::gather_and_fold_avx512);
 }
-
 
 } // namespace
 

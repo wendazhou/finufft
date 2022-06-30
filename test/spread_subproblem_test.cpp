@@ -1,6 +1,14 @@
+/** @file
+ * 
+ * This file contains unit tests for implementations of the spreading subproblem.
+ * 
+ */
+
 #include "../src/kernels/avx512/spread_axv512.h"
 #include "../src/kernels/reference/spreading_reference.h"
 #include "../src/spreading.h"
+
+#include "../src/kernels/dispatch.h"
 
 #include <numeric>
 
@@ -250,6 +258,10 @@ TEST(SpreadSubproblem, ReferencePoly3Df64) {
 }
 
 TEST(SpreadSubproblem, Avx5121Df32) {
+    if (finufft::get_current_capability() < finufft::DispatchCapability::AVX512) {
+        GTEST_SKIP() << "Skipping AVX512 test";
+    }
+
     test_subproblem_implementation<float, 1>(
         5, [](finufft::spreading::kernel_specification const &k) {
             return finufft::spreading::get_subproblem_polynomial_avx512_1d_fp32_functor(k);
@@ -257,6 +269,10 @@ TEST(SpreadSubproblem, Avx5121Df32) {
 }
 
 TEST(SpreadSubproblem, Avx5121Df32_Short) {
+    if (finufft::get_current_capability() < finufft::DispatchCapability::AVX512) {
+        GTEST_SKIP() << "Skipping AVX512 test";
+    }
+
     test_subproblem_implementation<float, 1>(
         4, [](finufft::spreading::kernel_specification const &k) {
             return finufft::spreading::get_subproblem_polynomial_avx512_1d_fp32_functor(k);
@@ -264,6 +280,10 @@ TEST(SpreadSubproblem, Avx5121Df32_Short) {
 }
 
 TEST(SpreadSubproblem, Avx5121Df64) {
+    if (finufft::get_current_capability() < finufft::DispatchCapability::AVX512) {
+        GTEST_SKIP() << "Skipping AVX512 test";
+    }
+
     test_subproblem_implementation<double, 1>(
         5, [](finufft::spreading::kernel_specification const &k) {
             return finufft::spreading::get_subproblem_polynomial_avx512_1d_fp64_functor(k);

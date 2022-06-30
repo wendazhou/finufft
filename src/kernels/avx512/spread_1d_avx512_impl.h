@@ -20,109 +20,6 @@ namespace finufft {
 namespace spreading {
 namespace avx512 {
 
-/** Accumulates and stores the given vector into du at the given index.
- * This function splits the stores to ensure that they are aligned,
- * and ensuring that store-to-load forwarding may be successful (as all stores
- * operate on aligned addresses, they either coincide exactly or do not alias).
- *
- * Operationally, given the vector of elements v, we conceptually consider its
- * representation offset by 2 * i elements. This representation is then split
- * into the lower 16 elements and the upper 16 elements using a shuffle.
- * To avoid branches, the shuffle is produced by a lookup table.
- *
- * We illustrate the operation below for vector width of 4 (complex), accumulating into a zero
- * vector.
- *
- * Given the following:
- *   v = [r0, i0, r1, i1, r2, i2, r3, i3]
- *   idx = 2
- * we wish to store v into result starting at index 2 * idx, hence w would be
- *   w = [0, 0, 0, 0, r0, i0, r1, i1, r2, i2, r3, i3, 0, 0, 0, 0]
- *
- * To do so, we compute:
- *   v_lo = [0, 0, 0, 0, r0, i0, r1, i1]
- *   v_hi = [r2, i2, r3, i3, 0, 0, 0, 0]
- * and store each one separately at w, and w + 8.
- * This ensures that our load / stores are aligned, and
- * may benefit from store-to-load forwarding.
- *
- * @param du The vector to store the data into. Must be aligned to 64 bytes.
- * @param i The index at which to store the data at. Note that this is interpreted
- *    as an index into the vector of complex interleaved elements.
- * @param v The vector of elements to store. Interpreted as 8 complex elements
- *    in interleaved format.
- *
- */
-inline void accumulate_add_complex_interleaved_aligned(float *du, int i, __m512 v) {
-    // Compute index as base index to aligned location
-    // and offset from aligned location to actual index.
-    int i_aligned = i & ~7;
-    int i_remainder = i - i_aligned;
-
-    float *out = du + 2 * i_aligned;
-
-    // Split using double operation in order to shuffle pairs
-    // of fp32 values (representing a complex number).
-    __m512d v_lo, v_hi;
-    split_unaligned_vector(_mm512_castps_pd(v), i_remainder, v_lo, v_hi);
-
-    __m512 out_lo = _mm512_load_ps(out);
-    __m512 out_hi = _mm512_load_ps(out + 16);
-
-    out_lo = _mm512_add_ps(out_lo, _mm512_castpd_ps(v_lo));
-    out_hi = _mm512_add_ps(out_hi, _mm512_castpd_ps(v_hi));
-
-    _mm512_store_ps(out, out_lo);
-    _mm512_store_ps(out + 16, out_hi);
-}
-
-/** Similar to its __m512 counterpart, but functionally works with a vector which is half the
- * length.
- *
- */
-inline void accumulate_add_complex_interleaved_aligned(float *du, int i, __m256 v) {
-    int i_aligned = i & ~3;
-    int i_remainder = i - i_aligned;
-
-    float *out = du + 2 * i_aligned;
-
-    // Split using double operation in order to shuffle pairs
-    // of fp32 values (representing a complex number).
-    __m256d v_lo, v_hi;
-    split_unaligned_vector(_mm256_castps_pd(v), i_remainder, v_lo, v_hi);
-
-    // Accumulate and store
-    __m256 out_lo = _mm256_load_ps(out);
-    __m256 out_hi = _mm256_load_ps(out + 8);
-    out_lo = _mm256_add_ps(out_lo, _mm256_castpd_ps(v_lo));
-    out_hi = _mm256_add_ps(out_hi, _mm256_castpd_ps(v_hi));
-    _mm256_store_ps(out, out_lo);
-    _mm256_store_ps(out + 8, out_hi);
-}
-
-
-inline void accumulate_add_complex_interleaved_aligned(
-    double *du, int64_t i, __m512d const &v1, __m512d const &v2) {
-    int64_t i_aligned = i & ~3;
-    int i_remainder = i - i_aligned;
-
-    __m512d v_lo, v_mid, v_hi;
-    // Offset multiplied by 2 to account for the fact that we are
-    // working with interleaved complex values
-    split_unaligned_vector(v1, v2, 2 * i_remainder, v_lo, v_mid, v_hi);
-
-    __m512d out_lo = _mm512_load_pd(du + 2 * i_aligned);
-    __m512d out_mid = _mm512_load_pd(du + 2 * i_aligned + 8);
-    __m512d out_hi = _mm512_load_pd(du + 2 * i_aligned + 16);
-
-    out_lo = _mm512_add_pd(out_lo, v_lo);
-    out_mid = _mm512_add_pd(out_mid, v_mid);
-    out_hi = _mm512_add_pd(out_hi, v_hi);
-
-    _mm512_store_pd(du + 2 * i_aligned, out_lo);
-    _mm512_store_pd(du + 2 * i_aligned + 8, out_mid);
-    _mm512_store_pd(du + 2 * i_aligned + 16, out_hi);
-}
 
 template <std::size_t Degree> struct Avx512HornerPolynomialEvaluation {
     template <typename C> __m512 operator()(__m512 z, C const &coeffs) const {
@@ -167,6 +64,18 @@ template <> struct VectorLoader<double> {
  * index for accumulation is vectorized, so that in total 8 elements are
  * processed at a time in the inner loop, in 4 groups of 2.
  *
+ * The functor class separates the functionality into three main functions,
+ * in addition to the main loop implemented in `operator()`.
+ *
+ * - compute_kernel: computes the kernel value for a set of points
+ *       through a polynomial approximation, merges the complex strengths
+ *       and produces interleaved values to be written out
+ * - accumulate_strengths: processes the computed pre-multiplied complex
+ *       kernels, and accumulates them onto the main output array.
+ * - process_8: main unrolled loop which computes accumulation indices from
+ *       input coordinates, then calls `compute_kernel` and `accumulate_strengths`
+ *       to process the points.
+ *
  */
 template <std::size_t Degree> struct SpreadSubproblemPolyW8 {
     finufft::spreading::aligned_unique_array<float> coefficients;
@@ -194,21 +103,23 @@ template <std::size_t Degree> struct SpreadSubproblemPolyW8 {
      * @param z The points to evaluate the kernel for. The vector is expected to be of the form:
      *   [z_1, z_1, ..., z_2, z_2, ...], where z_1 and z_2 denote the two values for which
      *   the kernel is to be evaluated.
-     * @param dd Pointer to the interleaved strengths. The first two elements correspond to the real
-     *   and imaginary strengths of the the point at z_1, and the second two elements correspond to
-     * the those of the point at z_2.
+     * @param strengths Pointer to the interleaved strengths. The first two elements correspond to
+     * the real and imaginary strengths of the the point at z_1, and the second two elements
+     * correspond to the those of the point at z_2.
      * @param v1 The first output, corresponds to the complex interleaved kernel for z_1.
      *   [r^1_1, i^1_1, r^2_2, i^2_2, ...]
      * @param v2 The second output, corresponds to the complex interleaved kernel for z_2.
      *
      */
-    void compute(__m512 z, float const *dd, __m512 &v1, __m512 &v2) const {
+    void compute_kernel(__m512 z, float const *strengths, __m512 &v1, __m512 &v2) const {
         __m512 k =
             Avx512HornerPolynomialEvaluation<Degree>{}(z, VectorLoader<float>{coefficients.get()});
 
         // Load real and imaginary coefficients, split by 256-bit lane.
-        __m512 w_re = _mm512_insertf32x8(_mm512_set1_ps(dd[0]), _mm256_set1_ps(dd[2]), 1);
-        __m512 w_im = _mm512_insertf32x8(_mm512_set1_ps(dd[1]), _mm256_set1_ps(dd[3]), 1);
+        __m512 w_re =
+            _mm512_insertf32x8(_mm512_set1_ps(strengths[0]), _mm256_set1_ps(strengths[2]), 1);
+        __m512 w_im =
+            _mm512_insertf32x8(_mm512_set1_ps(strengths[1]), _mm256_set1_ps(strengths[3]), 1);
 
         // Multiply by coefficients in lane.
         __m512 k_re = _mm512_mul_ps(k, w_re);
@@ -236,6 +147,62 @@ template <std::size_t Degree> struct SpreadSubproblemPolyW8 {
                 from_a | 12, from_b | 12, from_a | 13, from_b | 13, from_a | 14, from_b | 14, from_a | 15, from_b | 15),
             k_im);
         // clang-format on
+    }
+
+    /** Accumulates and stores the given vector into du at the given index.
+     * This function splits the stores to ensure that they are aligned,
+     * and ensuring that store-to-load forwarding may be successful (as all stores
+     * operate on aligned addresses, they either coincide exactly or do not alias).
+     *
+     * Operationally, given the vector of elements v, we conceptually consider its
+     * representation offset by 2 * i elements. This representation is then split
+     * into the lower 16 elements and the upper 16 elements using a shuffle.
+     * To avoid branches, the shuffle is produced by a lookup table.
+     *
+     * We illustrate the operation below for vector width of 4 (complex), accumulating into a zero
+     * vector.
+     *
+     * Given the following:
+     *   v = [r0, i0, r1, i1, r2, i2, r3, i3]
+     *   idx = 2
+     * we wish to store v into result starting at index 2 * idx, hence w would be
+     *   w = [0, 0, 0, 0, r0, i0, r1, i1, r2, i2, r3, i3, 0, 0, 0, 0]
+     *
+     * To do so, we compute:
+     *   v_lo = [0, 0, 0, 0, r0, i0, r1, i1]
+     *   v_hi = [r2, i2, r3, i3, 0, 0, 0, 0]
+     * and store each one separately at w, and w + 8.
+     * This ensures that our load / stores are aligned, and
+     * may benefit from store-to-load forwarding.
+     *
+     * @param du The vector to store the data into. Must be aligned to 64 bytes.
+     * @param i The index at which to store the data at. Note that this is interpreted
+     *    as an index into the vector of complex interleaved elements.
+     * @param v The vector of elements to store. Interpreted as 8 complex elements
+     *    in interleaved format.
+     *
+     */
+    void accumulate_strengths(float *output, int i, __m512 v) const {
+        // Compute index as base index to aligned location
+        // and offset from aligned location to actual index.
+        int i_aligned = i & ~7;
+        int i_remainder = i - i_aligned;
+
+        float *out = output + 2 * i_aligned;
+
+        // Split using double operation in order to shuffle pairs
+        // of fp32 values (representing a complex number).
+        __m512d v_lo, v_hi;
+        split_unaligned_vector(_mm512_castps_pd(v), i_remainder, v_lo, v_hi);
+
+        __m512 out_lo = _mm512_load_ps(out);
+        __m512 out_hi = _mm512_load_ps(out + 16);
+
+        out_lo = _mm512_add_ps(out_lo, _mm512_castpd_ps(v_lo));
+        out_hi = _mm512_add_ps(out_hi, _mm512_castpd_ps(v_hi));
+
+        _mm512_store_ps(out, out_lo);
+        _mm512_store_ps(out + 16, out_hi);
     }
 
     /** Function for a single unrolled iteration of the subproblem.
@@ -275,27 +242,29 @@ template <std::size_t Degree> struct SpreadSubproblemPolyW8 {
         // Unrolled loop to compute 8 values, two at once.
         // At each stage, we permute from xid into a register
         // which contains z_0 in the lower 256-bit, and z_1 in the upper 256-bit.
-        compute(_mm512_permute_ps(zd, 0), strengths + 2 * i, v1, v2);
-        accumulate_add_complex_interleaved_aligned(output, indices[0], v1);
-        accumulate_add_complex_interleaved_aligned(output, indices[1], v2);
+        compute_kernel(_mm512_permute_ps(zd, 0), strengths + 2 * i, v1, v2);
+        accumulate_strengths(output, indices[0], v1);
+        accumulate_strengths(output, indices[1], v2);
 
         // Permute to obtain z_2 in the lower 256-bit, and z_3 in the upper 256-bit.
-        compute(_mm512_permute_ps(zd, 0b01010101), strengths + 2 * i + 4, v1, v2);
-        accumulate_add_complex_interleaved_aligned(output, indices[2], v1);
-        accumulate_add_complex_interleaved_aligned(output, indices[3], v2);
+        compute_kernel(_mm512_permute_ps(zd, 0b01010101), strengths + 2 * i + 4, v1, v2);
+        accumulate_strengths(output, indices[2], v1);
+        accumulate_strengths(output, indices[3], v2);
 
         // Permute to obtain z_4 in the lower 256-bit, and z_5 in the upper 256-bit.
-        compute(_mm512_permute_ps(zd, 0b10101010), strengths + 2 * i + 8, v1, v2);
-        accumulate_add_complex_interleaved_aligned(output, indices[4], v1);
-        accumulate_add_complex_interleaved_aligned(output, indices[5], v2);
+        compute_kernel(_mm512_permute_ps(zd, 0b10101010), strengths + 2 * i + 8, v1, v2);
+        accumulate_strengths(output, indices[4], v1);
+        accumulate_strengths(output, indices[5], v2);
 
         // Permute to obtain z_6 in the lower 256-bit, and z_7 in the upper 256-bit.
-        compute(_mm512_permute_ps(zd, 0b11111111), strengths + 2 * i + 12, v1, v2);
-        accumulate_add_complex_interleaved_aligned(output, indices[6], v1);
-        accumulate_add_complex_interleaved_aligned(output, indices[7], v2);
+        compute_kernel(_mm512_permute_ps(zd, 0b11111111), strengths + 2 * i + 12, v1, v2);
+        accumulate_strengths(output, indices[6], v1);
+        accumulate_strengths(output, indices[7], v2);
     }
 
     void operator()(
+        // Main loop of the spreading subproblem.
+        // This loop is unrolled to process 8 points at a time.
         nu_point_collection<1, float const *> const &input, grid_specification<1> const &grid,
         float *__restrict output) const {
 
@@ -315,7 +284,7 @@ template <std::size_t Degree> struct SpreadSubproblemPolyW8 {
         // We process 8 points at a time.
         return 8;
     }
-    std::size_t extent_multiple() const { return 8; }
+    std::size_t extent_multiple() const { return 1; }
     std::pair<double, double> target_padding() const {
         // We exceed the standard padding on the right by at most 8
         // Due to the split writing of the kernel.
@@ -358,7 +327,7 @@ template <std::size_t Degree> struct SpreadSubproblemPolyW4 {
         }
     }
 
-    void compute(__m512 z, float const *dd, __m512 &v1, __m512 &v2) const {
+    void compute_kernel(__m512 z, float const *dd, __m512 &v1, __m512 &v2) const {
         __m512 k =
             Avx512HornerPolynomialEvaluation<Degree>{}(z, VectorLoader<float>{coefficients.get()});
 
@@ -395,6 +364,26 @@ template <std::size_t Degree> struct SpreadSubproblemPolyW4 {
         // clang-format on
     }
 
+    inline void accumulate_strengths(float *du, int i, __m256 v) const {
+        int i_aligned = i & ~3;
+        int i_remainder = i - i_aligned;
+
+        float *out = du + 2 * i_aligned;
+
+        // Split using double operation in order to shuffle pairs
+        // of fp32 values (representing a complex number).
+        __m256d v_lo, v_hi;
+        split_unaligned_vector(_mm256_castps_pd(v), i_remainder, v_lo, v_hi);
+
+        // Accumulate and store
+        __m256 out_lo = _mm256_load_ps(out);
+        __m256 out_hi = _mm256_load_ps(out + 8);
+        out_lo = _mm256_add_ps(out_lo, _mm256_castpd_ps(v_lo));
+        out_hi = _mm256_add_ps(out_hi, _mm256_castpd_ps(v_hi));
+        _mm256_store_ps(out, out_lo);
+        _mm256_store_ps(out + 8, out_hi);
+    }
+
     void process_8(
         float *__restrict output, float const *coord_x, float const *strengths, int64_t offset,
         std::size_t i) const {
@@ -426,25 +415,17 @@ template <std::size_t Degree> struct SpreadSubproblemPolyW4 {
         // Unrolled loop to compute 8 values, four at once.
         // At each stage, we permute from zd into a register
         // which contains [z_0 x4, z_1 x4, z_2 x4, z_3 x4]
-        compute(_mm512_permute_ps(zd, 0), strengths + 2 * i, v1, v2);
-        accumulate_add_complex_interleaved_aligned(
-            output, indices[0], _mm512_extractf32x8_ps(v1, 0));
-        accumulate_add_complex_interleaved_aligned(
-            output, indices[1], _mm512_extractf32x8_ps(v1, 1));
-        accumulate_add_complex_interleaved_aligned(
-            output, indices[2], _mm512_extractf32x8_ps(v2, 0));
-        accumulate_add_complex_interleaved_aligned(
-            output, indices[3], _mm512_extractf32x8_ps(v2, 1));
+        compute_kernel(_mm512_permute_ps(zd, 0), strengths + 2 * i, v1, v2);
+        accumulate_strengths(output, indices[0], _mm512_extractf32x8_ps(v1, 0));
+        accumulate_strengths(output, indices[1], _mm512_extractf32x8_ps(v1, 1));
+        accumulate_strengths(output, indices[2], _mm512_extractf32x8_ps(v2, 0));
+        accumulate_strengths(output, indices[3], _mm512_extractf32x8_ps(v2, 1));
 
-        compute(_mm512_permute_ps(zd, 0b11111111), strengths + 2 * i + 8, v1, v2);
-        accumulate_add_complex_interleaved_aligned(
-            output, indices[4], _mm512_extractf32x8_ps(v1, 0));
-        accumulate_add_complex_interleaved_aligned(
-            output, indices[5], _mm512_extractf32x8_ps(v1, 1));
-        accumulate_add_complex_interleaved_aligned(
-            output, indices[6], _mm512_extractf32x8_ps(v2, 0));
-        accumulate_add_complex_interleaved_aligned(
-            output, indices[7], _mm512_extractf32x8_ps(v2, 1));
+        compute_kernel(_mm512_permute_ps(zd, 0b11111111), strengths + 2 * i + 8, v1, v2);
+        accumulate_strengths(output, indices[4], _mm512_extractf32x8_ps(v1, 0));
+        accumulate_strengths(output, indices[5], _mm512_extractf32x8_ps(v1, 1));
+        accumulate_strengths(output, indices[6], _mm512_extractf32x8_ps(v2, 0));
+        accumulate_strengths(output, indices[7], _mm512_extractf32x8_ps(v2, 1));
     }
 
     void operator()(
@@ -467,7 +448,7 @@ template <std::size_t Degree> struct SpreadSubproblemPolyW4 {
         // We process 8 points at a time.
         return 8;
     }
-    std::size_t extent_multiple() const { return 8; }
+    std::size_t extent_multiple() const { return 1; }
     std::pair<double, double> target_padding() const {
         // We exceed the standard padding on the right by at most 4
         // Due to the split writing of the kernel.
@@ -514,7 +495,7 @@ template <std::size_t Degree> struct SpreadSubproblemPolyW8F64 {
         }
     }
 
-    void compute(__m512d z, double const *dd, __m512d &v1, __m512d &v2) const {
+    void compute_kernel(__m512d z, double const *dd, __m512d &v1, __m512d &v2) const {
         __m512d k =
             Avx512HornerPolynomialEvaluation<Degree>{}(z, VectorLoader<double>{coefficients.get()});
 
@@ -531,6 +512,28 @@ template <std::size_t Degree> struct SpreadSubproblemPolyW8F64 {
         // the results are unpacked correctly.
         v1 = _mm512_unpacklo_pd(k_re, k_im);
         v2 = _mm512_unpackhi_pd(k_re, k_im);
+    }
+
+    void accumulate_strengths(double *du, int64_t i, __m512d const &v1, __m512d const &v2) const {
+        int64_t i_aligned = i & ~3;
+        int i_remainder = i - i_aligned;
+
+        __m512d v_lo, v_mid, v_hi;
+        // Offset multiplied by 2 to account for the fact that we are
+        // working with interleaved complex values
+        split_unaligned_vector(v1, v2, 2 * i_remainder, v_lo, v_mid, v_hi);
+
+        __m512d out_lo = _mm512_load_pd(du + 2 * i_aligned);
+        __m512d out_mid = _mm512_load_pd(du + 2 * i_aligned + 8);
+        __m512d out_hi = _mm512_load_pd(du + 2 * i_aligned + 16);
+
+        out_lo = _mm512_add_pd(out_lo, v_lo);
+        out_mid = _mm512_add_pd(out_mid, v_mid);
+        out_hi = _mm512_add_pd(out_hi, v_hi);
+
+        _mm512_store_pd(du + 2 * i_aligned, out_lo);
+        _mm512_store_pd(du + 2 * i_aligned + 8, out_mid);
+        _mm512_store_pd(du + 2 * i_aligned + 16, out_hi);
     }
 
     /** Function for a single unrolled iteration of the subproblem.
@@ -566,20 +569,18 @@ template <std::size_t Degree> struct SpreadSubproblemPolyW8F64 {
         alignas(16) int64_t indices[4];
         _mm256_store_epi64(indices, _mm256_sub_epi64(x_ceili, _mm256_set1_epi64x(offset)));
 
-        // Unrolled loop to compute 8 values, two at once.
-        // At each stage, we permute from xid into a register
-        // which contains z_0 in the lower 256-bit, and z_1 in the upper 256-bit.
-        compute(_mm512_permutex_pd(zd, 0b00000000), strengths + 2 * i, v1, v2);
-        accumulate_add_complex_interleaved_aligned(output, indices[0], v1, v2);
+        // Unrolled loop to compute 4 values, one at a time.
+        compute_kernel(_mm512_permutex_pd(zd, 0b00000000), strengths + 2 * i, v1, v2);
+        accumulate_strengths(output, indices[0], v1, v2);
 
-        compute(_mm512_permutex_pd(zd, 0b01010101), strengths + 2 * i + 2, v1, v2);
-        accumulate_add_complex_interleaved_aligned(output, indices[1], v1, v2);
+        compute_kernel(_mm512_permutex_pd(zd, 0b01010101), strengths + 2 * i + 2, v1, v2);
+        accumulate_strengths(output, indices[1], v1, v2);
 
-        compute(_mm512_permutex_pd(zd, 0b10101010), strengths + 2 * i + 4, v1, v2);
-        accumulate_add_complex_interleaved_aligned(output, indices[2], v1, v2);
+        compute_kernel(_mm512_permutex_pd(zd, 0b10101010), strengths + 2 * i + 4, v1, v2);
+        accumulate_strengths(output, indices[2], v1, v2);
 
-        compute(_mm512_permutex_pd(zd, 0b11111111), strengths + 2 * i + 6, v1, v2);
-        accumulate_add_complex_interleaved_aligned(output, indices[3], v1, v2);
+        compute_kernel(_mm512_permutex_pd(zd, 0b11111111), strengths + 2 * i + 6, v1, v2);
+        accumulate_strengths(output, indices[3], v1, v2);
     }
 
     void operator()(

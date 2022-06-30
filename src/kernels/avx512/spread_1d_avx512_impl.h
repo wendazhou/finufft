@@ -9,6 +9,7 @@
  */
 
 #include "align_split_routines.h"
+#include "poly_eval_routines.h"
 
 #include <cstddef>
 #include <immintrin.h>
@@ -19,40 +20,6 @@
 namespace finufft {
 namespace spreading {
 namespace avx512 {
-
-
-template <std::size_t Degree> struct Avx512HornerPolynomialEvaluation {
-    template <typename C> __m512 operator()(__m512 z, C const &coeffs) const {
-        return _mm512_fmadd_ps(
-            Avx512HornerPolynomialEvaluation<Degree - 1>()(z, coeffs), z, coeffs[Degree]);
-    }
-
-    template <typename C> __m512d operator()(__m512d z, C const &coeffs) const {
-        return _mm512_fmadd_pd(
-            Avx512HornerPolynomialEvaluation<Degree - 1>()(z, coeffs), z, coeffs[Degree]);
-    }
-};
-
-template <> struct Avx512HornerPolynomialEvaluation<0> {
-    template <typename C> __m512 operator()(__m512 z, C const &coeffs) const { return coeffs[0]; }
-    template <typename C> __m512d operator()(__m512d z, C const &coeffs) const { return coeffs[0]; }
-};
-
-/** Utility class for loading a set of coefficients into a vector.
- *
- * This class is principally intended to be used with `Avx512HornerPolynomialEvaluation`.
- */
-template <typename T> struct VectorLoader;
-
-template <> struct VectorLoader<float> {
-    float const *data;
-    __m512 operator[](std::size_t i) const { return _mm512_load_ps(data + i * 16); }
-};
-
-template <> struct VectorLoader<double> {
-    double const *data;
-    __m512d operator[](std::size_t i) const { return _mm512_load_pd(data + i * 8); }
-};
 
 /** Spreading functor for width-8 polynomial.
  *
@@ -112,8 +79,7 @@ template <std::size_t Degree> struct SpreadSubproblemPolyW8 {
      *
      */
     void compute_kernel(__m512 z, float const *strengths, __m512 &v1, __m512 &v2) const {
-        __m512 k =
-            Avx512HornerPolynomialEvaluation<Degree>{}(z, VectorLoader<float>{coefficients.get()});
+        __m512 k = horner_polynomial_evaluation<Degree>(z, coefficients.get());
 
         // Load real and imaginary coefficients, split by 256-bit lane.
         __m512 w_re =
@@ -328,8 +294,7 @@ template <std::size_t Degree> struct SpreadSubproblemPolyW4 {
     }
 
     void compute_kernel(__m512 z, float const *dd, __m512 &v1, __m512 &v2) const {
-        __m512 k =
-            Avx512HornerPolynomialEvaluation<Degree>{}(z, VectorLoader<float>{coefficients.get()});
+        __m512 k = horner_polynomial_evaluation<Degree>(z, coefficients.get());
 
         // Load weights for the 4 points
         __m256 w = _mm256_load_ps(dd);
@@ -496,8 +461,7 @@ template <std::size_t Degree> struct SpreadSubproblemPolyW8F64 {
     }
 
     void compute_kernel(__m512d z, double const *dd, __m512d &v1, __m512d &v2) const {
-        __m512d k =
-            Avx512HornerPolynomialEvaluation<Degree>{}(z, VectorLoader<double>{coefficients.get()});
+        __m512d k = horner_polynomial_evaluation<Degree>(z, coefficients.get());
 
         // Load real and imaginary coefficients
         __m512d w_re = _mm512_set1_pd(dd[0]);

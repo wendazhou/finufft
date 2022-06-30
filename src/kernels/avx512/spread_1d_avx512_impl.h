@@ -106,10 +106,10 @@ inline void accumulate_add_complex_interleaved_aligned(
     int64_t i_aligned = i & ~3;
     int i_remainder = i - i_aligned;
 
-    __m512d v_lo, v_hi, v_mid;
+    __m512d v_lo, v_mid, v_hi;
     // Offset multiplied by 2 to account for the fact that we are
     // working with interleaved complex values
-    split_unaligned_vector(v1, v2, 2 * i_remainder, v_lo, v_hi, v_mid);
+    split_unaligned_vector(v1, v2, 2 * i_remainder, v_lo, v_mid, v_hi);
 
     __m512d out_lo = _mm512_load_pd(du + 2 * i_aligned);
     __m512d out_mid = _mm512_load_pd(du + 2 * i_aligned + 8);

@@ -21,3 +21,7 @@ enable_asan(spread_gather_perf)
 add_executable(spread_subproblem_1d_perf spread_subproblem_1d_perf.cpp)
 target_link_libraries(spread_subproblem_1d_perf PRIVATE finufft benchmark::benchmark_main)
 enable_asan(spread_subproblem_1d_perf)
+
+add_executable(spread_subproblem_2d_perf spread_subproblem_2d_perf.cpp)
+target_link_libraries(spread_subproblem_2d_perf PRIVATE finufft benchmark::benchmark_main)
+enable_asan(spread_subproblem_2d_perf)

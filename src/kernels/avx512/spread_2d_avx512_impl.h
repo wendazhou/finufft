@@ -165,21 +165,15 @@ template <std::size_t Degree> struct SpreadSubproblemPoly2DW8 {
         auto ldx = 2 * grid.extents[0];
 
         for (std::size_t i = 0; i < input.num_points; i += 4) {
-            process_4(
-                output,
-                coord_x + i,
-                coord_y + i,
-                strengths + 2 * i,
-                offset_x,
-                offset_y,
-                ldx);
+            process_4(output, coord_x + i, coord_y + i, strengths + 2 * i, offset_x, offset_y, ldx);
         }
     }
 
     std::size_t num_points_multiple() const { return 4; }
-    std::size_t extent_multiple() const { return 8; }
-    std::pair<double, double> target_padding() const {
-        return {0.5 * kernel_width, 0.5 * kernel_width + 8};
+    std::array<std::size_t, 2> extent_multiple() const { return {8, 1}; }
+    std::array<std::pair<double, double>, 2> target_padding() const {
+        double ns2 = 0.5 * kernel_width;
+        return {std::pair<double, double>{ns2, ns2 + 8}, {ns2, -ns2 + 8}};
     }
 };
 

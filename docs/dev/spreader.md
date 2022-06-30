@@ -98,8 +98,8 @@ struct kernel_specification {
 template<typename T, size_t Dim>
 struct SpreadSubproblemFunctor {
    size_t num_points_multiple() const;
-   size_t extent_multiple() const;
-   std::pair<double, double> extent_padding();
+   std::array<size_t, Dim> extent_multiple() const;
+   std::array<std::pair<double, double>, Dim> extent_padding();
 
    void operator()(nu_point_collection<Dim, T> const& points, grid_specification<T> const& grid, T* output)
 };

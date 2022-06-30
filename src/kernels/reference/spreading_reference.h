@@ -195,7 +195,7 @@ template <typename T> struct KernelDirectReference {
 struct SpreadSubproblemDirectReference {
     kernel_specification kernel_;
 
-    template <std::size_t Dim, typename T>
+    template <typename T, std::size_t Dim>
     void operator()(
         nu_point_collection<Dim, T const *> const &input, grid_specification<Dim> const &grid,
         T *output) const {
@@ -206,9 +206,9 @@ struct SpreadSubproblemDirectReference {
     }
 
     std::size_t num_points_multiple() const { return 1; }
-    std::size_t extent_multiple() const { return 1; }
-    std::pair<double, double> target_padding() const {
-        return {0.5 * kernel_.width, 0.5 * kernel_.width};
+    ConstantArray<std::size_t> extent_multiple() const { return {1}; }
+    ConstantArray<std::pair<double, double>> target_padding() const {
+        return {{0.5 * kernel_.width, 0.5 * kernel_.width}};
     }
 };
 
@@ -265,7 +265,7 @@ template <typename T> struct StridedArray {
  *
  * The target coefficients are filled from the source coefficients, and if the width of the target
  * is larger than the width of the source, the coefficients in the target are padded with zeros.
- * 
+ *
  * @param degree The degree of the polynomials to copy.
  * @param source_coefficients The source coefficients in column-major order.
  * @param source_width The width of the source coefficients.
@@ -277,7 +277,7 @@ template <typename T> struct StridedArray {
 template <typename ItS, typename ItT>
 void fill_polynomial_coefficients(
     std::size_t degree, ItS source_coefficients, std::size_t source_width, ItT target_coefficients,
-    std::size_t target_width, std::size_t target_stride=-1) {
+    std::size_t target_width, std::size_t target_stride = -1) {
 
     if (target_stride == -1) {
         target_stride = target_width;
@@ -382,11 +382,11 @@ struct SpreadSubproblemPolynomialReference {
     }
 
     std::size_t num_points_multiple() const { return 1; }
-    std::size_t extent_multiple() const { return 1; }
-    std::pair<double, double> target_padding() const {
+    ConstantArray<std::size_t> extent_multiple() const { return {1}; }
+    ConstantArray<std::pair<double, double>> target_padding() const {
         // We only need to pad to the original kernel width,
         // rather than to the width of the polynomial evaluation.
-        return {0.5 * kernel_width_, 0.5 * kernel_width_};
+        return {{0.5 * kernel_width_, 0.5 * kernel_width_}};
     }
 };
 

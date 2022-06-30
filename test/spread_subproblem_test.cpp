@@ -39,12 +39,20 @@ void adjust_problem_parameters(
     std::size_t &num_points, finufft::spreading::grid_specification<Dim> &grid, Fn1 const &fn1,
     Fn2 const &fn2) {
     auto num_points_multiple = std::lcm(fn1.num_points_multiple(), fn2.num_points_multiple());
-    auto extent_multiple = std::lcm(fn1.extent_multiple(), fn2.extent_multiple());
+
+    std::array<std::size_t, Dim> extent_multiple;
+    {
+        auto fn1_extent_multiple = fn1.extent_multiple();
+        auto fn2_extent_multiple = fn2.extent_multiple();
+        for (std::size_t i = 0; i < Dim; ++i) {
+            extent_multiple[i] = std::lcm(fn1_extent_multiple[i], fn2_extent_multiple[i]);
+        }
+    }
 
     num_points = finufft::spreading::round_to_next_multiple(num_points, num_points_multiple);
     for (std::size_t i = 0; i < Dim; ++i) {
         grid.extents[i] =
-            finufft::spreading::round_to_next_multiple(grid.extents[i], extent_multiple);
+            finufft::spreading::round_to_next_multiple(grid.extents[i], extent_multiple[i]);
     }
 }
 
@@ -78,15 +86,17 @@ evaluation_result<Dim, T> evaluate_subproblem_implementation(
 
     // Adjust grid and number of points according to padding requirements of target.
     adjust_problem_parameters(num_points, grid, fn, reference_fn);
-    auto padding_ref = reference_fn.target_padding();
-    auto padding = fn.target_padding();
-    padding.first = std::max(padding_ref.first, padding.first);
-    padding.second = std::max(padding_ref.second, padding.second);
+    std::array<std::pair<double, double>, Dim> padding_ref = reference_fn.target_padding();
+    std::array<std::pair<double, double>, Dim> padding = fn.target_padding();
+    for(std::size_t i = 0; i < Dim; ++i) {
+        padding[i].first = std::max(padding[i].first, padding_ref[i].first);
+        padding[i].second = std::max(padding[i].second, padding_ref[i].second);
+    }
 
     // Create subproblem input.
     // Note that input is not sorted as this is functionality, not performance test.
     auto input =
-        make_spread_subproblem_input<T>(num_points, seed, grid, padding.first, padding.second);
+        make_spread_subproblem_input<T>(num_points, seed, grid, padding);
     std::fill_n(input.strengths.get(), 2 * num_points, 1.0);
 
     // Allocate output arrays.
@@ -118,12 +128,11 @@ void evaluate_subproblem_limits(int width, Fn &&factory) {
     auto offset = 5;
     auto extent = 100;
 
-    extent = finufft::spreading::round_to_next_multiple(extent, fn.extent_multiple());
-
+    std::array<std::size_t, Dim> extent_multiple = fn.extent_multiple();
     finufft::spreading::grid_specification<Dim> grid;
     for (std::size_t i = 0; i < Dim; ++i) {
         grid.offsets[i] = offset;
-        grid.extents[i] = extent;
+        grid.extents[i] = finufft::spreading::round_to_next_multiple(extent, extent_multiple[i]);
     }
 
     auto num_points = finufft::spreading::round_to_next_multiple(2, fn.num_points_multiple());
@@ -132,13 +141,18 @@ void evaluate_subproblem_limits(int width, Fn &&factory) {
     finufft::spreading::SpreaderMemoryInput<Dim, T> input(num_points);
     auto input_view = input.cast(finufft::spreading::UniqueArrayToConstPtr{});
 
-    auto min_x = offset + padding.first;
-    auto max_x = offset + extent - padding.second - 1;
+    std::array<double, Dim> min_x;
+    std::array<double, Dim> max_x;
+
+    for(std::size_t i = 0; i < Dim; ++i) {
+        min_x[i] = offset + padding[i].first;
+        max_x[i] = offset + grid.extents[i] - padding[i].second - 1;
+    }
 
     for (std::size_t i = 0; i < Dim; ++i) {
-        std::fill_n(input.coordinates[i].get(), num_points / 2, min_x);
+        std::fill_n(input.coordinates[i].get(), num_points / 2, min_x[i]);
         std::fill_n(
-            input.coordinates[i].get() + num_points / 2, num_points - num_points / 2, max_x);
+            input.coordinates[i].get() + num_points / 2, num_points - num_points / 2, max_x[i]);
     }
     std::fill_n(input.strengths.get(), 2 * num_points, 1.0);
 

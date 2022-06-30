@@ -9,8 +9,8 @@
  *
  */
 
-#include <cmath>
 #include <benchmark/benchmark.h>
+#include <cmath>
 
 #include "../src/kernels/avx512/spread_axv512.h"
 #include "../src/kernels/dispatch.h"
@@ -29,18 +29,22 @@ void benchmark_spread_subroblem(
     num_points = fs::round_to_next_multiple(num_points, functor.num_points_multiple());
 
     // Currently use density with ~ 1 uniform point / 1 non-uniform point.
-    auto extent = static_cast<std::size_t>(std::round(std::pow(num_points, 1.0 / Dim)));
-    extent = fs::round_to_next_multiple(extent, functor.extent_multiple());
+    auto extent_multiple = functor.extent_multiple();
+    auto extent_constant = static_cast<std::size_t>(std::round(std::pow(num_points, 1.0 / Dim)));
+    std::array<std::size_t, Dim> extent;
+    std::fill_n(extent.begin(), Dim, extent_constant);
+    for (std::size_t i = 0; i < Dim; ++i) {
+        extent[i] = fs::round_to_next_multiple(extent[i], extent_multiple[i]);
+    }
 
     // Fill grid specification
     fs::grid_specification<Dim> grid;
     std::fill(grid.offsets.begin(), grid.offsets.end(), 3);
-    std::fill(grid.extents.begin(), grid.extents.end(), extent);
+    std::copy(extent.begin(), extent.end(), grid.extents.begin());
 
     auto padding = functor.target_padding();
 
-    auto input =
-        make_spread_subproblem_input<T>(num_points, 0, grid, padding.first, padding.second);
+    auto input = make_spread_subproblem_input<T>(num_points, 0, grid, padding);
     sort_point_collection(input);
 
     auto output = fs::allocate_aligned_array<T>(2 * grid.num_elements(), 64);

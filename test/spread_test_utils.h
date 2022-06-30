@@ -75,12 +75,12 @@ template <typename T, std::size_t Dim>
 finufft::spreading::nu_point_collection<Dim, finufft::spreading::aligned_unique_array<T>>
 make_spread_subproblem_input(
     std::size_t num_points, uint32_t seed, finufft::spreading::grid_specification<Dim> const &grid,
-    T padding_left, T padding_right) {
+    std::array<std::pair<double, double>, Dim> const& padding) {
     std::array<std::pair<T, T>, Dim> range;
 
     for (std::size_t i = 0; i < Dim; ++i) {
-        range[i].first = grid.offsets[i] + padding_left;
-        range[i].second = grid.offsets[i] + grid.extents[i] - padding_right - 1;
+        range[i].first = grid.offsets[i] + padding[i].first;
+        range[i].second = grid.offsets[i] + grid.extents[i] - padding[i].second - 1;
     }
 
     return make_random_point_collection<Dim, T>(num_points, seed, range);

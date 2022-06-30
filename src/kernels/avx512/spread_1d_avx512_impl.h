@@ -250,11 +250,11 @@ template <std::size_t Degree> struct SpreadSubproblemPolyW8 {
         // We process 8 points at a time.
         return 8;
     }
-    std::size_t extent_multiple() const { return 1; }
-    std::pair<double, double> target_padding() const {
+    std::array<std::size_t, 1> extent_multiple() const { return {1}; }
+    std::array<std::pair<double, double>, 1> target_padding() const {
         // We exceed the standard padding on the right by at most 8
         // Due to the split writing of the kernel.
-        return {0.5 * kernel_width, 0.5 * kernel_width + 8};
+        return {std::pair<double, double>{0.5 * kernel_width, 0.5 * kernel_width + 8}};
     }
 };
 
@@ -413,11 +413,11 @@ template <std::size_t Degree> struct SpreadSubproblemPolyW4 {
         // We process 8 points at a time.
         return 8;
     }
-    std::size_t extent_multiple() const { return 1; }
-    std::pair<double, double> target_padding() const {
+    std::array<std::size_t, 1> extent_multiple() const { return {1}; }
+    std::array<std::pair<double, double>, 1> target_padding() const {
         // We exceed the standard padding on the right by at most 4
         // Due to the split writing of the kernel.
-        return {0.5 * kernel_width, 0.5 * kernel_width + 4};
+        return {std::pair<double, double>{0.5 * kernel_width, 0.5 * kernel_width + 4}};
     }
 };
 
@@ -564,9 +564,9 @@ template <std::size_t Degree> struct SpreadSubproblemPolyW8F64 {
     }
 
     std::size_t num_points_multiple() const { return 4; }
-    std::size_t extent_multiple() const { return 1; }
-    std::pair<double, double> target_padding() const {
-        return {0.5 * kernel_width, 0.5 * kernel_width + 4};
+    std::array<std::size_t, 1> extent_multiple() const { return {1}; }
+    std::array<std::pair<double, double>, 1> target_padding() const {
+        return {std::pair<double, double>{0.5 * kernel_width, 0.5 * kernel_width + 4}};
     }
 };
 

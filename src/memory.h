@@ -15,9 +15,8 @@ namespace finufft {
 
 /// @{
 
-
 /** Allocator for aligned array memory using C++ standard new.
- * 
+ *
  * From C++17 (feature test macro: __cpp_aligned_new), the standard
  * allocator supports specifying memory alignment in the new operation.
  * This allocator makes use of this feature to allocate aligned memory.
@@ -26,19 +25,20 @@ namespace finufft {
 template <typename T> struct NewAlignedArrayAllocator {
     struct Deleter {
         std::size_t alignment;
-        void operator()(T* ptr) const noexcept {
+        void operator()(T *ptr) const noexcept {
             ::operator delete[](ptr, std::align_val_t(this->alignment));
         }
     };
 
     std::unique_ptr<T[], Deleter>
-    operator()(std::size_t num_elements, std::size_t alignment) const noexcept {
+    operator()(std::size_t num_elements, std::size_t alignment) const {
         std::size_t size_bytes = num_elements * sizeof(T);
         size_bytes = (size_bytes + alignment - 1) / alignment * alignment;
         num_elements = size_bytes / sizeof(T);
 
         auto deleter = Deleter{alignment};
-        return std::unique_ptr<T[], Deleter>(new (std::align_val_t(alignment)) T[num_elements], deleter);
+        return std::unique_ptr<T[], Deleter>(
+            new (std::align_val_t(alignment)) T[num_elements], deleter);
     }
 };
 
@@ -51,8 +51,35 @@ struct FreeDeleter {
     void operator()(void *ptr) const noexcept { std::free(ptr); }
 };
 
-template <typename T>
-using DefaultAlignedAllocator = NewAlignedArrayAllocator<T>;
+namespace detail {
+void *allocate_aligned_memory_hugepage_posix(std::size_t size_bytes, std::size_t alignment);
+}
+
+/** Allocator for aligned array memory using posix_memalign.
+ * 
+ * This allocator uses posix_memalign to allocate aligned memory on linux systems.
+ * Additionally, it attempts to allocate a huge page for allocations larger than
+ * the standard page size (4 kiB).
+ * 
+ */
+template <typename T> struct PosixMemalignArrayAllocator {
+    typedef FreeDeleter Deleter;
+
+    std::unique_ptr<T[], Deleter>
+    operator()(std::size_t num_elements, std::size_t alignment) const {
+        std::size_t size_bytes = num_elements * sizeof(T);
+        size_bytes = (size_bytes + alignment - 1) / alignment * alignment;
+        auto ptr = detail::allocate_aligned_memory_hugepage_posix(size_bytes, alignment);
+        return std::unique_ptr<T[], Deleter>(reinterpret_cast<T *>(ptr), Deleter{});
+    }
+};
+
+#if __linux__
+template <typename T> using DefaultAlignedAllocator = PosixMemalignArrayAllocator<T>;
+#else
+template <typename T> using DefaultAlignedAllocator = NewAlignedArrayAllocator<T>;
+#endif
+
 template <typename T>
 using aligned_unique_array = std::unique_ptr<T[], typename DefaultAlignedAllocator<T>::Deleter>;
 

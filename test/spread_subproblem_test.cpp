@@ -341,3 +341,14 @@ TEST(SpreadSubproblem, Avx512_2D_f64) {
             return finufft::spreading::get_subproblem_polynomial_avx512_2d_fp64_functor(k);
         });
 }
+
+TEST(SpreadSubproblem, Avx512_3D_f32) {
+    if (finufft::get_current_capability() < finufft::DispatchCapability::AVX512) {
+        GTEST_SKIP() << "Skipping AVX512 test";
+    }
+
+    test_subproblem_implementation<float, 3>(
+        5, [](finufft::spreading::kernel_specification const &k) {
+            return finufft::spreading::get_subproblem_polynomial_avx512_3d_fp32_functor(k);
+        });
+}

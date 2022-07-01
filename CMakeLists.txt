@@ -119,9 +119,18 @@ add_library(finufft_f64 OBJECT ${FINUFFT_PRECISION_DEPENDENT_SOURCES})
 set_finufft_options(finufft_f64)
 target_link_libraries(finufft_f64 PUBLIC ${FINUFFT_FFTW_LIBRARIES})
 
-add_library(finufft SHARED src/utils_precindep.cpp contrib/legendre_rule_fast.cpp src/precomputed_poly_kernel_data.cpp src/kernels/reference/spreading_reference.cpp src/kernels/dispatch.cpp)
+add_library(finufft_obj OBJECT
+    src/utils_precindep.cpp
+    contrib/legendre_rule_fast.cpp
+    src/precomputed_poly_kernel_data.cpp
+    src/precomputed_poly_kernel_data_helper.cpp
+    src/kernels/dispatch.cpp
+    src/kernels/reference/spreading_reference.cpp)
+set_finufft_options(finufft_obj)
+
+add_library(finufft SHARED)
 set_finufft_options(finufft)
-target_link_libraries(finufft PUBLIC finufft_f32 finufft_f64)
+target_link_libraries(finufft PUBLIC finufft_f32 finufft_f64 finufft_obj)
 target_include_directories(finufft PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/include")
 
 if(MSVC)
@@ -130,9 +139,9 @@ if(MSVC)
     set_property(TARGET finufft PROPERTY WINDOWS_EXPORT_ALL_SYMBOLS ON)
 endif()
 
-add_library(finufft_static STATIC src/utils_precindep.cpp contrib/legendre_rule_fast.cpp)
+add_library(finufft_static STATIC)
 set_finufft_options(finufft)
-target_link_libraries(finufft_static PUBLIC finufft_f32 finufft_f64)
+target_link_libraries(finufft_static PUBLIC finufft_f32 finufft_f64 finufft_obj)
 target_include_directories(finufft_static PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/include")
 
 
@@ -155,6 +164,7 @@ add_finufft_kernel(finufft_avx512
         src/kernels/avx512/gather_fold_avx512.cpp
         src/kernels/avx512/spread_1d_avx512_impl.cpp
         src/kernels/avx512/spread_2d_avx512_impl.cpp
+        src/kernels/avx512/spread_3d_avx512_impl.cpp
     FLAGS -mavx512f -mavx512vl -mavx512dq)
 add_finufft_kernel(finufft_avx2 SOURCES src/kernels/avx2/gather_fold_avx2.cpp FLAGS -mavx -mavx2 -mfma)
 

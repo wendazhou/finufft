@@ -8,6 +8,7 @@
 #include <memory>
 #include <mutex>
 #include <numeric>
+#include <type_traits>
 #include <utility>
 #include <vector>
 
@@ -56,6 +57,12 @@ void add_wrapped_subgrid(
 namespace finufft {
 namespace spreading {
 
+#ifdef __cpp_lib_type_identity
+template <typename T> using identity = std::type_identity<T>;
+#else
+template <typename T> struct identity { using type = T; };
+#endif
+
 /** This structure collects the parameters of the kernel to use when spreading.
  *
  * @var es_beta The exponent of the beta term in the kernel.
@@ -88,27 +95,17 @@ template <std::size_t Dim> struct grid_specification {
  * @var strengths An array representing the strengths of the points in complex interleaved format
  *
  */
-template <std::size_t Dim, typename PtrT> struct nu_point_collection {
+template <std::size_t Dim, typename T> struct nu_point_collection {
     std::size_t num_points;
-    std::array<PtrT, Dim> coordinates;
-    PtrT strengths;
+    std::array<T *, Dim> coordinates;
+    T *strengths;
 
-    /** Converts the structure by casting each array.
-     *
-     * Utility function to create a new `nu_point_collection` where each of the
-     * arrays have been processed by the given function. This can be used to
-     * easily convert between various pointer and smart pointer types if needed.
-     *
-     */
-    template <typename Fn>
-    nu_point_collection<Dim, std::invoke_result_t<Fn, PtrT>> cast(Fn &&fn) const {
-        nu_point_collection<Dim, std::invoke_result_t<Fn, PtrT>> result;
-        result.num_points = num_points;
-        for (std::size_t i = 0; i < Dim; ++i) {
-            result.coordinates[i] = fn(coordinates[i]);
-        }
-        result.strengths = fn(strengths);
-        return result;
+    nu_point_collection() : num_points(0), coordinates(), strengths(nullptr) {}
+    nu_point_collection(std::size_t num_points, std::array<T *, Dim> coordinates, T *strengths)
+        : num_points(num_points), coordinates(coordinates), strengths(strengths) {}
+    nu_point_collection(nu_point_collection<Dim, std::remove_const_t<T>> const &other)
+        : num_points(other.num_points), coordinates(), strengths(other.strengths) {
+        std::copy(other.coordinates.begin(), other.coordinates.end(), coordinates.begin());
     }
 };
 
@@ -162,7 +159,7 @@ template <typename T, std::size_t Dim> class SpreadSubproblemFunctor {
          *
          */
         virtual void operator()(
-            nu_point_collection<Dim, T const *> const &input, grid_specification<Dim> const &grid,
+            nu_point_collection<Dim, T const> const &input, grid_specification<Dim> const &grid,
             T *output) const = 0;
     };
 
@@ -183,7 +180,7 @@ template <typename T, std::size_t Dim> class SpreadSubproblemFunctor {
             return impl_.target_padding();
         };
         virtual void operator()(
-            nu_point_collection<Dim, T const *> const &input, grid_specification<Dim> const &grid,
+            nu_point_collection<Dim, T const> const &input, grid_specification<Dim> const &grid,
             T *output) const override {
             return impl_(input, grid, output);
         }
@@ -203,36 +200,12 @@ template <typename T, std::size_t Dim> class SpreadSubproblemFunctor {
         return impl_->target_padding();
     }
     void operator()(
-        nu_point_collection<Dim, T const *> const &input, grid_specification<Dim> const &grid,
-        T *output) const {
+        nu_point_collection<Dim, T const> const &input, grid_specification<Dim> const &grid,
+        T *__restrict output) const {
         impl_->operator()(input, grid, output);
     }
 };
 
-/** Utility functor to get the underlying raw pointer from a `std::unique_ptr`.
- *
- */
-struct UniqueArrayToPtr {
-    template <typename T, typename Deleter>
-    T *operator()(std::unique_ptr<T[], Deleter> const &ptr) const {
-        return ptr.get();
-    }
-};
-
-/** Utility functor to get the underlying (const) raw pointer from a `std::unique_ptr`.
- *
- */
-struct UniqueArrayToConstPtr {
-    template <typename T, typename Deleter>
-    const T *operator()(std::unique_ptr<T[], Deleter> const &ptr) const {
-        return ptr.get();
-    }
-
-    template<typename T>
-    const T* operator()(T* ptr) const {
-        return ptr;
-    }
-};
 
 /** This structure represents the output information of the spreading operation.
  *
@@ -293,13 +266,12 @@ template <typename T, typename U> T round_to_next_multiple(T v, U multiple) {
  * the coordinates and the strengths.
  *
  */
-template <std::size_t Dim, typename T> struct SpreaderMemoryInput : nu_point_collection<Dim, T *> {
+template <std::size_t Dim, typename T> struct SpreaderMemoryInput : nu_point_collection<Dim, T> {
     aligned_unique_array<T> data_;
 
     SpreaderMemoryInput(std::size_t num_points)
         : data_(allocate_aligned_array<T>(
-              (Dim + 2) * round_to_next_multiple(num_points, 64 / sizeof(T)),
-              64)) {
+              (Dim + 2) * round_to_next_multiple(num_points, 64 / sizeof(T)), 64)) {
         auto num_points_multiple = round_to_next_multiple(num_points, 64 / sizeof(T));
 
         this->num_points = num_points;
@@ -346,7 +318,7 @@ enum class FoldRescaleRange { Identity, Pi };
  */
 template <std::size_t Dim, typename T, typename IdxT, typename RescaleFn>
 void gather_and_fold_impl(
-    SpreaderMemoryInput<Dim, T> const &memory, nu_point_collection<Dim, T const *> const &input,
+    SpreaderMemoryInput<Dim, T> const &memory, nu_point_collection<Dim, T const> const &input,
     std::array<T, Dim> const &extent, IdxT const *sort_indices, RescaleFn &&fold_rescale) {
 
     for (std::size_t i = 0; i < memory.num_points; ++i) {
@@ -377,7 +349,7 @@ void gather_and_fold_impl(
  */
 template <std::size_t Dim, typename IdxT, typename T>
 void gather_and_fold(
-    SpreaderMemoryInput<Dim, T> const &memory, nu_point_collection<Dim, T const *> const &input,
+    SpreaderMemoryInput<Dim, T> const &memory, nu_point_collection<Dim, T const> const &input,
     std::array<int64_t, Dim> const &sizes, IdxT const *sort_indices,
     FoldRescaleRange rescale_range) {
 
@@ -454,8 +426,8 @@ struct SpreadSubproblemLegacy {
 
     template <typename T>
     void operator()(
-        nu_point_collection<1, T const *> const &input, grid_specification<1> const &grid,
-        T *output, const kernel_specification &kernel) const {
+        nu_point_collection<1, T const> const &input, grid_specification<1> const &grid, T *output,
+        const kernel_specification &kernel) const {
 
         auto opts = construct_opts_from_kernel(kernel);
 
@@ -473,8 +445,8 @@ struct SpreadSubproblemLegacy {
 
     template <typename T>
     void operator()(
-        nu_point_collection<2, T const *> const &input, grid_specification<2> const &grid,
-        T *output, const kernel_specification &kernel) const {
+        nu_point_collection<2, T const> const &input, grid_specification<2> const &grid, T *output,
+        const kernel_specification &kernel) const {
 
         auto opts = construct_opts_from_kernel(kernel);
         finufft::spreadinterp::spread_subproblem_2d(
@@ -492,8 +464,8 @@ struct SpreadSubproblemLegacy {
 
     template <typename T>
     void operator()(
-        nu_point_collection<3, T const *> const &input, grid_specification<3> const &grid,
-        T *output, const kernel_specification &kernel) const {
+        nu_point_collection<3, T const> const &input, grid_specification<3> const &grid, T *output,
+        const kernel_specification &kernel) const {
 
         auto opts = construct_opts_from_kernel(kernel);
         finufft::spreadinterp::spread_subproblem_3d(
@@ -545,7 +517,7 @@ struct SpreadSubproblemLegacyFunctor {
 
     template <typename T, std::size_t Dim>
     void operator()(
-        nu_point_collection<Dim, T const *> const &input, grid_specification<Dim> const &grid,
+        nu_point_collection<Dim, typename identity<T>::type const> const &input, grid_specification<Dim> const &grid,
         T *output) const {
         spread_subproblem_legacy(input, grid, output, kernel);
     }
@@ -628,9 +600,9 @@ template <std::size_t Dim, typename T> struct SubgridData {
  * @param pad_coordinate The coordinate to use for padding.
  *
  */
-template <std::size_t Dim, typename PtrT, typename T>
+template <std::size_t Dim, typename T>
 void pad_nu_point_collection(
-    nu_point_collection<Dim, PtrT> &points, std::size_t total_size,
+    nu_point_collection<Dim, T> &points, std::size_t total_size,
     std::array<T, Dim> const &pad_coordinate) {
     for (std::size_t i = points.num_points; i < total_size; ++i) {
         for (std::size_t j = 0; j < Dim; ++j) {
@@ -657,7 +629,7 @@ SubgridData<Dim, T> spread_block(
         round_to_next_multiple(num_points, spread_subproblem.num_points_multiple());
 
     SpreaderMemoryInput<Dim, T> memory(num_points_padded);
-    auto memory_reference = memory.cast(UniqueArrayToConstPtr{});
+    nu_point_collection<Dim, const T> memory_reference(memory);
 
     // Set number of points for now to the values to be provided
     // memory.num_points = num_points;
@@ -685,7 +657,7 @@ SubgridData<Dim, T> spread_block(
     auto output_size = 2 * subgrid.num_elements();
     auto spread_weights = allocate_aligned_array<T>(output_size, 64);
 
-    spread_subproblem(memory_reference, subgrid, spread_weights.get());
+    spread_subproblem(memory, subgrid, spread_weights.get());
     return {std::move(spread_weights), subgrid};
 }
 

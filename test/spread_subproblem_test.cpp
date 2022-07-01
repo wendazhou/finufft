@@ -103,10 +103,8 @@ evaluation_result<Dim, T> evaluate_subproblem_implementation(
     auto output_reference =
         finufft::allocate_aligned_array<T>(2 * grid.num_elements(), 64);
 
-    auto input_view = input.cast(finufft::spreading::UniqueArrayToConstPtr{});
-
-    reference_fn(input_view, grid, output_reference.get());
-    fn(input_view, grid, output.get());
+    reference_fn(input, grid, output_reference.get());
+    fn(input, grid, output.get());
 
     return {std::move(output_reference), std::move(output), grid};
 }
@@ -138,7 +136,6 @@ void evaluate_subproblem_limits(int width, Fn &&factory) {
     auto padding = fn.target_padding();
 
     finufft::spreading::SpreaderMemoryInput<Dim, T> input(num_points);
-    auto input_view = input.cast(finufft::spreading::UniqueArrayToConstPtr{});
 
     std::array<double, Dim> min_x;
     std::array<double, Dim> max_x;
@@ -156,7 +153,7 @@ void evaluate_subproblem_limits(int width, Fn &&factory) {
     std::fill_n(input.strengths, 2 * num_points, 1.0);
 
     auto output = finufft::allocate_aligned_array<T>(2 * grid.num_elements(), 64);
-    fn(input_view, grid, output.get());
+    fn(input, grid, output.get());
 }
 
 template<typename T, std::size_t Dim, typename Fn>

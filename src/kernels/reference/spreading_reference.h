@@ -115,7 +115,7 @@ template <typename T> struct WriteSeparableKernelImpl<T, 1> {
  */
 template <std::size_t Dim, typename T, typename Fn>
 void spread_subproblem_generic_with_kernel(
-    nu_point_collection<Dim, T const *> const &input, grid_specification<Dim> const &grid,
+    nu_point_collection<Dim, T const> const &input, grid_specification<Dim> const &grid,
     T *__restrict output, Fn &&kernel, std::size_t kernel_width) {
     std::fill_n(output, 2 * grid.num_elements(), T(0));
 
@@ -197,8 +197,8 @@ struct SpreadSubproblemDirectReference {
 
     template <typename T, std::size_t Dim>
     void operator()(
-        nu_point_collection<Dim, T const *> const &input, grid_specification<Dim> const &grid,
-        T *output) const {
+        nu_point_collection<Dim, typename identity<T>::type const> const &input,
+        grid_specification<Dim> const &grid, T *__restrict output) const {
         KernelDirectReference<T> kernel_fn{
             static_cast<T>(kernel_.es_beta), static_cast<std::size_t>(kernel_.width)};
         spread_subproblem_generic_with_kernel(
@@ -375,8 +375,8 @@ struct SpreadSubproblemPolynomialReference {
 
     template <std::size_t Dim>
     void operator()(
-        nu_point_collection<Dim, T const *> const &input, grid_specification<Dim> const &grid,
-        T *output) const {
+        nu_point_collection<Dim, typename identity<T>::type const> const &input,
+        grid_specification<Dim> const &grid, T *__restrict output) const {
         return spread_subproblem_generic_with_kernel(
             input, grid, output, kernel_polynomial_, kernel_width_);
     }

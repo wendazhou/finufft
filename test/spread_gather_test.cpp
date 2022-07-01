@@ -18,7 +18,7 @@ namespace {
 
 template <std::size_t Dim, typename T, typename SpreaderFn>
 finufft::spreading::SpreaderMemoryInput<Dim, T> run_spreader(
-    std::size_t num_points, finufft::spreading::nu_point_collection<Dim, T const *> const &points,
+    std::size_t num_points, finufft::spreading::nu_point_collection<Dim, T const> const &points,
     std::int64_t const *permutation, finufft::spreading::FoldRescaleRange range,
     SpreaderFn &&spreader) {
     finufft::spreading::SpreaderMemoryInput<Dim, T> output(num_points);
@@ -37,7 +37,7 @@ finufft::spreading::SpreaderMemoryInput<Dim, T> run_spreader(
         template <std::size_t Dim, typename T>                                                     \
         void operator()(                                                                           \
             finufft::spreading::SpreaderMemoryInput<Dim, T> const &memory,                         \
-            finufft::spreading::nu_point_collection<Dim, T const *> const &input,                  \
+            finufft::spreading::nu_point_collection<Dim, T const> const &input,                    \
             std::array<int64_t, Dim> const &sizes, std::int64_t const *sort_indices,               \
             finufft::spreading::FoldRescaleRange rescale_range) {                                  \
             Fn(memory, input, sizes, sort_indices, rescale_range);                                 \
@@ -99,15 +99,14 @@ TYPED_TEST_P(GatherRescaleFixture, GatherRescaleIdentity) {
 
     auto points = make_random_point_collection<Dim, FloatingType>(num_points, 0, {-1.0, 2.0});
     auto permutation = make_random_permutation(num_points, 1);
-    auto points_arg = points.cast(finufft::spreading::UniqueArrayToConstPtr{});
 
     auto range = finufft::spreading::FoldRescaleRange::Identity;
 
     auto result =
-        run_spreader<Dim>(num_gather_points, points_arg, permutation.get(), range, FnType{});
-    auto result_expected = run_spreader<Dim>(
+        run_spreader<Dim, FloatingType>(num_gather_points, points, permutation.get(), range, FnType{});
+    auto result_expected = run_spreader<Dim, FloatingType>(
         num_gather_points,
-        points_arg,
+        points,
         permutation.get(),
         range,
         &finufft::spreading::gather_and_fold<Dim, int64_t, FloatingType>);
@@ -147,15 +146,14 @@ TYPED_TEST_P(GatherRescaleFixture, GatherRescalePi) {
     auto points =
         make_random_point_collection<Dim, FloatingType>(num_points, 0, {-3 * M_PI, 3 * M_PI});
     auto permutation = make_random_permutation(num_points, 1);
-    auto points_arg = points.cast(finufft::spreading::UniqueArrayToConstPtr{});
 
     auto range = finufft::spreading::FoldRescaleRange::Pi;
 
     auto result =
-        run_spreader<Dim>(num_gather_points, points_arg, permutation.get(), range, FnType{});
-    auto result_expected = run_spreader<Dim>(
+        run_spreader<Dim, FloatingType>(num_gather_points, points, permutation.get(), range, FnType{});
+    auto result_expected = run_spreader<Dim, FloatingType>(
         num_gather_points,
-        points_arg,
+        points,
         permutation.get(),
         range,
         &finufft::spreading::gather_and_fold<Dim, int64_t, FloatingType>);

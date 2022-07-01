@@ -172,8 +172,8 @@ template <std::size_t Degree> struct SpreadSubproblemPoly3DW8 {
 
     void operator()(
         // Main loop of the spreading subproblem.
-        // This loop is unrolled to process 8 points at a time.
-        nu_point_collection<3, float const *> const &input, grid_specification<3> const &grid,
+        // This loop is unrolled to process 4 points at a time.
+        nu_point_collection<3, float const> const &input, grid_specification<3> const &grid,
         float *__restrict output) const {
 
         std::fill_n(output, 2 * grid.num_elements(), 0.0f);

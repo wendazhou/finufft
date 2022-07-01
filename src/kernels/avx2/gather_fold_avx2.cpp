@@ -82,7 +82,7 @@ struct FoldRescalePiAvx2Float : FoldRescalePi<float> {
 template <std::size_t Dim, typename FoldRescale>
 void gather_and_fold_avx2_rescale(
     SpreaderMemoryInput<Dim, float> const &memory,
-    nu_point_collection<Dim, float const *> const &input, std::array<int64_t, Dim> const &sizes,
+    nu_point_collection<Dim, float const> const &input, std::array<int64_t, Dim> const &sizes,
     std::int64_t const *sort_indices, FoldRescale &&fold_rescale) {
 
     std::array<float, Dim> sizes_floating;
@@ -128,7 +128,7 @@ void gather_and_fold_avx2_rescale(
 } // namespace
 
 void GatherFoldAvx2::operator()(
-    SpreaderMemoryInput<1, float> const &memory, nu_point_collection<1, float const *> const &input,
+    SpreaderMemoryInput<1, float> const &memory, nu_point_collection<1, float const> const &input,
     std::array<int64_t, 1> const &sizes, std::int64_t const *sort_indices,
     FoldRescaleRange rescale_range) const {
 
@@ -141,7 +141,7 @@ void GatherFoldAvx2::operator()(
 }
 
 void GatherFoldAvx2::operator()(
-    SpreaderMemoryInput<2, float> const &memory, nu_point_collection<2, float const *> const &input,
+    SpreaderMemoryInput<2, float> const &memory, nu_point_collection<2, float const> const &input,
     std::array<int64_t, 2> const &sizes, std::int64_t const *sort_indices,
     FoldRescaleRange rescale_range) const {
 
@@ -154,7 +154,7 @@ void GatherFoldAvx2::operator()(
 }
 
 void GatherFoldAvx2::operator()(
-    SpreaderMemoryInput<3, float> const &memory, nu_point_collection<3, float const *> const &input,
+    SpreaderMemoryInput<3, float> const &memory, nu_point_collection<3, float const> const &input,
     std::array<int64_t, 3> const &sizes, std::int64_t const *sort_indices,
     FoldRescaleRange rescale_range) const {
 

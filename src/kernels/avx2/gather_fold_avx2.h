@@ -12,17 +12,17 @@ namespace spreading {
 struct GatherFoldAvx2 {
     void operator()(
         SpreaderMemoryInput<1, float> const &memory,
-        nu_point_collection<1, float const *> const &input, std::array<int64_t, 1> const &sizes,
+        nu_point_collection<1, float const> const &input, std::array<int64_t, 1> const &sizes,
         std::int64_t const *sort_indices, FoldRescaleRange rescale_range) const;
 
     void operator()(
         SpreaderMemoryInput<2, float> const &memory,
-        nu_point_collection<2, float const *> const &input, std::array<int64_t, 2> const &sizes,
+        nu_point_collection<2, float const> const &input, std::array<int64_t, 2> const &sizes,
         std::int64_t const *sort_indices, FoldRescaleRange rescale_range) const;
 
     void operator()(
         SpreaderMemoryInput<3, float> const &memory,
-        nu_point_collection<3, float const *> const &input, std::array<int64_t, 3> const &sizes,
+        nu_point_collection<3, float const> const &input, std::array<int64_t, 3> const &sizes,
         std::int64_t const *sort_indices, FoldRescaleRange rescale_range) const;
 };
 

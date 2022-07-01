@@ -58,11 +58,9 @@ void benchmark_spread_subroblem(
 
     auto output = finufft::allocate_aligned_array<T>(2 * grid.num_elements(), 64);
 
-    auto input_view = input.cast(fs::UniqueArrayToConstPtr{});
-
     for (auto _ : state) {
-        benchmark::DoNotOptimize(input_view.strengths[0]);
-        functor(input_view, grid, output.get());
+        benchmark::DoNotOptimize(input.strengths[0]);
+        functor(input, grid, output.get());
         benchmark::DoNotOptimize(output[0]);
         benchmark::ClobberMemory();
     }

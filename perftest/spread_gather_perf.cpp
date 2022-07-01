@@ -24,11 +24,9 @@ void gather_rescale_impl(benchmark::State &state, Fn &&fn) {
     std::array<int64_t, Dim> sizes;
     std::fill(sizes.begin(), sizes.end(), 1);
 
-    auto const &points_arg = points.cast([](auto &&x) { return static_cast<T const *>(x.get()); });
-
     for (auto _ : state) {
         fn(output,
-           points_arg,
+           points,
            sizes,
            permutation.get(),
            finufft::spreading::FoldRescaleRange::Identity);

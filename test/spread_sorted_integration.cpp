@@ -66,10 +66,10 @@ TEST_P(SpreadSortedIntegrationTest, SpreadSorted1D) {
         1,
         output.get(),
         input.num_points,
-        input.coordinates[0].get(),
+        input.coordinates[0],
         nullptr,
         nullptr,
-        input.strengths.get(),
+        input.strengths,
         opts,
         1);
 
@@ -80,10 +80,10 @@ TEST_P(SpreadSortedIntegrationTest, SpreadSorted1D) {
         1,
         output_expected.get(),
         input.num_points,
-        input.coordinates[0].get(),
+        input.coordinates[0],
         nullptr,
         nullptr,
-        input.strengths.get(),
+        input.strengths,
         opts,
         1);
 

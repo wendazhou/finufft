@@ -11,15 +11,10 @@
 namespace {
 
 template <std::size_t Dim, typename T>
-finufft::spreading::nu_point_collection<Dim, finufft::aligned_unique_array<T>>
-make_random_point_collection(
+finufft::spreading::SpreaderMemoryInput<Dim, T> make_random_point_collection(
     std::size_t num_points, uint32_t seed, std::array<std::pair<T, T>, Dim> const &range) {
 
-    auto points =
-        finufft::spreading::nu_point_collection<Dim, finufft::aligned_unique_array<T>>{
-            num_points,
-            finufft::allocate_aligned_arrays<Dim, T>(num_points, 64),
-            finufft::allocate_aligned_array<T>(2 * num_points, 64)};
+    auto points = finufft::spreading::SpreaderMemoryInput<Dim, T>(num_points);
 
     std::minstd_rand rng(seed);
 
@@ -42,15 +37,14 @@ make_random_point_collection(
 }
 
 template <std::size_t Dim, typename T>
-finufft::spreading::nu_point_collection<Dim, finufft::aligned_unique_array<T>>
+finufft::spreading::SpreaderMemoryInput<Dim, T>
 make_random_point_collection(std::size_t num_points, uint32_t seed, std::pair<T, T> range) {
     std::array<std::pair<T, T>, Dim> range_array;
     std::fill(range_array.begin(), range_array.end(), range);
     return make_random_point_collection<Dim, T>(num_points, seed, range_array);
 }
 
-finufft::aligned_unique_array<int64_t>
-make_random_permutation(std::size_t n, int32_t seed) {
+finufft::aligned_unique_array<int64_t> make_random_permutation(std::size_t n, int32_t seed) {
     auto permutation = finufft::allocate_aligned_array<int64_t>(n, 64);
     std::iota(permutation.get(), permutation.get() + n, 0);
 
@@ -72,10 +66,10 @@ make_random_permutation(std::size_t n, int32_t seed) {
  *
  */
 template <typename T, std::size_t Dim>
-finufft::spreading::nu_point_collection<Dim, finufft::aligned_unique_array<T>>
+finufft::spreading::SpreaderMemoryInput<Dim, T>
 make_spread_subproblem_input(
     std::size_t num_points, uint32_t seed, finufft::spreading::grid_specification<Dim> const &grid,
-    std::array<std::pair<double, double>, Dim> const& padding) {
+    std::array<std::pair<double, double>, Dim> const &padding) {
     std::array<std::pair<T, T>, Dim> range;
 
     for (std::size_t i = 0; i < Dim; ++i) {
@@ -89,10 +83,8 @@ make_spread_subproblem_input(
 /** Sorts the collection of non-uniform points lexicographically.
  *
  */
-template <typename PtrT, std::size_t Dim>
-void sort_point_collection(finufft::spreading::nu_point_collection<Dim, PtrT> &points) {
-    typedef std::remove_cv_t<std::remove_reference_t<decltype(points.strengths[0])>> T;
-
+template <typename T, std::size_t Dim>
+void sort_point_collection(finufft::spreading::nu_point_collection<Dim, T> &points) {
     std::vector<std::size_t> permutation(points.num_points);
     std::iota(permutation.begin(), permutation.end(), 0);
 

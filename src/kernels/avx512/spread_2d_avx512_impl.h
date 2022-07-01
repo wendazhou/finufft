@@ -22,11 +22,13 @@ namespace avx512 {
 template <std::size_t Degree> struct SpreadSubproblemPoly2DW8 {
     finufft::spreading::aligned_unique_array<float> coefficients;
     float kernel_width;
+    std::size_t writeout_width;
 
     template <typename U>
     SpreadSubproblemPoly2DW8(U const *coefficients, std::size_t width)
         : coefficients(allocate_aligned_array<float>((Degree + 1) * 16, 64)),
-          kernel_width(static_cast<float>(width)) {
+          kernel_width(static_cast<float>(width)),
+          writeout_width(width) {
 
         // Duplicate the polynomial coefficients as we will be evaluating the same
         // polynomial twice, one in each 256-bit lane.
@@ -82,9 +84,10 @@ template <std::size_t Degree> struct SpreadSubproblemPoly2DW8 {
         alignas(64) float vyf[8];
         _mm256_store_ps(vyf, vy);
 
-        // Note: check performance impact of using
-        // exact width
-        for (std::size_t i = 0; i < 8; ++i) {
+        // Only loop up to writeout_width, as there is no
+        // need to write out values beyond that (they are zero).
+        // We also save a little bit on padding.
+        for (std::size_t i = 0; i < writeout_width; ++i) {
             __m512 out_lo = _mm512_load_ps(out + i * ldx);
             __m512 out_hi = _mm512_load_ps(out + i * ldx + 16);
 
@@ -173,7 +176,7 @@ template <std::size_t Degree> struct SpreadSubproblemPoly2DW8 {
     std::array<std::size_t, 2> extent_multiple() const { return {8, 1}; }
     std::array<std::pair<double, double>, 2> target_padding() const {
         double ns2 = 0.5 * kernel_width;
-        return {std::pair<double, double>{ns2, ns2 + 8}, {ns2, -ns2 + 8}};
+        return {std::pair<double, double>{ns2, ns2 + 8}, {ns2, ns2}};
     }
 };
 

@@ -269,14 +269,14 @@ template <std::size_t Degree> struct SpreadSubproblemPoly2DW8F64 {
     }
 
     void accumulate_strengths(
-        double *output, int ix, int iy, std::size_t ldx, __m512d vx1, __m512d vx2,
+        double *output, int ix, int iy, std::size_t stride_y, __m512d vx1, __m512d vx2,
         __m512d vy) const {
         // Compute index as base index to aligned location
         // and offset from aligned location to actual index.
         int i_aligned = ix & ~3;
         int i_remainder = ix - i_aligned;
 
-        double *out = output + iy * ldx + 2 * i_aligned;
+        double *out = output + iy * stride_y + 2 * i_aligned;
 
         // Split using double operation in order to shuffle pairs
         // of fp32 values (representing a complex number).
@@ -290,24 +290,24 @@ template <std::size_t Degree> struct SpreadSubproblemPoly2DW8F64 {
         // need to write out values beyond that (they are zero).
         // We also save a little bit on padding.
         for (std::size_t i = 0; i < writeout_width; ++i) {
-            __m512d out_lo = _mm512_load_pd(out + i * ldx);
-            __m512d out_mid = _mm512_load_pd(out + i * ldx + 8);
-            __m512d out_hi = _mm512_load_pd(out + i * ldx + 16);
+            __m512d out_lo = _mm512_load_pd(out + i * stride_y);
+            __m512d out_mid = _mm512_load_pd(out + i * stride_y + 8);
+            __m512d out_hi = _mm512_load_pd(out + i * stride_y + 16);
 
             __m512d yi = _mm512_set1_pd(vyf[i]);
             out_lo = _mm512_fmadd_pd(v_lo, yi, out_lo);
             out_mid = _mm512_fmadd_pd(v_mid, yi, out_mid);
             out_hi = _mm512_fmadd_pd(v_hi, yi, out_hi);
 
-            _mm512_store_pd(out + i * ldx, out_lo);
-            _mm512_store_pd(out + i * ldx + 8, out_mid);
-            _mm512_store_pd(out + i * ldx + 16, out_hi);
+            _mm512_store_pd(out + i * stride_y, out_lo);
+            _mm512_store_pd(out + i * stride_y + 8, out_mid);
+            _mm512_store_pd(out + i * stride_y + 16, out_hi);
         }
     }
 
     void process_4(
         double *__restrict output, double const *coord_x, double const *coord_y,
-        double const *strengths, int offset_x, int offset_y, std::size_t ldx) const {
+        double const *strengths, int offset_x, int offset_y, std::size_t stride_y) const {
 
         // Load position of 4 non-uniform points, compute grid and subgrid offsets (vectorized)
         // For better efficiency, we jointly process the x and y coordinates of the 4 points
@@ -350,16 +350,16 @@ template <std::size_t Degree> struct SpreadSubproblemPoly2DW8F64 {
         // of the form z = [x y x y x y x y], selecting the appropriate pair
         // corresponding to the current point.
         compute_kernel(_mm512_permutex_pd(z1, 0b01000100), strengths, vx1, vx2, vy);
-        accumulate_strengths(output, indices[0], indices[4], ldx, vx1, vx2, vy);
+        accumulate_strengths(output, indices[0], indices[4], stride_y, vx1, vx2, vy);
 
         compute_kernel(_mm512_permutex_pd(z1, 0b11101110), strengths + 2, vx1, vx2, vy);
-        accumulate_strengths(output, indices[1], indices[5], ldx, vx1, vx2, vy);
+        accumulate_strengths(output, indices[1], indices[5], stride_y, vx1, vx2, vy);
 
         compute_kernel(_mm512_permutex_pd(z2, 0b01000100), strengths + 4, vx1, vx2, vy);
-        accumulate_strengths(output, indices[2], indices[6], ldx, vx1, vx2, vy);
+        accumulate_strengths(output, indices[2], indices[6], stride_y, vx1, vx2, vy);
 
         compute_kernel(_mm512_permutex_pd(z2, 0b11101110), strengths + 6, vx1, vx2, vy);
-        accumulate_strengths(output, indices[3], indices[7], ldx, vx1, vx2, vy);
+        accumulate_strengths(output, indices[3], indices[7], stride_y, vx1, vx2, vy);
     }
 
     void operator()(
@@ -376,10 +376,10 @@ template <std::size_t Degree> struct SpreadSubproblemPoly2DW8F64 {
 
         auto offset_x = grid.offsets[0];
         auto offset_y = grid.offsets[1];
-        auto ldx = 2 * grid.extents[0];
+        auto stride_y = 2 * grid.extents[0];
 
         for (std::size_t i = 0; i < input.num_points; i += 4) {
-            process_4(output, coord_x + i, coord_y + i, strengths + 2 * i, offset_x, offset_y, ldx);
+            process_4(output, coord_x + i, coord_y + i, strengths + 2 * i, offset_x, offset_y, stride_y);
         }
     }
 

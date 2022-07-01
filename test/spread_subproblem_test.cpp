@@ -71,7 +71,8 @@ evaluation_result<Dim, T> evaluate_subproblem_implementation(
     // Get the kernel specification
     auto kernel_spec = specification_from_width(width, 2.0);
 
-    auto reference_fn = finufft::spreading::get_subproblem_polynomial_reference_functor<T, Dim>(kernel_spec);
+    auto reference_fn =
+        finufft::spreading::get_subproblem_polynomial_reference_functor<T, Dim>(kernel_spec);
     auto fn = fn_factory(kernel_spec);
 
     // Arbitrary grid specification in all dimensions
@@ -88,16 +89,14 @@ evaluation_result<Dim, T> evaluate_subproblem_implementation(
     adjust_problem_parameters(num_points, grid, fn, reference_fn);
     std::array<std::pair<double, double>, Dim> padding_ref = reference_fn.target_padding();
     std::array<std::pair<double, double>, Dim> padding = fn.target_padding();
-    for(std::size_t i = 0; i < Dim; ++i) {
+    for (std::size_t i = 0; i < Dim; ++i) {
         padding[i].first = std::max(padding[i].first, padding_ref[i].first);
         padding[i].second = std::max(padding[i].second, padding_ref[i].second);
     }
 
     // Create subproblem input.
     // Note that input is not sorted as this is functionality, not performance test.
-    auto input =
-        make_spread_subproblem_input<T>(num_points, seed, grid, padding);
-    std::fill_n(input.strengths.get(), 2 * num_points, 1.0);
+    auto input = make_spread_subproblem_input<T>(num_points, seed, grid, padding);
 
     // Allocate output arrays.
     auto output = finufft::spreading::allocate_aligned_array<T>(2 * grid.num_elements(), 64);
@@ -144,7 +143,7 @@ void evaluate_subproblem_limits(int width, Fn &&factory) {
     std::array<double, Dim> min_x;
     std::array<double, Dim> max_x;
 
-    for(std::size_t i = 0; i < Dim; ++i) {
+    for (std::size_t i = 0; i < Dim; ++i) {
         min_x[i] = offset + padding[i].first;
         max_x[i] = offset + grid.extents[i] - padding[i].second - 1;
     }
@@ -160,18 +159,15 @@ void evaluate_subproblem_limits(int width, Fn &&factory) {
     fn(input_view, grid, output.get());
 }
 
-template <typename T, std::size_t Dim, typename Fn>
-void test_subproblem_implementation(int width, Fn &&factory) {
-    // Evaluate memory correctness first
-    evaluate_subproblem_limits<Dim, T>(width, factory);
-
-    auto result = evaluate_subproblem_implementation<Dim, T>(factory, 100, 0, width);
+template<typename T, std::size_t Dim, typename Fn>
+void evaluate_subproblem_implementation_with_points(int width, int num_points, Fn&& factory) {
+    auto result = evaluate_subproblem_implementation<Dim, T>(factory, num_points, 0, width);
 
     // Note: check correct error level computation for the test
     // Currently more lax in higher dimension due to (potentially bad?)
     // AVX512 implementation in 2D.
     auto error_level = compute_max_relative_threshold(
-        std::pow(10, -width + Dim),
+        std::pow(10, -width + 1),
         result.output_reference.get(),
         result.output_reference.get() + 2 * result.grid.num_elements());
 
@@ -179,6 +175,22 @@ void test_subproblem_implementation(int width, Fn &&factory) {
         ASSERT_NEAR(result.output_reference[i], result.output[i], error_level)
             << "i = " << i << "; "
             << "width = " << width;
+    }
+}
+
+template <typename T, std::size_t Dim, typename Fn>
+void test_subproblem_implementation(int width, Fn &&factory) {
+    // Evaluate memory correctness first
+    evaluate_subproblem_limits<Dim, T>(width, factory);
+
+    {
+        SCOPED_TRACE("num_points = 1");
+        evaluate_subproblem_implementation_with_points<T, Dim>(width, 1, factory);
+    }
+
+    {
+        SCOPED_TRACE("num_points = 100");
+        evaluate_subproblem_implementation_with_points<T, Dim>(width, 100, factory);
     }
 }
 
@@ -316,5 +328,16 @@ TEST(SpreadSubproblem, Avx512_2D_f32) {
     test_subproblem_implementation<float, 2>(
         5, [](finufft::spreading::kernel_specification const &k) {
             return finufft::spreading::get_subproblem_polynomial_avx512_2d_fp32_functor(k);
+        });
+}
+
+TEST(SpreadSubproblem, Avx512_2D_f64) {
+    if (finufft::get_current_capability() < finufft::DispatchCapability::AVX512) {
+        GTEST_SKIP() << "Skipping AVX512 test";
+    }
+
+    test_subproblem_implementation<double, 2>(
+        5, [](finufft::spreading::kernel_specification const &k) {
+            return finufft::spreading::get_subproblem_polynomial_avx512_2d_fp64_functor(k);
         });
 }

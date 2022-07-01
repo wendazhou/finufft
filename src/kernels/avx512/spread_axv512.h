@@ -22,12 +22,14 @@ get_subproblem_polynomial_avx512_1d_fp64_functor(kernel_specification const &ker
 SpreadSubproblemFunctor<float, 2>
 get_subproblem_polynomial_avx512_2d_fp32_functor(kernel_specification const &kernel);
 
+SpreadSubproblemFunctor<double, 2>
+get_subproblem_polynomial_avx512_2d_fp64_functor(kernel_specification const &kernel);
 
 /** Utility generic function to obtain AVX-512 implementation of the subproblem.
- * 
+ *
  * Note that this function template dispatches to supported implementations,
  * and throws a std::runtime_error if no implementation is found.
- * 
+ *
  */
 template <typename T, std::size_t Dim>
 SpreadSubproblemFunctor<T, Dim>
@@ -51,6 +53,12 @@ template <>
 inline SpreadSubproblemFunctor<double, 1>
 get_subproblem_polynomial_avx512_functor<double, 1>(kernel_specification const &kernel) {
     return get_subproblem_polynomial_avx512_1d_fp64_functor(kernel);
+}
+
+template <>
+inline SpreadSubproblemFunctor<double, 2>
+get_subproblem_polynomial_avx512_functor<double, 2>(kernel_specification const &kernel) {
+    return get_subproblem_polynomial_avx512_2d_fp64_functor(kernel);
 }
 
 } // namespace spreading

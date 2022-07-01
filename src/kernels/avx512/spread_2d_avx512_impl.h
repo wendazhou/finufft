@@ -30,7 +30,7 @@ namespace avx512 {
  *
  */
 template <std::size_t Degree> struct SpreadSubproblemPoly2DW8 {
-    finufft::spreading::aligned_unique_array<float> coefficients;
+    aligned_unique_array<float> coefficients;
     float kernel_width;
     std::size_t writeout_width;
 
@@ -215,7 +215,7 @@ extern template struct SpreadSubproblemPoly2DW8<10>;
 extern template struct SpreadSubproblemPoly2DW8<11>;
 
 template <std::size_t Degree> struct SpreadSubproblemPoly2DW8F64 {
-    finufft::spreading::aligned_unique_array<double> coefficients;
+    aligned_unique_array<double> coefficients;
     double kernel_width;
     std::size_t writeout_width;
 

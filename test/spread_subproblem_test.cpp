@@ -57,8 +57,8 @@ void adjust_problem_parameters(
 }
 
 template <std::size_t Dim, typename T> struct evaluation_result {
-    finufft::spreading::aligned_unique_array<T> output_reference;
-    finufft::spreading::aligned_unique_array<T> output;
+    finufft::aligned_unique_array<T> output_reference;
+    finufft::aligned_unique_array<T> output;
     finufft::spreading::grid_specification<Dim> grid;
 };
 
@@ -99,9 +99,9 @@ evaluation_result<Dim, T> evaluate_subproblem_implementation(
     auto input = make_spread_subproblem_input<T>(num_points, seed, grid, padding);
 
     // Allocate output arrays.
-    auto output = finufft::spreading::allocate_aligned_array<T>(2 * grid.num_elements(), 64);
+    auto output = finufft::allocate_aligned_array<T>(2 * grid.num_elements(), 64);
     auto output_reference =
-        finufft::spreading::allocate_aligned_array<T>(2 * grid.num_elements(), 64);
+        finufft::allocate_aligned_array<T>(2 * grid.num_elements(), 64);
 
     auto input_view = input.cast(finufft::spreading::UniqueArrayToConstPtr{});
 
@@ -155,7 +155,7 @@ void evaluate_subproblem_limits(int width, Fn &&factory) {
     }
     std::fill_n(input.strengths.get(), 2 * num_points, 1.0);
 
-    auto output = finufft::spreading::allocate_aligned_array<T>(2 * grid.num_elements(), 64);
+    auto output = finufft::allocate_aligned_array<T>(2 * grid.num_elements(), 64);
     fn(input_view, grid, output.get());
 }
 

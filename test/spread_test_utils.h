@@ -11,15 +11,15 @@
 namespace {
 
 template <std::size_t Dim, typename T>
-finufft::spreading::nu_point_collection<Dim, finufft::spreading::aligned_unique_array<T>>
+finufft::spreading::nu_point_collection<Dim, finufft::aligned_unique_array<T>>
 make_random_point_collection(
     std::size_t num_points, uint32_t seed, std::array<std::pair<T, T>, Dim> const &range) {
 
     auto points =
-        finufft::spreading::nu_point_collection<Dim, finufft::spreading::aligned_unique_array<T>>{
+        finufft::spreading::nu_point_collection<Dim, finufft::aligned_unique_array<T>>{
             num_points,
-            finufft::spreading::allocate_aligned_arrays<Dim, T>(num_points, 64),
-            finufft::spreading::allocate_aligned_array<T>(2 * num_points, 64)};
+            finufft::allocate_aligned_arrays<Dim, T>(num_points, 64),
+            finufft::allocate_aligned_array<T>(2 * num_points, 64)};
 
     std::minstd_rand rng(seed);
 
@@ -42,16 +42,16 @@ make_random_point_collection(
 }
 
 template <std::size_t Dim, typename T>
-finufft::spreading::nu_point_collection<Dim, finufft::spreading::aligned_unique_array<T>>
+finufft::spreading::nu_point_collection<Dim, finufft::aligned_unique_array<T>>
 make_random_point_collection(std::size_t num_points, uint32_t seed, std::pair<T, T> range) {
     std::array<std::pair<T, T>, Dim> range_array;
     std::fill(range_array.begin(), range_array.end(), range);
     return make_random_point_collection<Dim, T>(num_points, seed, range_array);
 }
 
-finufft::spreading::aligned_unique_array<int64_t>
+finufft::aligned_unique_array<int64_t>
 make_random_permutation(std::size_t n, int32_t seed) {
-    auto permutation = finufft::spreading::allocate_aligned_array<int64_t>(n, 64);
+    auto permutation = finufft::allocate_aligned_array<int64_t>(n, 64);
     std::iota(permutation.get(), permutation.get() + n, 0);
 
     auto rng = std::minstd_rand(seed);
@@ -72,7 +72,7 @@ make_random_permutation(std::size_t n, int32_t seed) {
  *
  */
 template <typename T, std::size_t Dim>
-finufft::spreading::nu_point_collection<Dim, finufft::spreading::aligned_unique_array<T>>
+finufft::spreading::nu_point_collection<Dim, finufft::aligned_unique_array<T>>
 make_spread_subproblem_input(
     std::size_t num_points, uint32_t seed, finufft::spreading::grid_specification<Dim> const &grid,
     std::array<std::pair<double, double>, Dim> const& padding) {

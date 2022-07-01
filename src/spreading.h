@@ -18,6 +18,8 @@
 #include <finufft/defs.h>
 #include <finufft_spread_opts.h>
 
+#include "memory.h"
+
 // Forward declaration of reference implementations.
 namespace finufft {
 namespace spreadinterp {
@@ -278,55 +280,6 @@ template <typename T, typename U> T round_to_next_multiple(T v, U multiple) {
     return (v + multiple - 1) / multiple * multiple;
 }
 
-/** Utility deleter which deletes memory allocated with an aligned new operation.
- *
- */
-template <typename T> struct AlignedDeleter {
-    std::size_t alignment;
-
-    void operator()(T *ptr) const noexcept {
-        ::operator delete(ptr, std::align_val_t(this->alignment));
-    }
-};
-
-template <typename T> struct AlignedDeleter<T[]> {
-    std::size_t alignment;
-
-    void operator()(T *ptr) const noexcept {
-        ::operator delete[](ptr, std::align_val_t(this->alignment));
-    }
-};
-
-template <typename T> using aligned_unique_ptr = std::unique_ptr<T, AlignedDeleter<T>>;
-
-/** Allocates an array of the given size with specified alignment (in bytes).
- *
- * @param size Number of elements in the array.
- * @param alignment Alignment of the array in bytes. Must be a power of 2.
- */
-template <typename T>
-aligned_unique_ptr<T[]> allocate_aligned_array(std::size_t size, std::size_t alignment) {
-    std::size_t size_bytes = size * sizeof(T);
-    size_bytes = round_to_next_multiple(size_bytes, alignment);
-    size = size_bytes / sizeof(T);
-
-    return aligned_unique_ptr<T[]>(
-        new (std::align_val_t(alignment)) T[size], AlignedDeleter<T[]>{alignment});
-}
-
-template <std::size_t Dim, typename T>
-std::array<aligned_unique_ptr<T[]>, Dim>
-allocate_aligned_arrays(std::size_t size, std::size_t alignment) {
-    std::array<aligned_unique_ptr<T[]>, Dim> arrays;
-    for (int i = 0; i < Dim; ++i) {
-        arrays[i] = allocate_aligned_array<T>(size, alignment);
-    }
-
-    return std::move(arrays);
-}
-
-template <typename T> using aligned_unique_array = aligned_unique_ptr<T[]>;
-
 /** Input for the spreading sub-operation.
  *
  * This struct is used to track the inputs to the contiguous spreading memory operation.
@@ -342,14 +295,6 @@ struct SpreaderMemoryInput : nu_point_collection<Dim, aligned_unique_array<T>> {
                allocate_aligned_array<T>(2 * num_points, 64)}) {}
     SpreaderMemoryInput(SpreaderMemoryInput const &) = delete;
     SpreaderMemoryInput(SpreaderMemoryInput &&) = default;
-
-    std::array<T const *, Dim> get_coordinates() const {
-        std::array<T const *, Dim> result;
-        for (int i = 0; i < Dim; ++i) {
-            result[i] = this->coordinates[i].get();
-        }
-        return result;
-    }
 };
 
 template <typename T> struct FoldRescalePi {
@@ -656,7 +601,7 @@ void add_wrapped_subgrid(
  */
 template <std::size_t Dim, typename T> struct SubgridData {
     //! Array containing the strengths in complex interleaved format.
-    aligned_unique_ptr<T[]> strengths;
+    aligned_unique_array<T> strengths;
     //! Description of the subgrid.
     grid_specification<Dim> grid;
 };

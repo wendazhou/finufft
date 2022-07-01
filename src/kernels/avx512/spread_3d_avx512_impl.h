@@ -13,7 +13,7 @@ namespace spreading {
 namespace avx512 {
 
 template <std::size_t Degree> struct SpreadSubproblemPoly3DW8 {
-    finufft::spreading::aligned_unique_array<float> coefficients;
+    aligned_unique_array<float> coefficients;
     float kernel_width;
     std::size_t writeout_width;
 

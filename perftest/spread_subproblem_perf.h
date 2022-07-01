@@ -56,7 +56,7 @@ void benchmark_spread_subroblem(
     auto input = make_spread_subproblem_input<T>(num_points, 0, grid, padding);
     sort_point_collection(input);
 
-    auto output = fs::allocate_aligned_array<T>(2 * grid.num_elements(), 64);
+    auto output = finufft::allocate_aligned_array<T>(2 * grid.num_elements(), 64);
 
     auto input_view = input.cast(fs::UniqueArrayToConstPtr{});
 

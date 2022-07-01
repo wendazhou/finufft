@@ -101,11 +101,11 @@ template <std::size_t Degree> struct SpreadSubproblemPolyW8 {
      *    in interleaved format.
      *
      */
-    void accumulate_strengths(float *output, int i, __m512 v) const {
+    void accumulate_strengths(float *output, std::size_t i, __m512 v) const {
         // Compute index as base index to aligned location
         // and offset from aligned location to actual index.
-        int i_aligned = i & ~7;
-        int i_remainder = i - i_aligned;
+        auto i_aligned = i & ~7;
+        auto i_remainder = i - i_aligned;
 
         float *out = output + 2 * i_aligned;
 
@@ -155,7 +155,7 @@ template <std::size_t Degree> struct SpreadSubproblemPolyW8 {
         __m512 v2;
 
         // Store integer coordinates for accumulation later (adjust indices to account for offset)
-        alignas(16) int indices[8];
+        alignas(16) uint32_t indices[8];
         _mm256_store_epi32(indices, _mm256_sub_epi32(x_ceili, _mm256_set1_epi32(offset)));
 
         // Unrolled loop to compute 8 values, two at once.
@@ -282,9 +282,9 @@ template <std::size_t Degree> struct SpreadSubproblemPolyW4 {
         // clang-format on
     }
 
-    inline void accumulate_strengths(float *du, int i, __m256 v) const {
-        int i_aligned = i & ~3;
-        int i_remainder = i - i_aligned;
+    inline void accumulate_strengths(float *du, std::size_t i, __m256 v) const {
+        std::size_t i_aligned = i & ~3;
+        std::size_t i_remainder = i - i_aligned;
 
         float *out = du + 2 * i_aligned;
 
@@ -327,7 +327,7 @@ template <std::size_t Degree> struct SpreadSubproblemPolyW4 {
         __m512 v2;
 
         // Store integer coordinates for accumulation later (adjust indices to account for offset)
-        alignas(16) int indices[8];
+        alignas(16) uint32_t indices[8];
         _mm256_store_epi32(indices, _mm256_sub_epi32(x_ceili, _mm256_set1_epi32(offset)));
 
         // Unrolled loop to compute 8 values, four at once.
@@ -431,9 +431,9 @@ template <std::size_t Degree> struct SpreadSubproblemPolyW8F64 {
         v2 = _mm512_unpackhi_pd(k_re, k_im);
     }
 
-    void accumulate_strengths(double *du, int64_t i, __m512d const &v1, __m512d const &v2) const {
-        int64_t i_aligned = i & ~3;
-        int i_remainder = i - i_aligned;
+    void accumulate_strengths(double *du, std::size_t i, __m512d const &v1, __m512d const &v2) const {
+        std::size_t i_aligned = i & ~3;
+        std::size_t i_remainder = i - i_aligned;
 
         __m512d v_lo, v_mid, v_hi;
         // Offset multiplied by 2 to account for the fact that we are
@@ -483,7 +483,7 @@ template <std::size_t Degree> struct SpreadSubproblemPolyW8F64 {
         __m512d v2;
 
         // Store integer coordinates for accumulation later (adjust indices to account for offset)
-        alignas(16) int64_t indices[4];
+        alignas(16) uint64_t indices[4];
         _mm256_store_epi64(indices, _mm256_sub_epi64(x_ceili, _mm256_set1_epi64x(offset)));
 
         // Unrolled loop to compute 4 values, one at a time.

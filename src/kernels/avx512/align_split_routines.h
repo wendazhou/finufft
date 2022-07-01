@@ -77,7 +77,7 @@ alignas(64) static constexpr std::array<int64_t, 8 * 8> rotate_2vec_shuffle_lut 
  * for the implentation of spread_subproblem in 1d.
  *
  */
-inline void split_unaligned_vector(const __m512d &v, const int offset, __m512d &o1, __m512d &o2) {
+inline void split_unaligned_vector(const __m512d &v, std::size_t offset, __m512d &o1, __m512d &o2) {
     __m512i shuf = _mm512_load_epi64(rotate_2vec_shuffle_lut.data() + offset * 8);
 
     o1 = _mm512_permutex2var_pd(_mm512_setzero_pd(), shuf, v);
@@ -92,7 +92,7 @@ inline void split_unaligned_vector(const __m512d &v, const int offset, __m512d &
  * permutation. This requires the use of AVX-512 instructions.
  *
  */
-inline void split_unaligned_vector(const __m256d &v, int offset, __m256d &o1, __m256d &o2) {
+inline void split_unaligned_vector(const __m256d &v, std::size_t offset, __m256d &o1, __m256d &o2) {
     // Ok to use 2-vector shuffle LUT here.
     // For the 1-vector use case, the provenance of information is simply ignored,
     // and the shuffle vector corresponds to a circular shift of the vector elements.
@@ -113,7 +113,7 @@ inline void split_unaligned_vector(const __m256d &v, int offset, __m256d &o1, __
  *
  */
 inline void split_unaligned_vector(
-    const __m512d &v1, const __m512d &v2, int offset, __m512d &o1, __m512d &o2, __m512d &o3) {
+    const __m512d &v1, const __m512d &v2, std::size_t offset, __m512d &o1, __m512d &o2, __m512d &o3) {
     auto shuf = _mm512_load_epi64(rotate_2vec_shuffle_lut.data() + offset * 8);
 
     o1 = _mm512_permutex2var_pd(_mm512_setzero_pd(), shuf, v1);

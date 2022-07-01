@@ -74,18 +74,15 @@ template <std::size_t Degree> struct SpreadSubproblemPoly2DW8 {
      *
      */
     void accumulate_strengths(
-        float *output, int ix, int iy, std::size_t stride_y, __m512 vx, float const *vy) const {
+        float *out, std::size_t remainder, std::size_t stride_y, __m512 vx,
+        float const *vy) const {
         // Compute index as base index to aligned location
         // and offset from aligned location to actual index.
-        int i_aligned = ix & ~7;
-        int i_remainder = ix - i_aligned;
-
-        float *out = output + iy * stride_y + 2 * i_aligned;
 
         // Split using double operation in order to shuffle pairs
         // of fp32 values (representing a complex number).
         __m512d v_lod, v_hid;
-        split_unaligned_vector(_mm512_castps_pd(vx), i_remainder, v_lod, v_hid);
+        split_unaligned_vector(_mm512_castps_pd(vx), remainder, v_lod, v_hid);
 
         __m512 v_lo = _mm512_castpd_ps(v_lod);
         __m512 v_hi = _mm512_castpd_ps(v_hid);
@@ -130,19 +127,28 @@ template <std::size_t Degree> struct SpreadSubproblemPoly2DW8 {
 
         // Prepare zd register so that we can obtain pairs using vpermilps
         __m512 xy_nd = _mm512_permutexvar_ps(
-            _mm512_setr_epi32(
-                0, 2, 4, 6, 0, 2, 4, 6, 1, 3, 5, 7, 1, 3, 5, 7
-            ),
-            _mm512_castps256_ps512(xy_n)
-        );
+            _mm512_setr_epi32(0, 2, 4, 6, 0, 2, 4, 6, 1, 3, 5, 7, 1, 3, 5, 7),
+            _mm512_castps256_ps512(xy_n));
 
         // Store integer coordinates for accumulation later (adjust indices to account for offset)
         // First 4 correspond to x indices, second 4 correspond to y indices.
-        alignas(32) int indices[8];
-        _mm256_store_epi32(
-            indices,
-            _mm256_sub_epi32(
-                xy_ceili, _mm256_setr_m128i(_mm_set1_epi32(offset_x), _mm_set1_epi32(offset_y))));
+        alignas(16) uint32_t indices_base[4];
+        alignas(16) uint32_t indices_offset[4];
+
+        {
+            __m128i idx_x =
+                _mm_sub_epi32(_mm256_castsi256_si128(xy_ceili), _mm_set1_epi32(offset_x));
+            __m128i idx_y =
+                _mm_sub_epi32(_mm256_extracti128_si256(xy_ceili, 1), _mm_set1_epi32(offset_y));
+            __m128i idx_x_aligned = _mm_and_si128(_mm_set1_epi32(~7), idx_x);
+            __m128i idx_x_remainder = _mm_sub_epi32(idx_x, idx_x_aligned);
+            // base = 2 * idx_x_aligned + idx_y * stride_y
+            __m128i idx_base = _mm_add_epi32(
+                _mm_add_epi32(idx_x_aligned, idx_x_aligned),
+                _mm_mullo_epi32(idx_y, _mm_set1_epi32(stride_y)));
+            _mm_store_epi32(indices_base, idx_base);
+            _mm_store_epi32(indices_offset, idx_x_remainder);
+        }
 
         __m512 vx1, vx2;
         alignas(64) float vy[16];
@@ -155,8 +161,8 @@ template <std::size_t Degree> struct SpreadSubproblemPoly2DW8 {
             vx1,
             vx2,
             vy);
-        accumulate_strengths(output, indices[0], indices[4], stride_y, vx1, vy);
-        accumulate_strengths(output, indices[1], indices[5], stride_y, vx2, vy + 8);
+        accumulate_strengths(output + indices_base[0], indices_offset[0], stride_y, vx1, vy);
+        accumulate_strengths(output + indices_base[1], indices_offset[1], stride_y, vx2, vy + 8);
 
         compute_kernel(
             _mm512_permute_ps(xy_nd, 0b0101'0101),
@@ -165,8 +171,8 @@ template <std::size_t Degree> struct SpreadSubproblemPoly2DW8 {
             vx1,
             vx2,
             vy);
-        accumulate_strengths(output, indices[2], indices[6], stride_y, vx1, vy);
-        accumulate_strengths(output, indices[3], indices[7], stride_y, vx2, vy + 8);
+        accumulate_strengths(output + indices_base[2], indices_offset[2], stride_y, vx1, vy);
+        accumulate_strengths(output + indices_base[3], indices_offset[3], stride_y, vx2, vy + 8);
     }
 
     void operator()(
@@ -379,7 +385,8 @@ template <std::size_t Degree> struct SpreadSubproblemPoly2DW8F64 {
         auto stride_y = 2 * grid.extents[0];
 
         for (std::size_t i = 0; i < input.num_points; i += 4) {
-            process_4(output, coord_x + i, coord_y + i, strengths + 2 * i, offset_x, offset_y, stride_y);
+            process_4(
+                output, coord_x + i, coord_y + i, strengths + 2 * i, offset_x, offset_y, stride_y);
         }
     }
 

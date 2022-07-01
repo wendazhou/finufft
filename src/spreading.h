@@ -227,6 +227,11 @@ struct UniqueArrayToConstPtr {
     const T *operator()(std::unique_ptr<T[], Deleter> const &ptr) const {
         return ptr.get();
     }
+
+    template<typename T>
+    const T* operator()(T* ptr) const {
+        return ptr;
+    }
 };
 
 /** This structure represents the output information of the spreading operation.
@@ -284,15 +289,26 @@ template <typename T, typename U> T round_to_next_multiple(T v, U multiple) {
  *
  * This struct is used to track the inputs to the contiguous spreading memory operation.
  * It captures the wrapped and rescaled coordinates, as well as the complex strengths.
+ * In order to avoid unnecessary memory allocations, a single allocation is made for
+ * the coordinates and the strengths.
  *
  */
-template <std::size_t Dim, typename T>
-struct SpreaderMemoryInput : nu_point_collection<Dim, aligned_unique_array<T>> {
+template <std::size_t Dim, typename T> struct SpreaderMemoryInput : nu_point_collection<Dim, T *> {
+    aligned_unique_array<T> data_;
+
     SpreaderMemoryInput(std::size_t num_points)
-        : nu_point_collection<Dim, aligned_unique_array<T>>(
-              {num_points,
-               allocate_aligned_arrays<Dim, T>(num_points, 64),
-               allocate_aligned_array<T>(2 * num_points, 64)}) {}
+        : data_(allocate_aligned_array<T>(
+              (Dim + 2) * round_to_next_multiple(num_points, 64 / sizeof(T)),
+              64)) {
+        auto num_points_multiple = round_to_next_multiple(num_points, 64 / sizeof(T));
+
+        this->num_points = num_points;
+        for (std::size_t i = 0; i < Dim; ++i) {
+            this->coordinates[i] = data_.get() + i * num_points_multiple;
+        }
+
+        this->strengths = data_.get() + Dim * num_points_multiple;
+    }
     SpreaderMemoryInput(SpreaderMemoryInput const &) = delete;
     SpreaderMemoryInput(SpreaderMemoryInput &&) = default;
 };
@@ -502,22 +518,17 @@ const static SpreadSubproblemLegacy spread_subproblem_legacy;
 /** Utility structure which mimics an array with constant values.
  *
  */
-template<typename T>
-struct ConstantArray {
+template <typename T> struct ConstantArray {
     T value;
 
-    template<std::size_t N>
-    operator std::array<T, N>() const {
+    template <std::size_t N> operator std::array<T, N>() const {
         std::array<T, N> result;
         std::fill_n(result.begin(), N, value);
         return result;
     }
 
-    T operator[](std::size_t i) const {
-        return value;
-    }
+    T operator[](std::size_t i) const { return value; }
 };
-
 
 /** Dispatches to the current implementation of the subproblem
  * through the `SpreadSubproblemFunctor` interface.

@@ -119,12 +119,12 @@ TYPED_TEST_P(GatherRescaleFixture, GatherRescaleIdentity) {
         std::vector<FloatingType> result_expected_vector(result_expected.num_points);
 
         std::copy(
-            result.coordinates[i].get(),
-            result.coordinates[i].get() + result.num_points,
+            result.coordinates[i],
+            result.coordinates[i] + result.num_points,
             result_vector.begin());
         std::copy(
-            result_expected.coordinates[i].get(),
-            result_expected.coordinates[i].get() + result_expected.num_points,
+            result_expected.coordinates[i],
+            result_expected.coordinates[i] + result_expected.num_points,
             result_expected_vector.begin());
 
         EXPECT_EQ(result_vector, result_expected_vector);
@@ -167,12 +167,12 @@ TYPED_TEST_P(GatherRescaleFixture, GatherRescalePi) {
         std::vector<FloatingType> result_expected_vector(result_expected.num_points);
 
         std::copy(
-            result.coordinates[i].get(),
-            result.coordinates[i].get() + result.num_points,
+            result.coordinates[i],
+            result.coordinates[i] + result.num_points,
             result_vector.begin());
         std::copy(
-            result_expected.coordinates[i].get(),
-            result_expected.coordinates[i].get() + result_expected.num_points,
+            result_expected.coordinates[i],
+            result_expected.coordinates[i] + result_expected.num_points,
             result_expected_vector.begin());
 
         EXPECT_THAT(

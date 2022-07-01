@@ -83,7 +83,7 @@ void gather_and_fold_avx512_rescale(
             // Perform folding and store result
             __m512 range_max = _mm512_set1_ps(sizes_floating[dim]);
             fold_rescale(v, range_max);
-            _mm512_store_ps(memory.coordinates[dim].get() + i, v);
+            _mm512_store_ps(memory.coordinates[dim] + i, v);
         }
 
         // Strengths are stored as interleaved complex values.
@@ -92,8 +92,8 @@ void gather_and_fold_avx512_rescale(
         // by using 64-bit wide operations.
         auto strengths1 = _mm512_i64gather_epi64(addr1, input.strengths, sizeof(double));
         auto strengths2 = _mm512_i64gather_epi64(addr2, input.strengths, sizeof(double));
-        _mm512_store_epi64(memory.strengths.get() + 2 * i, strengths1);
-        _mm512_store_epi64(memory.strengths.get() + 2 * i + 16, strengths2);
+        _mm512_store_epi64(memory.strengths + 2 * i, strengths1);
+        _mm512_store_epi64(memory.strengths + 2 * i + 16, strengths2);
     }
 
     for (; i < memory.num_points; ++i) {

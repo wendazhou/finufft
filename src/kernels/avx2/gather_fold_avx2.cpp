@@ -101,7 +101,7 @@ void gather_and_fold_avx2_rescale(
 
             __m256 range_max = _mm256_set1_ps(sizes_floating[dim]);
             fold_rescale(v, range_max);
-            _mm256_store_ps(memory.coordinates[dim].get() + i, v);
+            _mm256_store_ps(memory.coordinates[dim] + i, v);
         }
 
         // Load strengths which are complex32 as a single 64-bit element.
@@ -109,8 +109,8 @@ void gather_and_fold_avx2_rescale(
             reinterpret_cast<long long const *>(input.strengths), addr1, sizeof(double));
         auto strengths2 = _mm256_i64gather_epi64(
             reinterpret_cast<long long const *>(input.strengths), addr2, sizeof(double));
-        _mm256_store_si256(reinterpret_cast<__m256i*>(memory.strengths.get() + 2 * i), strengths1);
-        _mm256_store_si256(reinterpret_cast<__m256i*>(memory.strengths.get() + 2 * i + 8), strengths2);
+        _mm256_store_si256(reinterpret_cast<__m256i*>(memory.strengths + 2 * i), strengths1);
+        _mm256_store_si256(reinterpret_cast<__m256i*>(memory.strengths + 2 * i + 8), strengths2);
     }
 
     for (; i < memory.num_points; ++i) {

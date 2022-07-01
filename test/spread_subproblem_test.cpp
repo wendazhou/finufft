@@ -149,11 +149,11 @@ void evaluate_subproblem_limits(int width, Fn &&factory) {
     }
 
     for (std::size_t i = 0; i < Dim; ++i) {
-        std::fill_n(input.coordinates[i].get(), num_points / 2, min_x[i]);
+        std::fill_n(input.coordinates[i], num_points / 2, min_x[i]);
         std::fill_n(
-            input.coordinates[i].get() + num_points / 2, num_points - num_points / 2, max_x[i]);
+            input.coordinates[i] + num_points / 2, num_points - num_points / 2, max_x[i]);
     }
-    std::fill_n(input.strengths.get(), 2 * num_points, 1.0);
+    std::fill_n(input.strengths, 2 * num_points, 1.0);
 
     auto output = finufft::allocate_aligned_array<T>(2 * grid.num_elements(), 64);
     fn(input_view, grid, output.get());

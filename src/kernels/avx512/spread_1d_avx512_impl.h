@@ -63,56 +63,9 @@ template <std::size_t Degree> struct SpreadSubproblemPolyW8 {
     /** Computes the kernel for two points, multiplies and interleaves to produce complex
      * interleaved output.
      *
-     * This function computes the polynomial kernel for two points with width 8, for 16 values
-     * total. It then evaluates then multiplies by the real and imaginary strengths, and interleaves
-     * the computed parts to produce a result in complex interleaved format.
-     *
-     * @param z The points to evaluate the kernel for. The vector is expected to be of the form:
-     *   [z_1, z_1, ..., z_2, z_2, ...], where z_1 and z_2 denote the two values for which
-     *   the kernel is to be evaluated.
-     * @param strengths Pointer to the interleaved strengths. The first two elements correspond to
-     * the real and imaginary strengths of the the point at z_1, and the second two elements
-     * correspond to the those of the point at z_2.
-     * @param v1 The first output, corresponds to the complex interleaved kernel for z_1.
-     *   [r^1_1, i^1_1, r^2_2, i^2_2, ...]
-     * @param v2 The second output, corresponds to the complex interleaved kernel for z_2.
-     *
      */
     void compute_kernel(__m512 z, float const *strengths, __m512 &v1, __m512 &v2) const {
-        __m512 k = horner_polynomial_evaluation<Degree>(z, coefficients.get());
-
-        // Load real and imaginary coefficients, split by 256-bit lane.
-        __m512 w_re =
-            _mm512_insertf32x8(_mm512_set1_ps(strengths[0]), _mm256_set1_ps(strengths[2]), 1);
-        __m512 w_im =
-            _mm512_insertf32x8(_mm512_set1_ps(strengths[1]), _mm256_set1_ps(strengths[3]), 1);
-
-        // Multiply by coefficients in lane.
-        __m512 k_re = _mm512_mul_ps(k, w_re);
-        __m512 k_im = _mm512_mul_ps(k, w_im);
-
-        // To finish, we need to write out the results in interleaved format
-        // and separate the results for x1 and x2.
-        // We achieve this by using two two-vector shuffles.
-        // The shuffles below fully interleave the lower (v1) or upper (v2)
-        // 256-bit lanes of k_re and k_im.
-        const int from_b = (1 << 4);
-        const int from_a = (0 << 4);
-
-        // clang-format off
-        v1 = _mm512_permutex2var_ps(
-            k_re,
-            _mm512_setr_epi32(
-                from_a | 0, from_b | 0, from_a | 1, from_b | 1, from_a | 2, from_b | 2, from_a | 3, from_b | 3,
-                from_a | 4, from_b | 4, from_a | 5, from_b | 5, from_a | 6, from_b | 6, from_a | 7, from_b | 7),
-            k_im);
-        v2 = _mm512_permutex2var_ps(
-            k_re,
-            _mm512_setr_epi32(
-                from_a | 8, from_b | 8, from_a | 9, from_b | 9, from_a | 10, from_b | 10, from_a | 11, from_b | 11,
-                from_a | 12, from_b | 12, from_a | 13, from_b | 13, from_a | 14, from_b | 14, from_a | 15, from_b | 15),
-            k_im);
-        // clang-format on
+        poly_eval_multiply_strengths_2x8<Degree>(z, coefficients.get(), strengths, v1, v2);
     }
 
     /** Accumulates and stores the given vector into du at the given index.

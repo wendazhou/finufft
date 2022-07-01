@@ -96,8 +96,9 @@ void sort_point_collection(finufft::spreading::nu_point_collection<Dim, PtrT> &p
     std::vector<std::size_t> permutation(points.num_points);
     std::iota(permutation.begin(), permutation.end(), 0);
 
+    // Sort in reverse lexicographic order
     std::sort(permutation.begin(), permutation.end(), [&points](std::size_t i, std::size_t j) {
-        for (std::size_t dim = 0; dim < Dim; ++dim) {
+        for (std::size_t dim = Dim - 1; dim >= 0; --dim) {
             if (points.coordinates[dim][i] != points.coordinates[dim][j]) {
                 return points.coordinates[dim][i] < points.coordinates[dim][j];
             }

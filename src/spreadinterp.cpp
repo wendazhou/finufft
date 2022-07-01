@@ -13,7 +13,7 @@
 
 #include <iostream>
 
-#include "spreading.h"
+#include "spreading_default.h"
 
 
 /* local NU coord fold+rescale macro: does the following affine transform to x:

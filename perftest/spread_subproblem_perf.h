@@ -12,10 +12,12 @@
 #include <benchmark/benchmark.h>
 #include <cmath>
 
-#include "../src/kernels/avx512/spread_axv512.h"
-#include "../src/kernels/dispatch.h"
-#include "../src/kernels/reference/spreading_reference.h"
 #include "../src/spreading.h"
+#include "../src/kernels/avx512/spread_axv512.h"
+#include "../src/kernels/legacy/spreading_legacy.h"
+#include "../src/kernels/reference/spreading_reference.h"
+
+#include "../src/kernels/dispatch.h"
 #include "../test/spread_test_utils.h"
 
 namespace fs = finufft::spreading;

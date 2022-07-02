@@ -324,13 +324,13 @@ int spreadSorted(BIGINT* sort_indices, BIGINT N1, BIGINT N2, BIGINT N3,
 
   switch (ndims) {
     case 1:
-      finufft::spreading::spread<1, FLT>(sort_indices, {N1}, M, {kx}, data_nonuniform, data_uniform, opts);
+      finufft::spreading::spread<1, FLT>(sort_indices, {static_cast<std::size_t>(M), {kx}, data_nonuniform}, {N1}, data_uniform, opts);
       break;
     case 2:
-      finufft::spreading::spread<2, FLT>(sort_indices, {N1, N2}, M, {kx, ky}, data_nonuniform, data_uniform, opts);
+      finufft::spreading::spread<2, FLT>(sort_indices, {static_cast<std::size_t>(M), {kx, ky}, data_nonuniform}, {N1, N2}, data_uniform, opts);
       break;
     case 3:
-      finufft::spreading::spread<3, FLT>(sort_indices, {N1, N2, N3}, M, {kx, ky, kz}, data_nonuniform, data_uniform, opts);
+      finufft::spreading::spread<3, FLT>(sort_indices, {static_cast<std::size_t>(M), {kx, ky, kz}, data_nonuniform}, {N1, N2, N3}, data_uniform, opts);
       break;
   }
 

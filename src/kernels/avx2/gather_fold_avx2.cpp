@@ -92,9 +92,11 @@ void gather_and_fold_avx2_rescale(
 
     std::size_t i = 0;
 
-    for (; i < memory.num_points - 7; i += 8) {
-        auto addr1 = _mm256_load_si256(reinterpret_cast<__m256i const *>(sort_indices + i));
-        auto addr2 = _mm256_load_si256(reinterpret_cast<__m256i const *>(sort_indices + i + 4));
+    for (; i + 7 < memory.num_points; i += 8) {
+        // Note: no guarantee of alignment for sort indices
+        // TODO: investigate if alignment possible here
+        auto addr1 = _mm256_loadu_si256(reinterpret_cast<__m256i const *>(sort_indices + i));
+        auto addr2 = _mm256_loadu_si256(reinterpret_cast<__m256i const *>(sort_indices + i + 4));
 
         for (std::size_t dim = 0; dim < Dim; ++dim) {
             __m128 v1 = _mm256_i64gather_ps(input.coordinates[dim], addr1, sizeof(float));

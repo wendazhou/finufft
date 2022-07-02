@@ -322,15 +322,6 @@ int spreadSorted(BIGINT* sort_indices, BIGINT N1, BIGINT N2, BIGINT N3,
           FLT* data_nonuniform, finufft_spread_opts opts, int did_sort) {
   int ndims = ndims_from_Ns(N1,N2,N3);
 
-  std::cout << "spreadSorted: ndims = " << ndims << std::endl;
-  std::cout << "opts.spread_direction = " << opts.spread_direction << std::endl;
-  std::cout << "opts.pirange = " << opts.pirange << std::endl;
-  std::cout << "opts.ES_beta = " << opts.ES_beta << std::endl;
-  std::cout << "opts.ES_c = " << opts.ES_c << std::endl;
-  std::cout << "opts.upsampfac = " << opts.upsampfac << std::endl;
-  std::cout << "opts.kerevalmeth = " << opts.kerevalmeth << std::endl;
-  std::cout << "opts.nspread = " << opts.nspread << std::endl;
-
   switch (ndims) {
     case 1:
       finufft::spreading::spread<1, FLT>(sort_indices, {N1}, M, {kx}, data_nonuniform, data_uniform, opts);

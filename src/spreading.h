@@ -127,10 +127,10 @@ struct KernelWriteSpec {
 
     /// Minimum valid value in the array, give a grid offset and size.
     T min_valid_value(std::int64_t grid_offset, std::size_t grid_size) const {
-        // Not sure if this is totally correct given floating point issues.
-        // Wish to have formally:
+        // Give ourselves a little extra space to write to.
+        // Technically, this value is given by:
         // min_{x \in T} x - offset > grid_offset + grid_left - 1
-        return std::nextafter(static_cast<T>(grid_offset + grid_left - 1) + offset, std::numeric_limits<T>::max());
+        return static_cast<T>(grid_offset + grid_left) + offset;
     }
 };
 

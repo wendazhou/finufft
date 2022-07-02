@@ -118,11 +118,12 @@ void gather_and_fold_avx512_rescale(
 
     std::size_t i = 0;
 
-    for (; i < memory.num_points - 15; i += 16) {
+    for (; i + 15 < memory.num_points; i += 16) {
         // We are using 64-bit indices for 32-bit data.
         // Need to load two registers of indices to cover one register of data.
-        auto addr1 = _mm512_load_epi64(sort_indices + i);
-        auto addr2 = _mm512_load_epi64(sort_indices + i + 8);
+        // Note: we don't control this input memory yet, so use unaligned here.
+        auto addr1 = _mm512_loadu_epi64(sort_indices + i);
+        auto addr2 = _mm512_loadu_epi64(sort_indices + i + 8);
 
         for (std::size_t dim = 0; dim < Dim; ++dim) {
             // Load values from memory, and combine into single 16-wide register.
@@ -174,10 +175,10 @@ void gather_and_fold_avx512_rescale(
 
     std::size_t i = 0;
 
-    for (; i < memory.num_points - 7; i += 8) {
+    for (; i + 7 < memory.num_points; i += 8) {
         // We are using 64-bit indices for 32-bit data.
         // Need to load two registers of indices to cover one register of data.
-        auto addr = _mm512_load_epi64(sort_indices + i);
+        auto addr = _mm512_loadu_epi64(sort_indices + i);
 
         for (std::size_t dim = 0; dim < Dim; ++dim) {
             // Load values from memory, and combine into single 16-wide register.

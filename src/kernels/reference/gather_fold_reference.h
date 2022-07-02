@@ -44,7 +44,7 @@ void gather_and_fold_impl(
     nu_point_collection<Dim, T> const &memory, nu_point_collection<Dim, T const> const &input,
     std::array<T, Dim> const &extent, IdxT const *sort_indices, RescaleFn &&fold_rescale) {
 
-    for (std::size_t i = 0; i < memory.num_points; ++i) {
+    for (std::size_t i = 0; i < input.num_points; ++i) {
         auto idx = sort_indices[i];
 
         for (int j = 0; j < Dim; ++j) {

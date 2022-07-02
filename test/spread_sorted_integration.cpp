@@ -87,11 +87,14 @@ TEST_P(SpreadSortedIntegrationTest, SpreadSorted1D) {
         opts,
         1);
 
-    for (std::size_t i = 0; i < num_points_uniform; ++i) {
-        ASSERT_NEAR(output_expected[i], output[i], std::abs(output_expected[i]) * 5e-3) << "i = " << i;
+    auto tolerance = compute_max_relative_threshold(
+        eps, output_expected.get(), output_expected.get() + 2 * num_points_uniform);
+
+    for (std::size_t i = 0; i < 2 * num_points_uniform; ++i) {
+        ASSERT_NEAR(output_expected[i], output[i], tolerance) << "i = " << i;
     }
 }
 
 INSTANTIATE_TEST_SUITE_P(
     SpreadSortedAll, SpreadSortedIntegrationTest,
-    ::testing::Combine(::testing::Values(1.25, 2.0), ::testing::Values(1e-4, 1e-5, 1e-6)));
+    ::testing::Combine(::testing::Values(1.25, 2.0), ::testing::Values(1e-3, 1e-4, 1e-5)));

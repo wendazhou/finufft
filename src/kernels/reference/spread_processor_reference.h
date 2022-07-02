@@ -31,6 +31,8 @@ SubgridData<Dim, T> spread_block_impl(
     SpreaderMemoryInput<Dim, T> memory(num_points_padded);
     nu_point_collection<Dim, const T> memory_reference(memory);
 
+    // Temporarily reduce number of points
+    memory.num_points = input.num_points;
     gather_rescale(memory, input, sizes, sort_indices);
 
     // Compute subgrid for given set of points.

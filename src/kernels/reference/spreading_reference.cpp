@@ -1,4 +1,4 @@
-#include "spreading_reference.h"
+#include "spread_subproblem_reference.h"
 
 namespace finufft {
 namespace spreading {

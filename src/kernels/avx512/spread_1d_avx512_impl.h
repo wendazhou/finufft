@@ -15,7 +15,7 @@
 #include <immintrin.h>
 
 #include "../../spreading.h"
-#include "../reference/spreading_reference.h"
+#include "../reference/spread_subproblem_reference.h"
 
 namespace finufft {
 namespace spreading {

@@ -4,7 +4,7 @@
 #include <gmock/gmock.h>
 
 #include "../src/precomputed_poly_kernel_data.h"
-#include "../src/kernels/reference/spreading_reference.h"
+#include "../src/kernels/reference/spread_subproblem_reference.h"
 
 #include "spread_test_utils.h"
 

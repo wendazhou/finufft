@@ -1,5 +1,16 @@
 #pragma once
 
+/** @file
+ * 
+ * This file contains a reference implementation of the spreading subproblem,
+ * based on a plain C++ implementation with no intrinsics. The performance
+ * of this implementation is highly dependent on the compiler and hardware.
+ * 
+ * Optimized implementations are provided for specific architectures in
+ * other folders.
+ * 
+ */
+
 #include <algorithm>
 #include <stdexcept>
 

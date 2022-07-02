@@ -1,7 +1,9 @@
+#include "../src/spreading.h"
+
 #include "../src/kernels/avx2/gather_fold_avx2.h"
 #include "../src/kernels/avx512/gather_fold_avx512.h"
+#include "../src/kernels/reference/gather_fold_reference.h"
 #include "../src/kernels/dispatch.h"
-#include "../src/spreading.h"
 
 #include <random>
 #include <tuple>

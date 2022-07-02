@@ -1,8 +1,9 @@
 #pragma once
 
-#include "spreading.h"
 #include "kernels/legacy/spreading_legacy.h"
 #include "kernels/legacy/synchronized_accumulate_legacy.h"
+#include "kernels/reference/gather_fold_reference.h"
+#include "spreading.h"
 
 namespace finufft {
 namespace spreading {
@@ -106,6 +107,5 @@ inline void spread(
     }
 }
 
-
-}
+} // namespace spreading
 } // namespace finufft

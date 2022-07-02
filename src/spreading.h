@@ -29,14 +29,11 @@
 
 #include <omp.h>
 
-#ifndef _USE_MATH_DEFINES
 #define _USE_MATH_DEFINES
-#endif
 #include <cmath>
-
+#undef _USE_MATH_DEFINES
 
 #include "memory.h"
-
 
 namespace finufft {
 namespace spreading {
@@ -58,6 +55,9 @@ struct kernel_specification {
     int width;
 };
 
+/** This structure represents a grid of points, potentially within a larger grid.
+ *
+ */
 template <std::size_t Dim> struct grid_specification {
     std::array<std::int64_t, Dim> offsets;
     std::array<std::int64_t, Dim> extents;
@@ -191,15 +191,15 @@ template <typename T, std::size_t Dim> class SpreadSubproblemFunctor {
 };
 
 /** This functor represents a strategy for accumulating data into a target buffer.
- * 
+ *
  * This functor implements synchronized accumulation of the data into
  * a target buffer. As some synchronization strategies may require allocation
  * which depends on the size of the target buffer, this functor assumes that
  * the target buffer and its size have already been provided.
- * 
+ *
  * In order to initialize a reduction for a new target buffer, see the
  * `SynchronizedAccumulateFactory` trait.
- * 
+ *
  */
 template <typename T, std::size_t Dim> class SynchronizedAccumulateFunctor {
   public:
@@ -228,11 +228,11 @@ template <typename T, std::size_t Dim> class SynchronizedAccumulateFunctor {
         : impl_(std::make_unique<Model<Impl>>(std::forward<Impl>(impl))) {}
 
     /** Accumulates the given data into the main grid at the given offset.
-     * 
+     *
      * @param data A pointer to the data to accumulate.
      * @param grid The location of the subgrid represented by the data into
      *    the main reduction grid.
-     * 
+     *
      */
     void operator()(T const *data, grid_specification<Dim> const &grid) const {
         impl_->operator()(data, grid);
@@ -240,12 +240,12 @@ template <typename T, std::size_t Dim> class SynchronizedAccumulateFunctor {
 };
 
 /** Factory to initialize an accumulation strategy.
- * 
+ *
  * This functor implements functionality to initialize a given synchronized
  * accumulation strategy into a target buffer of the given size.
  * This is used to implement the final step of the spreading process where
  * the data is accumulated into the target buffer.
- * 
+ *
  */
 template <typename T, std::size_t Dim> class SynchronizedAccumulateFactory {
   public:
@@ -276,11 +276,11 @@ template <typename T, std::size_t Dim> class SynchronizedAccumulateFactory {
         : impl_(std::make_unique<Model<Impl>>(std::forward<Impl>(impl))) {}
 
     /** Create a new accumulation setup targeting the given buffer.
-     * 
+     *
      * @param[out] output The target buffer to accumulate into.
      *     Must have size 2 times the product of the sizes.
      * @param sizes The size of the target buffer.
-     * 
+     *
      */
     SynchronizedAccumulateFunctor<T, Dim>
     operator()(T *output, std::array<std::size_t, Dim> const &sizes) const {
@@ -366,83 +366,7 @@ template <std::size_t Dim, typename T> struct SpreaderMemoryInput : nu_point_col
     SpreaderMemoryInput(SpreaderMemoryInput &&) = default;
 };
 
-template <typename T> struct FoldRescalePi {
-    T operator()(T x, T extent) const {
-        if (x < -M_PI) {
-            x += 2 * M_PI;
-        } else if (x >= M_PI) {
-            x -= 2 * M_PI;
-        }
-
-        return (x + M_PI) * extent * 0.5 *  M_1_PI;
-    }
-};
-
-template <typename T> struct FoldRescaleIdentity {
-    T operator()(T x, T extent) const {
-        if (x < 0) {
-            x += extent;
-        } else if (x >= extent) {
-            x -= extent;
-        }
-
-        return x;
-    }
-};
-
 enum class FoldRescaleRange { Identity, Pi };
-
-/** Generic implementation of spread-rescale with parametrizable rescaling.
- *
- * See gather_and_fold for general API details.
- *
- */
-template <std::size_t Dim, typename T, typename IdxT, typename RescaleFn>
-void gather_and_fold_impl(
-    SpreaderMemoryInput<Dim, T> const &memory, nu_point_collection<Dim, T const> const &input,
-    std::array<T, Dim> const &extent, IdxT const *sort_indices, RescaleFn &&fold_rescale) {
-
-    for (std::size_t i = 0; i < memory.num_points; ++i) {
-        auto idx = sort_indices[i];
-
-        for (int j = 0; j < Dim; ++j) {
-            memory.coordinates[j][i] = fold_rescale(input.coordinates[j][idx], extent[j]);
-        }
-
-        memory.strengths[2 * i] = input.strengths[2 * idx];
-        memory.strengths[2 * i + 1] = input.strengths[2 * idx + 1];
-    }
-}
-
-/** Collect non-uniform points by index into contiguous array, and rescales coordinates.
- *
- * To prepare for the spreading operation, non-uniform points are collected according
- * to the indirect sorting array. Additionally, the coordinates are processed to a normalized
- * format.
- *
- * @param memory Output memory which will be filled with the gathered points.
- *               This parameter additionally implicitly specifies the number of points to gather.
- * @param input Input points to be gathered.
- * @param sizes Extent of the spreading target. Used to rescale the coordinates.
- * @param sort_indices Indirect sorting array.
- * @param rescale_range Whether the input is expected to be 2pi-periodic or extent-periodic.
- *
- */
-template <std::size_t Dim, typename IdxT, typename T>
-void gather_and_fold(
-    SpreaderMemoryInput<Dim, T> const &memory, nu_point_collection<Dim, T const> const &input,
-    std::array<int64_t, Dim> const &sizes, IdxT const *sort_indices,
-    FoldRescaleRange rescale_range) {
-
-    std::array<T, Dim> sizes_floating;
-    std::copy(sizes.begin(), sizes.end(), sizes_floating.begin());
-
-    if (rescale_range == FoldRescaleRange::Pi) {
-        gather_and_fold_impl(memory, input, sizes_floating, sort_indices, FoldRescalePi<T>{});
-    } else {
-        gather_and_fold_impl(memory, input, sizes_floating, sort_indices, FoldRescaleIdentity<T>{});
-    }
-}
 
 /** Utility structure which mimics an array with constant values.
  *
@@ -458,7 +382,6 @@ template <typename T> struct ConstantArray {
 
     T operator[](std::size_t i) const { return value; }
 };
-
 
 /** This structure represents strengths distributed on a regular grid.
  *

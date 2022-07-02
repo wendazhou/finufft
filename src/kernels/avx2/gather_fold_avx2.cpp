@@ -3,6 +3,8 @@
 #include <cmath>
 #include <immintrin.h>
 
+#include "../../kernels/reference/gather_fold_reference.h"
+
 namespace finufft {
 
 namespace spreading {

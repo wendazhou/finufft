@@ -1,7 +1,7 @@
 #pragma once
 
 /** @file
- * 
+ *
  * This file contains the main interfaces for assembling the spreading operation.
  * The spreading operation is divided into three parts:
  * - gather and rescale
@@ -9,14 +9,13 @@
  * - accumulate
  * Optimized implementation of each of those sub-operations are implemented
  * in the `kernels` folder.
- * 
+ *
  * In practice, these components are assembled in "spreading_default.h"
- * 
+ *
  */
 
 #include <algorithm>
 #include <array>
-#include <cmath>
 #include <cstddef>
 #include <cstdlib>
 #include <memory>
@@ -30,23 +29,14 @@
 
 #include <omp.h>
 
-#include <finufft/defs.h>
-#include <finufft_spread_opts.h>
+#ifndef _USE_MATH_DEFINES
+#define _USE_MATH_DEFINES
+#endif
+#include <cmath>
+
 
 #include "memory.h"
 
-// Forward declaration of reference implementations.
-namespace finufft {
-namespace spreadinterp {
-void add_wrapped_subgrid(
-    BIGINT offset1, BIGINT offset2, BIGINT offset3, BIGINT size1, BIGINT size2, BIGINT size3,
-    BIGINT N1, BIGINT N2, BIGINT N3, float *data_uniform, float *du0);
-void add_wrapped_subgrid(
-    BIGINT offset1, BIGINT offset2, BIGINT offset3, BIGINT size1, BIGINT size2, BIGINT size3,
-    BIGINT N1, BIGINT N2, BIGINT N3, double *data_uniform, double *du0);
-} // namespace spreadinterp
-
-} // namespace finufft
 
 namespace finufft {
 namespace spreading {
@@ -200,6 +190,103 @@ template <typename T, std::size_t Dim> class SpreadSubproblemFunctor {
     }
 };
 
+/** This functor represents a strategy for accumulating data into a target buffer.
+ * 
+ * This functor implements synchronized accumulation of the data into
+ * a target buffer. As some synchronization strategies may require allocation
+ * which depends on the size of the target buffer, this functor assumes that
+ * the target buffer and its size have already been provided.
+ * 
+ * In order to initialize a reduction for a new target buffer, see the
+ * `SynchronizedAccumulateFactory` trait.
+ * 
+ */
+template <typename T, std::size_t Dim> class SynchronizedAccumulateFunctor {
+  public:
+    struct Concept {
+        virtual ~Concept() = default;
+        virtual void operator()(T const *data, grid_specification<Dim> const &grid) const = 0;
+    };
+
+    template <typename Impl> class Model : public Concept {
+      private:
+        Impl impl_;
+
+      public:
+        Model(Impl &&impl) : impl_(std::move(impl)) {}
+        virtual void operator()(T const *data, grid_specification<Dim> const &grid) const override {
+            impl_(data, grid);
+        }
+    };
+
+  private:
+    std::unique_ptr<Concept> impl_;
+
+  public:
+    template <typename Impl>
+    SynchronizedAccumulateFunctor(Impl &&impl)
+        : impl_(std::make_unique<Model<Impl>>(std::forward<Impl>(impl))) {}
+
+    /** Accumulates the given data into the main grid at the given offset.
+     * 
+     * @param data A pointer to the data to accumulate.
+     * @param grid The location of the subgrid represented by the data into
+     *    the main reduction grid.
+     * 
+     */
+    void operator()(T const *data, grid_specification<Dim> const &grid) const {
+        impl_->operator()(data, grid);
+    }
+};
+
+/** Factory to initialize an accumulation strategy.
+ * 
+ * This functor implements functionality to initialize a given synchronized
+ * accumulation strategy into a target buffer of the given size.
+ * This is used to implement the final step of the spreading process where
+ * the data is accumulated into the target buffer.
+ * 
+ */
+template <typename T, std::size_t Dim> class SynchronizedAccumulateFactory {
+  public:
+    struct Concept {
+        virtual ~Concept() = default;
+        virtual SynchronizedAccumulateFunctor<T, Dim>
+        operator()(T *output, std::array<std::size_t, Dim> const &sizes) const = 0;
+    };
+
+    template <typename Impl> class Model : public Concept {
+      private:
+        Impl impl_;
+
+      public:
+        Model(Impl &&impl) : impl_(std::move(impl)) {}
+        virtual SynchronizedAccumulateFunctor<T, Dim>
+        operator()(T *output, std::array<std::size_t, Dim> const &sizes) const override {
+            return impl_(output, sizes);
+        }
+    };
+
+  private:
+    std::unique_ptr<Concept> impl_;
+
+  public:
+    template <typename Impl>
+    SynchronizedAccumulateFactory(Impl &&impl)
+        : impl_(std::make_unique<Model<Impl>>(std::forward<Impl>(impl))) {}
+
+    /** Create a new accumulation setup targeting the given buffer.
+     * 
+     * @param[out] output The target buffer to accumulate into.
+     *     Must have size 2 times the product of the sizes.
+     * @param sizes The size of the target buffer.
+     * 
+     */
+    SynchronizedAccumulateFunctor<T, Dim>
+    operator()(T *output, std::array<std::size_t, Dim> const &sizes) const {
+        return impl_->operator()(output, sizes);
+    }
+};
 
 /** This structure represents the output information of the spreading operation.
  *
@@ -282,12 +369,12 @@ template <std::size_t Dim, typename T> struct SpreaderMemoryInput : nu_point_col
 template <typename T> struct FoldRescalePi {
     T operator()(T x, T extent) const {
         if (x < -M_PI) {
-            x += M_2PI;
+            x += 2 * M_PI;
         } else if (x >= M_PI) {
-            x -= M_2PI;
+            x -= 2 * M_PI;
         }
 
-        return (x + M_PI) * extent * M_1_2PI;
+        return (x + M_PI) * extent * 0.5 *  M_1_PI;
     }
 };
 
@@ -357,7 +444,6 @@ void gather_and_fold(
     }
 }
 
-
 /** Utility structure which mimics an array with constant values.
  *
  */
@@ -373,61 +459,6 @@ template <typename T> struct ConstantArray {
     T operator[](std::size_t i) const { return value; }
 };
 
-template <typename T>
-void add_wrapped_subgrid(
-    T const *input, T *output, grid_specification<1> const &subgrid,
-    std::array<std::int64_t, 1> const &output_grid) {
-    finufft::spreadinterp::add_wrapped_subgrid(
-        subgrid.offsets[0],
-        0,
-        0,
-        subgrid.extents[0],
-        1,
-        1,
-        output_grid[0],
-        1,
-        1,
-        output,
-        const_cast<T *>(input));
-}
-
-template <typename T>
-void add_wrapped_subgrid(
-    T const *input, T *output, grid_specification<2> const &subgrid,
-    std::array<std::int64_t, 2> const &output_grid) {
-
-    finufft::spreadinterp::add_wrapped_subgrid(
-        subgrid.offsets[0],
-        subgrid.offsets[1],
-        0,
-        subgrid.extents[0],
-        subgrid.extents[1],
-        1,
-        output_grid[0],
-        output_grid[1],
-        1,
-        output,
-        const_cast<T *>(input));
-}
-
-template <typename T>
-void add_wrapped_subgrid(
-    T const *input, T *output, grid_specification<3> const &subgrid,
-    std::array<std::int64_t, 3> const &output_grid) {
-
-    finufft::spreadinterp::add_wrapped_subgrid(
-        subgrid.offsets[0],
-        subgrid.offsets[1],
-        subgrid.offsets[2],
-        subgrid.extents[0],
-        subgrid.extents[1],
-        subgrid.extents[2],
-        output_grid[0],
-        output_grid[1],
-        output_grid[2],
-        output,
-        const_cast<T *>(input));
-}
 
 /** This structure represents strengths distributed on a regular grid.
  *

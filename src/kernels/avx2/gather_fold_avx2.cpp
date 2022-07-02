@@ -56,7 +56,7 @@ struct FoldRescalePiAvx2Float : FoldRescalePi<float> {
     void operator()(__m256 &v, __m256 const &extent) const {
         __m256 pi = _mm256_set1_ps(M_PI);
         __m256 n_pi = _mm256_set1_ps(-M_PI);
-        __m256 two_pi = _mm256_set1_ps(M_2PI);
+        __m256 two_pi = _mm256_set1_ps(2 * M_PI);
 
         auto mask_smaller = _mm256_cmp_ps(v, n_pi, _CMP_LT_OQ);
         auto mask_larger = _mm256_cmp_ps(v, pi, _CMP_GT_OQ);
@@ -75,7 +75,7 @@ struct FoldRescalePiAvx2Float : FoldRescalePi<float> {
 
         v = _mm256_add_ps(v, pi);
         v = _mm256_mul_ps(v, extent);
-        v = _mm256_mul_ps(v, _mm256_set1_ps(M_1_2PI));
+        v = _mm256_mul_ps(v, _mm256_set1_ps(0.5 * M_1_PI));
     }
 };
 

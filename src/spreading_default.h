@@ -2,6 +2,7 @@
 
 #include "spreading.h"
 #include "kernels/legacy/spreading_legacy.h"
+#include "kernels/legacy/synchronized_accumulate_legacy.h"
 
 namespace finufft {
 namespace spreading {
@@ -82,7 +83,10 @@ inline void spread(
     for (int p = 0; p <= nb; ++p)
         breaks[p] = (std::size_t)(0.5 + num_points * p / (double)nb);
 
-    std::mutex reduction_mutex;
+    auto accumulate_subgrid_factory = get_legacy_locking_accumulator<T, Dim>();
+    std::array<std::size_t, Dim> sizes_unsigned;
+    std::copy(sizes.begin(), sizes.end(), sizes_unsigned.begin());
+    auto accumulate_subgrid = accumulate_subgrid_factory(output, sizes_unsigned);
 
 #pragma omp parallel for schedule(dynamic, 1) // each is big
     for (int isub = 0; isub < nb; isub++) {   // Main loop through the subproblems
@@ -98,11 +102,7 @@ inline void spread(
             {opts.ES_beta, opts.nspread},
             opts.pirange ? FoldRescaleRange::Pi : FoldRescaleRange::Identity);
 
-        {
-            // Simple locked reduction strategy for now
-            std::scoped_lock lock(reduction_mutex);
-            add_wrapped_subgrid(block.strengths.get(), output, block.grid, sizes);
-        }
+        accumulate_subgrid(block.strengths.get(), block.grid);
     }
 }
 

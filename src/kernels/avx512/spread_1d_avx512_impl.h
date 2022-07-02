@@ -4,7 +4,7 @@
  *
  * Implementation for 1-dimensional spreading subproblem with avx-512 intrinsics.
  * The public interface for obtaining functors leveraging these implementations
- * may be found in `spread_axv512.h`.
+ * may be found in `spread_avx512.h`.
  *
  */
 

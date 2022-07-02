@@ -343,8 +343,11 @@ grid_specification<Dim> compute_subgrid(
         auto min_val = *minmax.first;
         auto max_val = *minmax.second;
 
-        offsets[i] = static_cast<int64_t>(std::ceil(min_val - padding[i].first));
-        sizes[i] = static_cast<int64_t>(std::ceil(max_val - offsets[i] + padding[i].second + 1));
+        // Note: must cast to ensure computation same as during spreading.
+        // At large values of min_val / max_val there can be significant floating point errors
+        // (especially in single precision).
+        offsets[i] = static_cast<int64_t>(std::ceil(min_val - static_cast<T>(padding[i].first)));
+        sizes[i] = static_cast<int64_t>(std::ceil(max_val - offsets[i] + static_cast<T>(padding[i].second) + 1));
     }
 
     return {offsets, sizes};

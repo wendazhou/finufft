@@ -763,6 +763,7 @@ int FINUFFT_SETPTS(FINUFFT_PLAN p, BIGINT nj, FLT* xj, FLT* yj, FLT* zj,
     if (ier)         // no warnings allowed here
       return ier;    
     timer.restart();
+    free(p->sortIndices); // free previously set sortIndices, if any
     p->sortIndices = (BIGINT *)malloc(sizeof(BIGINT)*p->nj);
     if (!p->sortIndices) {
       fprintf(stderr,"[%s] failed to allocate sortIndices!\n",__func__);

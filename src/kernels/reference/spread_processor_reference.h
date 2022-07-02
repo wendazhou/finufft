@@ -20,24 +20,24 @@ namespace spreading {
 template <
     std::size_t Dim, typename T, typename IdxT, typename SubproblemFn, typename GatherRescaleFn>
 SubgridData<Dim, T> spread_block_impl(
-    IdxT const *sort_indices, nu_point_collection<Dim, const T> const &input,
-    std::array<std::int64_t, Dim> const &sizes, T *output, SubproblemFn const &spread_subproblem,
-    GatherRescaleFn const &gather_rescale) {
+    std::size_t num_points, IdxT const *sort_indices,
+    nu_point_collection<Dim, const T> const &input, std::array<std::int64_t, Dim> const &sizes,
+    T *output, SubproblemFn const &spread_subproblem, GatherRescaleFn const &gather_rescale) {
 
     // round up to required number of points
     auto num_points_padded =
-        round_to_next_multiple(input.num_points, spread_subproblem.num_points_multiple());
+        round_to_next_multiple(num_points, spread_subproblem.num_points_multiple());
 
     SpreaderMemoryInput<Dim, T> memory(num_points_padded);
     nu_point_collection<Dim, const T> memory_reference(memory);
 
     // Temporarily reduce number of points
-    memory.num_points = input.num_points;
+    memory.num_points = num_points;
     gather_rescale(memory, input, sizes, sort_indices);
 
     // Compute subgrid for given set of points.
     auto padding = spread_subproblem.target_padding();
-    auto subgrid = compute_subgrid<Dim, T>(input.num_points, memory_reference.coordinates, padding);
+    auto subgrid = compute_subgrid<Dim, T>(memory.num_points, memory_reference.coordinates, padding);
     // Round up subgrid extent to required multiple for subproblem implementation.
     auto extent_multiple = spread_subproblem.extent_multiple();
     for (std::size_t i = 0; i < Dim; ++i) {
@@ -103,15 +103,13 @@ struct SingleThreadedProcessor {
         std::copy(sizes.begin(), sizes.end(), sizes_unsigned.begin());
         auto accumulate_subgrid = config.make_synchronized_accumulate(output, sizes_unsigned);
 
-        nu_point_collection<Dim, const T> block_input = input;
-
         for (std::size_t b = 0; b < num_blocks; ++b) {
             std::size_t num_points_block = breaks[b + 1] - breaks[b];
 
-            block_input.num_points = num_points_block;
             SubgridData<Dim, T> block = spread_block_impl<Dim, T>(
+                num_points_block,
                 sort_index + breaks[b],
-                block_input,
+                input,
                 sizes,
                 output,
                 config.spread_subproblem,
@@ -163,16 +161,14 @@ struct OmpSpreadProcessor {
         std::copy(sizes.begin(), sizes.end(), sizes_unsigned.begin());
         auto accumulate_subgrid = config.make_synchronized_accumulate(output, sizes_unsigned);
 
-        nu_point_collection<Dim, const T> block_input = input;
-
 #pragma omp parallel for schedule(dynamic, 1)
         for (std::size_t b = 0; b < num_blocks; ++b) {
             std::size_t num_points_block = breaks[b + 1] - breaks[b];
 
-            block_input.num_points = num_points_block;
             SubgridData<Dim, T> block = spread_block_impl<Dim, T>(
+                num_points_block,
                 sort_index + breaks[b],
-                block_input,
+                input,
                 sizes,
                 output,
                 config.spread_subproblem,

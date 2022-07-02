@@ -6,7 +6,7 @@
 
 #include "../src/spreading.h"
 #include "../src/kernels/avx512/spread_axv512.h"
-#include "../src/kernels/legacy/spreading_legacy.h"
+#include "../src/kernels/legacy/spread_subproblem_legacy.h"
 #include "../src/kernels/reference/spreading_reference.h"
 
 #include "../src/kernels/dispatch.h"

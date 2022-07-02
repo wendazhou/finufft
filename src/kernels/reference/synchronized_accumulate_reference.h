@@ -28,6 +28,22 @@ template <typename T, std::size_t Dim, typename Impl> struct GlobalLockedSynchro
     }
 };
 
+/** Implementation of a non-locked accumulate.
+ * 
+ * This functor requires that either:
+ * 1) the processor uses the accumulate non-concurrently (e.g. single thread), or
+ * 2) the underlying implementation is thread-safe (e.g. using atomics)
+ * 
+ */
+template <typename T, std::size_t Dim, typename Impl> struct NonLockedSynchronizedAccumulate {
+    T* output_;
+    std::array<std::size_t, Dim> sizes;
+
+    void operator()(T const *data, grid_specification<Dim> const &grid) const {
+        Impl{}(data, grid, output_, sizes);
+    }
+};
+
 template <typename T, std::size_t Dim, typename Fn> struct LambdaSynchronizedAccumulateFactory {
     Fn fn;
 

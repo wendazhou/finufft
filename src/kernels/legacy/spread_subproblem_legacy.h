@@ -5,7 +5,7 @@
 
 #include "../../spreading.h"
 
-/** @file This file contains implementation for spreading which
+/** @file This file contains implementation for spreading subproblem which
  * delegate to the current implementation.
  *
  */
@@ -32,13 +32,6 @@ void spread_subproblem_2d(
 void spread_subproblem_3d(
     BIGINT off1, BIGINT off2, BIGINT off3, BIGINT size1, BIGINT size2, BIGINT size3, double *du0,
     BIGINT M0, double *kx0, double *ky0, double *kz0, double *dd0, const finufft_spread_opts &opts);
-
-void add_wrapped_subgrid(
-    BIGINT offset1, BIGINT offset2, BIGINT offset3, BIGINT size1, BIGINT size2, BIGINT size3,
-    BIGINT N1, BIGINT N2, BIGINT N3, float *data_uniform, float *du0);
-void add_wrapped_subgrid(
-    BIGINT offset1, BIGINT offset2, BIGINT offset3, BIGINT size1, BIGINT size2, BIGINT size3,
-    BIGINT N1, BIGINT N2, BIGINT N3, double *data_uniform, double *du0);
 } // namespace spreadinterp
 } // namespace finufft
 
@@ -98,14 +91,6 @@ inline finufft_spread_opts construct_opts_from_kernel(const kernel_specification
  *
  */
 struct SpreadSubproblemLegacy {
-    // Specifies that the number of points in the input must be a multiple of this value.
-    // The caller is required to pad the input with points within the domain and zero strength.
-    static const std::size_t num_points_multiple = 1;
-    // Specifies that the size of the output subgrid must be a multiple of this value.
-    // The caller is required to allocate enough memory for the output, and pass in a compatible
-    // grid specification.
-    static const std::size_t extent_multiple = 1;
-
     template <typename T>
     void operator()(
         nu_point_collection<1, T const> const &input, grid_specification<1> const &grid, T *output,

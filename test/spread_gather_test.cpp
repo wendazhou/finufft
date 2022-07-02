@@ -72,11 +72,14 @@ typedef ::testing::Types<
     std::tuple<std::integral_constant<std::size_t, 1>, double, GatherFoldReferenceFn>,
     std::tuple<std::integral_constant<std::size_t, 2>, double, GatherFoldReferenceFn>,
     std::tuple<std::integral_constant<std::size_t, 3>, double, GatherFoldReferenceFn>,
+    std::tuple<std::integral_constant<std::size_t, 1>, float, GatherFoldAVX512Fn>,
+    std::tuple<std::integral_constant<std::size_t, 2>, float, GatherFoldAVX512Fn>,
     std::tuple<std::integral_constant<std::size_t, 3>, float, GatherFoldAVX512Fn>,
-    std::tuple<std::integral_constant<std::size_t, 3>, float, GatherFoldAVX512Fn>,
-    std::tuple<std::integral_constant<std::size_t, 3>, float, GatherFoldAVX512Fn>,
-    std::tuple<std::integral_constant<std::size_t, 3>, float, GatherFoldAVX2Fn>,
-    std::tuple<std::integral_constant<std::size_t, 3>, float, GatherFoldAVX2Fn>,
+    std::tuple<std::integral_constant<std::size_t, 1>, double, GatherFoldAVX512Fn>,
+    std::tuple<std::integral_constant<std::size_t, 2>, double, GatherFoldAVX512Fn>,
+    std::tuple<std::integral_constant<std::size_t, 3>, double, GatherFoldAVX512Fn>,
+    std::tuple<std::integral_constant<std::size_t, 1>, float, GatherFoldAVX2Fn>,
+    std::tuple<std::integral_constant<std::size_t, 2>, float, GatherFoldAVX2Fn>,
     std::tuple<std::integral_constant<std::size_t, 3>, float, GatherFoldAVX2Fn>
 >
     GatherRescaleTestsParameters;

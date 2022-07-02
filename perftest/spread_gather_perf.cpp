@@ -61,10 +61,6 @@ template <std::size_t Dim, typename T> void gather_rescale_avx512(benchmark::Sta
 
 } // namespace
 
-BENCHMARK(gather_rescale_reference<1, double>)->RangeMultiplier(16)->Range(2 << 12, 2 << 18);
-BENCHMARK(gather_rescale_reference<2, double>)->RangeMultiplier(16)->Range(2 << 12, 2 << 18);
-BENCHMARK(gather_rescale_reference<3, double>)->RangeMultiplier(16)->Range(2 << 12, 2 << 18);
-
 BENCHMARK(gather_rescale_reference<1, float>)->RangeMultiplier(16)->Range(2 << 12, 2 << 18);
 BENCHMARK(gather_rescale_reference<2, float>)->RangeMultiplier(16)->Range(2 << 12, 2 << 18);
 BENCHMARK(gather_rescale_reference<3, float>)->RangeMultiplier(16)->Range(2 << 12, 2 << 18);
@@ -76,3 +72,11 @@ BENCHMARK(gather_rescale_avx2<3, float>)->RangeMultiplier(16)->Range(2 << 12, 2 
 BENCHMARK(gather_rescale_avx512<1, float>)->RangeMultiplier(16)->Range(2 << 12, 2 << 18);
 BENCHMARK(gather_rescale_avx512<2, float>)->RangeMultiplier(16)->Range(2 << 12, 2 << 18);
 BENCHMARK(gather_rescale_avx512<3, float>)->RangeMultiplier(16)->Range(2 << 12, 2 << 18);
+
+BENCHMARK(gather_rescale_reference<1, double>)->RangeMultiplier(16)->Range(2 << 12, 2 << 18);
+BENCHMARK(gather_rescale_reference<2, double>)->RangeMultiplier(16)->Range(2 << 12, 2 << 18);
+BENCHMARK(gather_rescale_reference<3, double>)->RangeMultiplier(16)->Range(2 << 12, 2 << 18);
+
+BENCHMARK(gather_rescale_avx512<1, double>)->RangeMultiplier(16)->Range(2 << 12, 2 << 18);
+BENCHMARK(gather_rescale_avx512<2, double>)->RangeMultiplier(16)->Range(2 << 12, 2 << 18);
+BENCHMARK(gather_rescale_avx512<3, double>)->RangeMultiplier(16)->Range(2 << 12, 2 << 18);

@@ -15,7 +15,7 @@ namespace spreading {
  */
 template <typename T, std::size_t Dim>
 SpreadFunctorConfiguration<T, Dim>
-get_legacy_spread_configuration(finufft_spread_opts const &opts) {
+get_spread_configuration_legacy(finufft_spread_opts const &opts) {
     GatherAndFoldReferenceFunctor gather_rescale{
         opts.pirange ? FoldRescaleRange::Pi : FoldRescaleRange::Identity};
 

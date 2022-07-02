@@ -1,5 +1,5 @@
 #include "spread_2d_avx512_impl.h"
-#include "spread_axv512.h"
+#include "spread_avx512.h"
 
 namespace finufft {
 namespace spreading {

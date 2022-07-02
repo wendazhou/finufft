@@ -164,6 +164,7 @@ endfunction()
 add_finufft_kernel(finufft_avx512
     SOURCES
         src/kernels/avx512/gather_fold_avx512.cpp
+        src/kernels/avx512/spread_avx512.cpp
         src/kernels/avx512/spread_1d_avx512_impl.cpp
         src/kernels/avx512/spread_2d_avx512_impl.cpp
         src/kernels/avx512/spread_3d_avx512_impl.cpp

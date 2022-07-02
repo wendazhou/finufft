@@ -4,6 +4,8 @@
 
 #include "../../spreading.h"
 
+struct finufft_spread_opts;
+
 namespace finufft {
 namespace spreading {
 /** Obtain an implementation of the subproblem for the given kernel specification.
@@ -69,6 +71,20 @@ inline SpreadSubproblemFunctor<double, 2>
 get_subproblem_polynomial_avx512_functor<double, 2>(kernel_specification const &kernel) {
     return get_subproblem_polynomial_avx512_2d_fp64_functor(kernel);
 }
+
+/** Get spread configuration for AVX-512 implementation.
+ * 
+ */
+template<typename T, std::size_t Dim>
+SpreadFunctorConfiguration<T, Dim> get_spread_configuration_avx512(finufft_spread_opts const&);
+
+extern template SpreadFunctorConfiguration<float, 1> get_spread_configuration_avx512<float, 1>(finufft_spread_opts const&);
+extern template SpreadFunctorConfiguration<float, 2> get_spread_configuration_avx512<float, 2>(finufft_spread_opts const&);
+extern template SpreadFunctorConfiguration<float, 3> get_spread_configuration_avx512<float, 3>(finufft_spread_opts const&);
+
+extern template SpreadFunctorConfiguration<double, 1> get_spread_configuration_avx512<double, 1>(finufft_spread_opts const&);
+extern template SpreadFunctorConfiguration<double, 2> get_spread_configuration_avx512<double, 2>(finufft_spread_opts const&);
+extern template SpreadFunctorConfiguration<double, 3> get_spread_configuration_avx512<double, 3>(finufft_spread_opts const&);
 
 } // namespace spreading
 } // namespace finufft

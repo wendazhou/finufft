@@ -15,7 +15,7 @@ inline void spread(
     const finufft_spread_opts &opts) {
 
     OmpSpreadProcessor processor{opts.nthreads, static_cast<std::size_t>(opts.max_subproblem_size)};
-    auto config = get_legacy_spread_configuration<T, Dim>(opts);
+    auto config = get_spread_configuration_legacy<T, Dim>(opts);
 
     nu_point_collection<Dim, const T> input{num_points, coordinates, strengths};
 

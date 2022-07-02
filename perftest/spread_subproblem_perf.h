@@ -13,7 +13,7 @@
 #include <cmath>
 
 #include "../src/spreading.h"
-#include "../src/kernels/avx512/spread_axv512.h"
+#include "../src/kernels/avx512/spread_avx512.h"
 #include "../src/kernels/legacy/spread_subproblem_legacy.h"
 #include "../src/kernels/reference/spread_subproblem_reference.h"
 

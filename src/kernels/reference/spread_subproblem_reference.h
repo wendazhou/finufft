@@ -1,14 +1,14 @@
 #pragma once
 
 /** @file
- * 
+ *
  * This file contains a reference implementation of the spreading subproblem,
  * based on a plain C++ implementation with no intrinsics. The performance
  * of this implementation is highly dependent on the compiler and hardware.
- * 
+ *
  * Optimized implementations are provided for specific architectures in
  * other folders.
- * 
+ *
  */
 
 #include <algorithm>
@@ -203,10 +203,9 @@ template <typename T> struct KernelDirectReference {
  * kernel for each point and accumulating into the output.
  *
  */
-struct SpreadSubproblemDirectReference {
+template <typename T, std::size_t Dim> struct SpreadSubproblemDirectReference {
     kernel_specification kernel_;
 
-    template <typename T, std::size_t Dim>
     void operator()(
         nu_point_collection<Dim, typename identity<T>::type const> const &input,
         grid_specification<Dim> const &grid, T *__restrict output) const {
@@ -217,9 +216,15 @@ struct SpreadSubproblemDirectReference {
     }
 
     std::size_t num_points_multiple() const { return 1; }
-    ConstantArray<std::size_t> extent_multiple() const { return {1}; }
-    ConstantArray<std::pair<double, double>> target_padding() const {
-        return {{0.5 * kernel_.width, 0.5 * kernel_.width}};
+    std::array<std::size_t, Dim> extent_multiple() const {
+        std::array<std::size_t, Dim> result;
+        result.fill(1);
+        return result;
+    }
+    std::array<KernelWriteSpec<T>, Dim> target_padding() const {
+        std::array<KernelWriteSpec<T>, Dim> result;
+        result.fill({static_cast<T>(0.5 * kernel_.width), 0, kernel_.width});
+        return result;
     }
 };
 
@@ -394,10 +399,10 @@ struct SpreadSubproblemPolynomialReference {
 
     std::size_t num_points_multiple() const { return 1; }
     ConstantArray<std::size_t> extent_multiple() const { return {1}; }
-    ConstantArray<std::pair<double, double>> target_padding() const {
+    ConstantArray<KernelWriteSpec<T>> target_padding() const {
         // We only need to pad to the original kernel width,
         // rather than to the width of the polynomial evaluation.
-        return {{0.5 * kernel_width_, 0.5 * kernel_width_}};
+        return {{static_cast<T>(0.5 * kernel_width_), 0, static_cast<int>(kernel_width_)}};
     }
 };
 

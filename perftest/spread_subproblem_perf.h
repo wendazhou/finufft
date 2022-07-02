@@ -12,10 +12,10 @@
 #include <benchmark/benchmark.h>
 #include <cmath>
 
-#include "../src/spreading.h"
 #include "../src/kernels/avx512/spread_avx512.h"
 #include "../src/kernels/legacy/spread_subproblem_legacy.h"
 #include "../src/kernels/reference/spread_subproblem_reference.h"
+#include "../src/spreading.h"
 
 #include "../src/kernels/dispatch.h"
 #include "../test/spread_test_utils.h"
@@ -46,7 +46,7 @@ void benchmark_spread_subroblem(
         // which require large amounts of padding or alignment.
         extent[i] = fs::round_to_next_multiple(
             static_cast<std::size_t>(
-                std::ceil(extent[i] + padding[i].first + padding[i].second + 1)),
+                std::ceil(extent[i] - padding[i].offset + padding[i].grid_right)),
             extent_multiple[i]);
     }
 
@@ -78,13 +78,13 @@ void benchmark_for_width(benchmark::State &state, Factory const &factory) {
 
 template <typename T, std::size_t Dim> void benchmark_legacy(benchmark::State &state) {
     benchmark_for_width<T, Dim>(state, [](fs::kernel_specification const &kernel_spec) {
-        return fs::SpreadSubproblemLegacyFunctor{kernel_spec};
+        return fs::SpreadSubproblemLegacyFunctor<T, Dim>{kernel_spec};
     });
 }
 
 template <typename T, std::size_t Dim> void benchmark_direct(benchmark::State &state) {
     benchmark_for_width<T, Dim>(state, [](fs::kernel_specification const &kernel_spec) {
-        return fs::SpreadSubproblemDirectReference{kernel_spec};
+        return fs::SpreadSubproblemDirectReference<T, Dim>{kernel_spec};
     });
 }
 

@@ -47,7 +47,7 @@ SubgridData<Dim, T> spread_block_impl(
     {
         std::array<T, Dim> pad_coordinate;
         for (std::size_t i = 0; i < Dim; ++i) {
-            pad_coordinate[i] = subgrid.offsets[i] + padding[i].first;
+            pad_coordinate[i] = padding[i].min_valid_value(subgrid.offsets[i], subgrid.extents[i]);
         }
         pad_nu_point_collection(memory, num_points_padded, pad_coordinate);
     }

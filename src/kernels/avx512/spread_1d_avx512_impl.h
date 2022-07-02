@@ -204,10 +204,10 @@ template <std::size_t Degree> struct SpreadSubproblemPolyW8 {
         return 8;
     }
     std::array<std::size_t, 1> extent_multiple() const { return {1}; }
-    std::array<std::pair<double, double>, 1> target_padding() const {
-        // We exceed the standard padding on the right by at most 8
+    std::array<KernelWriteSpec<float>, 1> target_padding() const {
+        // We exceed the standard padding on the right by at most 8 (16 total)
         // Due to the split writing of the kernel.
-        return {std::pair<double, double>{0.5 * kernel_width, 0.5 * kernel_width + 8}};
+        return {KernelWriteSpec<float>{0.5f * kernel_width, 0, 16}};
     }
 };
 
@@ -367,10 +367,10 @@ template <std::size_t Degree> struct SpreadSubproblemPolyW4 {
         return 8;
     }
     std::array<std::size_t, 1> extent_multiple() const { return {1}; }
-    std::array<std::pair<double, double>, 1> target_padding() const {
-        // We exceed the standard padding on the right by at most 4
-        // Due to the split writing of the kernel.
-        return {std::pair<double, double>{0.5 * kernel_width, 0.5 * kernel_width + 4}};
+    std::array<KernelWriteSpec<float>, 1> target_padding() const {
+        // We exceed the standard padding on the right by at most 4 (8 total)
+        // due to the split writing of the kernel.
+        return {KernelWriteSpec<float>{0.5f * kernel_width, 0, 8}};
     }
 };
 
@@ -431,7 +431,8 @@ template <std::size_t Degree> struct SpreadSubproblemPolyW8F64 {
         v2 = _mm512_unpackhi_pd(k_re, k_im);
     }
 
-    void accumulate_strengths(double *du, std::size_t i, __m512d const &v1, __m512d const &v2) const {
+    void
+    accumulate_strengths(double *du, std::size_t i, __m512d const &v1, __m512d const &v2) const {
         std::size_t i_aligned = i & ~3;
         std::size_t i_remainder = i - i_aligned;
 
@@ -518,8 +519,8 @@ template <std::size_t Degree> struct SpreadSubproblemPolyW8F64 {
 
     std::size_t num_points_multiple() const { return 4; }
     std::array<std::size_t, 1> extent_multiple() const { return {1}; }
-    std::array<std::pair<double, double>, 1> target_padding() const {
-        return {std::pair<double, double>{0.5 * kernel_width, 0.5 * kernel_width + 4}};
+    std::array<KernelWriteSpec<double>, 1> target_padding() const {
+        return {KernelWriteSpec<double>{0.5 * kernel_width, 0, 8}};
     }
 };
 

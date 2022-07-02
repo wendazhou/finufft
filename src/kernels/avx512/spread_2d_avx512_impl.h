@@ -74,8 +74,7 @@ template <std::size_t Degree> struct SpreadSubproblemPoly2DW8 {
      *
      */
     void accumulate_strengths(
-        float *out, std::size_t remainder, std::size_t stride_y, __m512 vx,
-        float const *vy) const {
+        float *out, std::size_t remainder, std::size_t stride_y, __m512 vx, float const *vy) const {
         // Compute index as base index to aligned location
         // and offset from aligned location to actual index.
 
@@ -199,9 +198,11 @@ template <std::size_t Degree> struct SpreadSubproblemPoly2DW8 {
 
     std::size_t num_points_multiple() const { return 4; }
     std::array<std::size_t, 2> extent_multiple() const { return {8, 1}; }
-    std::array<std::pair<double, double>, 2> target_padding() const {
-        double ns2 = 0.5 * kernel_width;
-        return {std::pair<double, double>{ns2, ns2 + 8}, {ns2, ns2}};
+    std::array<KernelWriteSpec<float>, 2> target_padding() const {
+        // Use split writeout in first dimension, hence may write 16 in total.
+        // However, write exact in second dimension (dependending on true width).
+        float ns2 = 0.5 * kernel_width;
+        return {KernelWriteSpec<float>{ns2, 0, 16}, {ns2, 0, static_cast<int>(writeout_width)}};
     }
 };
 
@@ -392,9 +393,9 @@ template <std::size_t Degree> struct SpreadSubproblemPoly2DW8F64 {
 
     std::size_t num_points_multiple() const { return 4; }
     std::array<std::size_t, 2> extent_multiple() const { return {4, 1}; }
-    std::array<std::pair<double, double>, 2> target_padding() const {
+    std::array<KernelWriteSpec<double>, 2> target_padding() const {
         double ns2 = 0.5 * kernel_width;
-        return {std::pair<double, double>{ns2, ns2 + 4}, {ns2, ns2}};
+        return {KernelWriteSpec<double>{ns2, 0, 8}, {ns2, 0, static_cast<int>(writeout_width)}};
     }
 };
 

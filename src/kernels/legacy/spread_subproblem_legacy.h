@@ -156,16 +156,21 @@ struct SpreadSubproblemLegacy {
  * through the `SpreadSubproblemFunctor` interface.
  *
  */
-struct SpreadSubproblemLegacyFunctor {
+template <typename T, std::size_t Dim> struct SpreadSubproblemLegacyFunctor {
     kernel_specification kernel;
 
     std::size_t num_points_multiple() const { return 1; }
-    ConstantArray<std::size_t> extent_multiple() const { return {1}; }
-    ConstantArray<std::pair<double, double>> target_padding() const {
-        return {{0.5 * kernel.width, 0.5 * kernel.width}};
+    std::array<std::size_t, Dim> extent_multiple() const {
+        std::array<std::size_t, Dim> result;
+        result.fill(1);
+        return result;
+    }
+    std::array<KernelWriteSpec<T>, Dim> target_padding() const {
+        std::array<KernelWriteSpec<T>, Dim> result;
+        result.fill({static_cast<T>(0.5 * kernel.width), 0, kernel.width});
+        return result;
     }
 
-    template <typename T, std::size_t Dim>
     void operator()(
         nu_point_collection<Dim, typename identity<T>::type const> const &input,
         grid_specification<Dim> const &grid, T *output) const {

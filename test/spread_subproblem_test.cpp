@@ -4,10 +4,10 @@
  *
  */
 
-#include "../src/spreading.h"
 #include "../src/kernels/avx512/spread_avx512.h"
 #include "../src/kernels/legacy/spread_subproblem_legacy.h"
 #include "../src/kernels/reference/spread_subproblem_reference.h"
+#include "../src/spreading.h"
 
 #include "../src/kernels/dispatch.h"
 
@@ -78,7 +78,7 @@ evaluation_result<Dim, T> evaluate_subproblem_implementation(
 
     // Arbitrary grid specification in all dimensions
     auto offset = 3;
-    auto size = 20;
+    auto size = 24;
 
     finufft::spreading::grid_specification<Dim> grid;
     for (std::size_t i = 0; i < Dim; ++i) {
@@ -88,11 +88,17 @@ evaluation_result<Dim, T> evaluate_subproblem_implementation(
 
     // Adjust grid and number of points according to padding requirements of target.
     adjust_problem_parameters(num_points, grid, fn, reference_fn);
-    std::array<std::pair<double, double>, Dim> padding_ref = reference_fn.target_padding();
-    std::array<std::pair<double, double>, Dim> padding = fn.target_padding();
+    std::array<finufft::spreading::KernelWriteSpec<T>, Dim> padding_ref = reference_fn.target_padding();
+    std::array<finufft::spreading::KernelWriteSpec<T>, Dim> padding = fn.target_padding();
     for (std::size_t i = 0; i < Dim; ++i) {
-        padding[i].first = std::max(padding[i].first, padding_ref[i].first);
-        padding[i].second = std::max(padding[i].second, padding_ref[i].second);
+        if (padding[i].offset != padding_ref[i].offset) {
+            // don't try to unify different offsets yet (they probably correspond to different problems).
+            ADD_FAILURE() << "Target padding offset mismatch for dimension " << i << ": "
+                          << padding[i].offset << " != " << padding_ref[i].offset;
+        }
+
+        padding[i].grid_left = std::max(padding[i].grid_left, padding_ref[i].grid_left);
+        padding[i].grid_right = std::max(padding[i].grid_right, padding_ref[i].grid_right);
     }
 
     // Create subproblem input.
@@ -101,8 +107,7 @@ evaluation_result<Dim, T> evaluate_subproblem_implementation(
 
     // Allocate output arrays.
     auto output = finufft::allocate_aligned_array<T>(2 * grid.num_elements(), 64);
-    auto output_reference =
-        finufft::allocate_aligned_array<T>(2 * grid.num_elements(), 64);
+    auto output_reference = finufft::allocate_aligned_array<T>(2 * grid.num_elements(), 64);
 
     reference_fn(input, grid, output_reference.get());
     fn(input, grid, output.get());
@@ -142,14 +147,13 @@ void evaluate_subproblem_limits(int width, Fn &&factory) {
     std::array<double, Dim> max_x;
 
     for (std::size_t i = 0; i < Dim; ++i) {
-        min_x[i] = offset + padding[i].first;
-        max_x[i] = offset + grid.extents[i] - padding[i].second - 1;
+        min_x[i] = padding[i].min_valid_value(grid.offsets[i], grid.extents[i]);
+        max_x[i] = padding[i].max_valid_value(grid.offsets[i], grid.extents[i]);
     }
 
     for (std::size_t i = 0; i < Dim; ++i) {
         std::fill_n(input.coordinates[i], num_points / 2, min_x[i]);
-        std::fill_n(
-            input.coordinates[i] + num_points / 2, num_points - num_points / 2, max_x[i]);
+        std::fill_n(input.coordinates[i] + num_points / 2, num_points - num_points / 2, max_x[i]);
     }
     std::fill_n(input.strengths, 2 * num_points, 1.0);
 
@@ -157,8 +161,8 @@ void evaluate_subproblem_limits(int width, Fn &&factory) {
     fn(input, grid, output.get());
 }
 
-template<typename T, std::size_t Dim, typename Fn>
-void evaluate_subproblem_implementation_with_points(int width, int num_points, Fn&& factory) {
+template <typename T, std::size_t Dim, typename Fn>
+void evaluate_subproblem_implementation_with_points(int width, int num_points, Fn &&factory) {
     auto result = evaluate_subproblem_implementation<Dim, T>(factory, num_points, 0, width);
 
     // Note: check correct error level computation for the test
@@ -197,49 +201,49 @@ void test_subproblem_implementation(int width, Fn &&factory) {
 TEST(SpreadSubproblem, SpreadSubproblem1df32) {
     test_subproblem_implementation<float, 1>(
         5, [](finufft::spreading::kernel_specification const &k) {
-            return finufft::spreading::SpreadSubproblemLegacyFunctor{k};
+            return finufft::spreading::SpreadSubproblemLegacyFunctor<float, 1>{k};
         });
 }
 
 TEST(SpreadSubproblem, ReferenceDirect1Df32) {
     test_subproblem_implementation<float, 1>(
         5, [](finufft::spreading::kernel_specification const &k) {
-            return finufft::spreading::SpreadSubproblemDirectReference{k};
+            return finufft::spreading::SpreadSubproblemDirectReference<float, 1>{k};
         });
 }
 
 TEST(SpreadSubproblem, ReferenceDirect1Df64) {
     test_subproblem_implementation<double, 1>(
         5, [](finufft::spreading::kernel_specification const &k) {
-            return finufft::spreading::SpreadSubproblemDirectReference{k};
+            return finufft::spreading::SpreadSubproblemDirectReference<double, 1>{k};
         });
 }
 
 TEST(SpreadSubproblem, ReferenceDirect2Df32) {
     test_subproblem_implementation<float, 2>(
         5, [](finufft::spreading::kernel_specification const &k) {
-            return finufft::spreading::SpreadSubproblemDirectReference{k};
+            return finufft::spreading::SpreadSubproblemDirectReference<float, 2>{k};
         });
 }
 
 TEST(SpreadSubproblem, ReferenceDirect2Df64) {
     test_subproblem_implementation<double, 2>(
         5, [](finufft::spreading::kernel_specification const &k) {
-            return finufft::spreading::SpreadSubproblemDirectReference{k};
+            return finufft::spreading::SpreadSubproblemDirectReference<double, 2>{k};
         });
 }
 
 TEST(SpreadSubproblem, ReferenceDirect3Df32) {
     test_subproblem_implementation<float, 3>(
         5, [](finufft::spreading::kernel_specification const &k) {
-            return finufft::spreading::SpreadSubproblemDirectReference{k};
+            return finufft::spreading::SpreadSubproblemDirectReference<float, 3>{k};
         });
 }
 
 TEST(SpreadSubproblem, ReferenceDirect3Df64) {
     test_subproblem_implementation<double, 3>(
         5, [](finufft::spreading::kernel_specification const &k) {
-            return finufft::spreading::SpreadSubproblemDirectReference{k};
+            return finufft::spreading::SpreadSubproblemDirectReference<double, 3>{k};
         });
 }
 

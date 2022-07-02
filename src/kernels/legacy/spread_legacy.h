@@ -20,7 +20,7 @@ get_spread_configuration_legacy(finufft_spread_opts const &opts) {
         opts.pirange ? FoldRescaleRange::Pi : FoldRescaleRange::Identity};
 
     kernel_specification kernel_spec{opts.ES_beta, opts.nspread};
-    SpreadSubproblemLegacyFunctor spread_subproblem{kernel_spec};
+    SpreadSubproblemLegacyFunctor<T, Dim> spread_subproblem{kernel_spec};
 
     auto accumulate_subgrid_factory = get_legacy_locking_accumulator<T, Dim>();
 

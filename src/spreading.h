@@ -19,6 +19,7 @@
 #include <cstddef>
 #include <cstdlib>
 #include <functional>
+#include <limits>
 #include <memory>
 #include <mutex>
 #include <numeric>
@@ -94,6 +95,45 @@ template <std::size_t Dim, typename T> struct nu_point_collection {
     }
 };
 
+/** This structure captures the exact information required to deduce
+ * the location being written to by a spreading operation, even in the
+ * presence of potential floating point errors, in a single dimension.
+ * 
+ * The locations written to, for a given point at coordinate x represented
+ * in type T, is computed in the following fashion:
+ * - let xi = (int64_t)ceil(x + offset), where all computations are done in floating point precision T
+ * - the functor will write to (at most) locations [xi - grid_left, xi + grid_right).
+ * 
+ * Note that this constraint may be violated at individual points (in particular,
+ * vectorized implementations may write to the left of unaligned points without declaring
+ * it in the write specification), but it is guaranteed that this holds for the convex hull
+ * of the intervals of the points. (In the vectorized case, as the array is implicitly aligned
+ * by using the index 0 as the start of the dimension after offset, further aligning the
+ * write-out index can never bring it below 0). See also compute_subgrid.
+ * 
+ */
+template<typename T>
+struct KernelWriteSpec {
+    T offset;
+    int grid_left;
+    int grid_right;
+
+    /// Maximum valid value in the array, give a grid offset and size.
+    T max_valid_value(std::int64_t grid_offset, std::size_t grid_size) const {
+        // Slightly imprecise below, this value should be:
+        // max_{x \in T} x + offset \leq grid_size + grid_offset - grid_right - 1
+        return static_cast<T>(static_cast<int64_t>(grid_size) + grid_offset - grid_right - 1) - offset;
+    }
+
+    /// Minimum valid value in the array, give a grid offset and size.
+    T min_valid_value(std::int64_t grid_offset, std::size_t grid_size) const {
+        // Not sure if this is totally correct given floating point issues.
+        // Wish to have formally:
+        // min_{x \in T} x - offset > grid_offset + grid_left - 1
+        return std::nextafter(static_cast<T>(grid_offset + grid_left - 1) + offset, std::numeric_limits<T>::max());
+    }
+};
+
 /** Main type-erased holder for subproblem functor.
  *
  * This is the main type-erased holder for performing the spreading subproblem.
@@ -129,12 +169,11 @@ template <typename T, std::size_t Dim> class SpreadSubproblemFunctor {
         virtual std::array<std::size_t, Dim> extent_multiple() const = 0;
         /** Specify the requirement for the padding of the target buffer.
          *
-         * Callers must ensure that the grid specification of the target buffer is such that
-         * in each dimension, the coordinates lie in the range [offset + padding.first, offset +
-         * extent - padding.second - 1]. The caller should adjust the grid specification to satisfy
-         * this requirement.
+         * See the documentation of KernelWriteSpec to understand the exact
+         * computation of location written to.
+         * 
          */
-        virtual std::array<std::pair<double, double>, Dim> target_padding() const = 0;
+        virtual std::array<KernelWriteSpec<T>, Dim> target_padding() const = 0;
 
         /** Performs the given subproblem operation.
          *
@@ -161,7 +200,7 @@ template <typename T, std::size_t Dim> class SpreadSubproblemFunctor {
         virtual std::array<std::size_t, Dim> extent_multiple() const override {
             return impl_.extent_multiple();
         };
-        virtual std::array<std::pair<double, double>, Dim> target_padding() const override {
+        virtual std::array<KernelWriteSpec<T>, Dim> target_padding() const override {
             return impl_.target_padding();
         };
         virtual void operator()(
@@ -181,7 +220,7 @@ template <typename T, std::size_t Dim> class SpreadSubproblemFunctor {
 
     std::size_t num_points_multiple() const { return impl_->num_points_multiple(); }
     std::array<std::size_t, Dim> extent_multiple() const { return impl_->extent_multiple(); }
-    std::array<std::pair<double, double>, Dim> target_padding() const {
+    std::array<KernelWriteSpec<T>, Dim> target_padding() const {
         return impl_->target_padding();
     }
     void operator()(
@@ -334,7 +373,7 @@ struct spread_problem_input : nu_point_collection<Dim, const T> {
 template <std::size_t Dim, typename T>
 grid_specification<Dim> compute_subgrid(
     std::size_t M, std::array<T const *, Dim> const &coordinates,
-    std::array<std::pair<double, double>, Dim> const &padding) {
+    std::array<KernelWriteSpec<T>, Dim> const &padding) {
     std::array<std::int64_t, Dim> offsets;
     std::array<std::int64_t, Dim> sizes;
 
@@ -346,8 +385,8 @@ grid_specification<Dim> compute_subgrid(
         // Note: must cast to ensure computation same as during spreading.
         // At large values of min_val / max_val there can be significant floating point errors
         // (especially in single precision).
-        offsets[i] = static_cast<int64_t>(std::ceil(min_val - static_cast<T>(padding[i].first)));
-        sizes[i] = static_cast<int64_t>(std::ceil(max_val - offsets[i] + static_cast<T>(padding[i].second) + 1));
+        offsets[i] = static_cast<int64_t>(std::ceil(min_val - padding[i].offset) - padding[i].grid_left);
+        sizes[i] = static_cast<int64_t>(std::ceil(max_val - padding[i].offset)) + padding[i].grid_right - offsets[i];
     }
 
     return {offsets, sizes};

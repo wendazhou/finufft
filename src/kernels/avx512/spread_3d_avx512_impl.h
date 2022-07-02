@@ -207,9 +207,12 @@ template <std::size_t Degree> struct SpreadSubproblemPoly3DW8 {
 
     std::size_t num_points_multiple() const { return 4; }
     std::array<std::size_t, 3> extent_multiple() const { return {8, 1, 1}; }
-    std::array<std::pair<double, double>, 3> target_padding() const {
-        double ns2 = 0.5 * kernel_width;
-        return {std::pair<double, double>{ns2, ns2 + 8}, {ns2, ns2}, {ns2, ns2}};
+    std::array<KernelWriteSpec<float>, 3> target_padding() const {
+        float ns2 = 0.5 * kernel_width;
+        return {
+            KernelWriteSpec<float>{ns2, 0, 16},
+            {ns2, 0, static_cast<int>(writeout_width)},
+            {ns2, 0, static_cast<int>(writeout_width)}};
     }
 };
 

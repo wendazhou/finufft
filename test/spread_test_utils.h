@@ -19,6 +19,10 @@ finufft::spreading::SpreaderMemoryInput<Dim, T> make_random_point_collection(
     std::minstd_rand rng(seed);
 
     for (std::size_t dim = 0; dim < Dim; ++dim) {
+        if (range[dim].first > range[dim].second) {
+            throw std::invalid_argument("range[dim].first > range[dim].second");
+        }
+
         std::uniform_real_distribution<T> uniform_dist(range[dim].first, range[dim].second);
 
         for (std::size_t i = 0; i < num_points; ++i) {
@@ -66,15 +70,14 @@ finufft::aligned_unique_array<int64_t> make_random_permutation(std::size_t n, in
  *
  */
 template <typename T, std::size_t Dim>
-finufft::spreading::SpreaderMemoryInput<Dim, T>
-make_spread_subproblem_input(
+finufft::spreading::SpreaderMemoryInput<Dim, T> make_spread_subproblem_input(
     std::size_t num_points, uint32_t seed, finufft::spreading::grid_specification<Dim> const &grid,
-    std::array<std::pair<double, double>, Dim> const &padding) {
+    std::array<finufft::spreading::KernelWriteSpec<T>, Dim> const &padding) {
     std::array<std::pair<T, T>, Dim> range;
 
     for (std::size_t i = 0; i < Dim; ++i) {
-        range[i].first = grid.offsets[i] + padding[i].first;
-        range[i].second = grid.offsets[i] + grid.extents[i] - padding[i].second - 1;
+        range[i].first = padding[i].min_valid_value(grid.offsets[i], grid.extents[i]);
+        range[i].second = padding[i].max_valid_value(grid.offsets[i], grid.extents[i]);
     }
 
     return make_random_point_collection<Dim, T>(num_points, seed, range);

@@ -241,43 +241,28 @@ template <std::size_t Degree> struct SpreadSubproblemPoly2DW8F64 {
      *
      */
     void compute_kernel(
-        __m512d z, double const *strengths, __m512d &vx1, __m512d &vx2, __m512d &vy) const {
+        __m512d z, double const *strengths, __m512d &vx1, __m512d &vx2, double* vy) const {
         // Extract x and y coordinates from z.
         // Input format: z = [x y x y x y x y]
         __m512d zx = _mm512_permute_pd(z, 0b00000000);
         __m512d zy = _mm512_permute_pd(z, 0b11111111);
 
         // Evaluate kernels for x then y.
-        __m512d kx = horner_polynomial_evaluation<Degree>(zx, coefficients.get());
         __m512d ky = horner_polynomial_evaluation<Degree>(zy, coefficients.get());
+        _mm512_store_pd(vy, ky);
+
+        __m512d kx = horner_polynomial_evaluation<Degree>(zx, coefficients.get());
 
         // Compute pre-multiplied x
         __m512d kx_re = _mm512_mul_pd(kx, _mm512_set1_pd(strengths[0]));
         __m512d kx_im = _mm512_mul_pd(kx, _mm512_set1_pd(strengths[1]));
 
-        const int re = 0b0000;
-        const int im = 0b1000;
-
-        // Interleave real and imaginary parts of x-axis kernel.
-        // Note: we could pre-shuffle polynomial weights to use more efficient (latency-wise)
-        // shuffle instructions such as unpacklo_pd, but this would incur an additional shuffle
-        // for the y-axis kernel. There is currently no advantage on Intel Ice-Lake and previous
-        // architectures are all shuffles contend for port 5.
-        vx1 = _mm512_permutex2var_pd(
-            kx_re,
-            _mm512_setr_epi64(re | 0, im | 0, re | 1, im | 1, re | 2, im | 2, re | 3, im | 3),
-            kx_im);
-        vx2 = _mm512_permutex2var_pd(
-            kx_re,
-            _mm512_setr_epi64(re | 4, im | 4, re | 5, im | 5, re | 6, im | 6, re | 7, im | 7),
-            kx_im);
-
-        vy = ky;
+        interleave_real_imaginary(kx_re, kx_im, vx1, vx2);
     }
 
     void accumulate_strengths(
-        double *output, int ix, int iy, std::size_t stride_y, __m512d vx1, __m512d vx2,
-        __m512d vy) const {
+        double *__restrict output, int ix, int iy, std::size_t stride_y, __m512d vx1, __m512d vx2,
+        double const* vy) const {
         // Compute index as base index to aligned location
         // and offset from aligned location to actual index.
         int i_aligned = ix & ~3;
@@ -290,9 +275,6 @@ template <std::size_t Degree> struct SpreadSubproblemPoly2DW8F64 {
         __m512d v_lo, v_mid, v_hi;
         split_unaligned_vector(vx1, vx2, 2 * i_remainder, v_lo, v_mid, v_hi);
 
-        alignas(64) double vyf[8];
-        _mm512_store_pd(vyf, vy);
-
         // Only loop up to writeout_width, as there is no
         // need to write out values beyond that (they are zero).
         // We also save a little bit on padding.
@@ -301,7 +283,7 @@ template <std::size_t Degree> struct SpreadSubproblemPoly2DW8F64 {
             __m512d out_mid = _mm512_load_pd(out + i * stride_y + 8);
             __m512d out_hi = _mm512_load_pd(out + i * stride_y + 16);
 
-            __m512d yi = _mm512_set1_pd(vyf[i]);
+            __m512d yi = _mm512_set1_pd(vy[i]);
             out_lo = _mm512_fmadd_pd(v_lo, yi, out_lo);
             out_mid = _mm512_fmadd_pd(v_mid, yi, out_mid);
             out_hi = _mm512_fmadd_pd(v_hi, yi, out_hi);
@@ -350,7 +332,9 @@ template <std::size_t Degree> struct SpreadSubproblemPoly2DW8F64 {
                 xy_ceili,
                 _mm512_inserti64x4(_mm512_set1_epi64(offset_x), _mm256_set1_epi64x(offset_y), 1)));
 
-        __m512d vx1, vx2, vy;
+        alignas(64) double vy[8];
+
+        __m512d vx1, vx2;
 
         // Unrolled loop to compute 4 points, one pair of x-y coordinates at a time.
         // At each stage, we permute from the z1 or z2 register into a register
@@ -395,7 +379,7 @@ template <std::size_t Degree> struct SpreadSubproblemPoly2DW8F64 {
     std::array<std::size_t, 2> extent_multiple() const { return {4, 1}; }
     std::array<KernelWriteSpec<double>, 2> target_padding() const {
         double ns2 = 0.5 * kernel_width;
-        return {KernelWriteSpec<double>{ns2, 0, 8}, {ns2, 0, static_cast<int>(writeout_width)}};
+        return {KernelWriteSpec<double>{ns2, 0, 12}, {ns2, 0, static_cast<int>(writeout_width)}};
     }
 };
 

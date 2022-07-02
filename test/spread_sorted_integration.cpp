@@ -130,7 +130,9 @@ std::pair<std::vector<T>, std::vector<T>> run_spread_interp(double eps, ConfigTy
     double upsampfac = 2.0;
 
     std::array<int64_t, Dim> sizes;
-    sizes.fill(100);
+    // Cannot make too small or some kernels may require multiple wraps,
+    // which is not supported by accumulation process
+    sizes.fill(35);
     auto output_size = std::reduce(sizes.begin(), sizes.end(), 1ll, std::multiplies<int64_t>());
 
     auto num_points = 100;
@@ -231,6 +233,25 @@ TEST_P(SpreadSortedIntegrationTest, SpreadSorted3DF32) {
     auto config_type = std::get<1>(params);
 
     auto result = run_spread_interp<float, 3>(eps, config_type);
+    auto &output_expected = result.first;
+    auto &output = result.second;
+
+    // TODO: check tolerance again once polynomial weights are standardized.
+    auto tolerance =
+        compute_max_relative_threshold(eps * 10, output_expected.begin(), output_expected.end());
+
+    for (std::size_t i = 0; i < output_expected.size(); ++i) {
+        ASSERT_NEAR(output_expected[i], output[i], tolerance) << "i = " << i;
+    }
+}
+
+
+TEST_P(SpreadSortedIntegrationTest, SpreadSorted3DF64) {
+    auto params = GetParam();
+    auto eps = std::get<0>(params);
+    auto config_type = std::get<1>(params);
+
+    auto result = run_spread_interp<double, 3>(eps, config_type);
     auto &output_expected = result.first;
     auto &output = result.second;
 

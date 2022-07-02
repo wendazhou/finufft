@@ -520,7 +520,8 @@ template <std::size_t Degree> struct SpreadSubproblemPolyW8F64 {
     std::size_t num_points_multiple() const { return 4; }
     std::array<std::size_t, 1> extent_multiple() const { return {1}; }
     std::array<KernelWriteSpec<double>, 1> target_padding() const {
-        return {KernelWriteSpec<double>{0.5 * kernel_width, 0, 8}};
+        // Partial alignment requires width (8) + half width (4).
+        return {KernelWriteSpec<double>{0.5 * kernel_width, 0, 12}};
     }
 };
 

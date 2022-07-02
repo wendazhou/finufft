@@ -62,10 +62,10 @@ inline __m512d horner_polynomial_evaluation(__m512d z, double const *coeffs) {
 }
 
 /** Evaluate a polynomial kernel and multiply by strengths, width 8 dual issue.
- * 
+ *
  * This function is used to implement the evaluation of two polynomial kernels
  * of width 8, multiply by complex strengths, interleave and separate the results.
- * 
+ *
  * @param z The value at which to evaluate the polynomial. In general, this is expected
  *        to be a vector of length 16 corresponding of two halves [z1 x 8, z2 x 8].
  * @param coeffs A column-major array of size 16 x (Degree + 1) representing the coefficients
@@ -74,7 +74,7 @@ inline __m512d horner_polynomial_evaluation(__m512d z, double const *coeffs) {
  *        second point.
  * @param[out] v1 The complex interleaved result for the first point
  * @param[out] v2 The complex interleaved result for the second point
- * 
+ *
  */
 template <std::size_t Degree>
 void poly_eval_multiply_strengths_2x8(
@@ -111,6 +111,25 @@ void poly_eval_multiply_strengths_2x8(
             re | 12, im | 12, re | 13, im | 13, re | 14, im | 14, re | 15, im | 15),
         k_im);
     // clang-format on
+}
+
+inline void interleave_real_imaginary(__m512d v_re, __m512d v_im, __m512d &v_lo, __m512d &v_hi) {
+    const int re = 0b0000;
+    const int im = 0b1000;
+
+    // Interleave real and imaginary parts.
+    // Note: we could pre-shuffle polynomial weights to use more efficient (latency-wise)
+    // shuffle instructions such as unpacklo_pd, but this would incur an additional shuffle
+    // for the y-axis kernel. There is currently no advantage on Intel Ice-Lake and previous
+    // architectures are all shuffles contend for port 5.
+    v_lo = _mm512_permutex2var_pd(
+        v_re,
+        _mm512_setr_epi64(re | 0, im | 0, re | 1, im | 1, re | 2, im | 2, re | 3, im | 3),
+        v_im);
+    v_hi = _mm512_permutex2var_pd(
+        v_re,
+        _mm512_setr_epi64(re | 4, im | 4, re | 5, im | 5, re | 6, im | 6, re | 7, im | 7),
+        v_im);
 }
 
 } // namespace avx512

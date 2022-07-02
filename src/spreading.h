@@ -28,6 +28,8 @@
 
 #include <omp.h>
 
+#include <function2/function2.h>
+
 #define _USE_MATH_DEFINES
 #include <cmath>
 #undef _USE_MATH_DEFINES
@@ -200,43 +202,9 @@ template <typename T, std::size_t Dim> class SpreadSubproblemFunctor {
  * `SynchronizedAccumulateFactory` trait.
  *
  */
-template <typename T, std::size_t Dim> class SynchronizedAccumulateFunctor {
-  public:
-    struct Concept {
-        virtual ~Concept() = default;
-        virtual void operator()(T const *data, grid_specification<Dim> const &grid) const = 0;
-    };
-
-    template <typename Impl> class Model : public Concept {
-      private:
-        Impl impl_;
-
-      public:
-        Model(Impl &&impl) : impl_(std::move(impl)) {}
-        virtual void operator()(T const *data, grid_specification<Dim> const &grid) const override {
-            impl_(data, grid);
-        }
-    };
-
-  private:
-    std::unique_ptr<Concept> impl_;
-
-  public:
-    template <typename Impl>
-    SynchronizedAccumulateFunctor(Impl &&impl)
-        : impl_(std::make_unique<Model<Impl>>(std::forward<Impl>(impl))) {}
-
-    /** Accumulates the given data into the main grid at the given offset.
-     *
-     * @param data A pointer to the data to accumulate.
-     * @param grid The location of the subgrid represented by the data into
-     *    the main reduction grid.
-     *
-     */
-    void operator()(T const *data, grid_specification<Dim> const &grid) const {
-        impl_->operator()(data, grid);
-    }
-};
+template <typename T, std::size_t Dim>
+using SynchronizedAccumulateFunctor =
+    fu2::unique_function<void(T const *, grid_specification<Dim> const &) const>;
 
 /** Factory to initialize an accumulation strategy.
  *
@@ -288,38 +256,53 @@ template <typename T, std::size_t Dim> class SynchronizedAccumulateFactory {
 };
 
 /** Enum representing the range of the input data.
- * 
+ *
  * @var Identity The input range is the same as the output range
  * @var Pi The input range is (-pi, pi).
- * 
+ *
  */
 enum class FoldRescaleRange { Identity, Pi };
 
 /** This functor represents an implementation to gather and rescale the data.
- * 
- * Note: as the gather rescale is currently straightforward, we do not implement
- * a custom erased type but simply rely on the stdlib's std::function type erasure.
- * 
+ *
+ * The parameters of the function are expected as follows:
+ * - nu_point_collection<Dim, T> output: the collection to which to write the collected points
+ * - nu_point_collection<Dim, const T> input: the collection from which to collect points
+ * - std::array<int64_t, Dim> sizes: the size of the output for rescaling
+ * - int64_t const* sort_index: indirect index to gather points
+ *
  */
 template <typename T, std::size_t Dim>
-using GatherRescaleFunctor = std::function<void(
+using GatherRescaleFunctor = fu2::unique_function<void(
     nu_point_collection<Dim, T> const &, nu_point_collection<Dim, const T> const &,
-    std::array<int64_t, Dim>, int64_t const *, FoldRescaleRange)>;
-
+    std::array<int64_t, Dim>, int64_t const *) const>;
 
 /** This structure groups the necessary sub-components of a spread implementation.
- * 
+ *
  */
-template <typename T, std::size_t Dim>
-struct SpreadFunctorConfiguration {
-    SpreadSubproblemFunctor<T, Dim> spread_subproblem;
+template <typename T, std::size_t Dim> struct SpreadFunctorConfiguration {
     GatherRescaleFunctor<T, Dim> gather_rescale;
+    SpreadSubproblemFunctor<T, Dim> spread_subproblem;
     SynchronizedAccumulateFactory<T, Dim> make_synchronized_accumulate;
 };
 
+/** This function represents a processor for the spreading problem.
+ * The processor is responsible for handling the multithreading and coordination
+ * of the spreading process. The components of the computation are provided
+ * to the processor through the `SpreadFunctorConfiguration` structure.
+ * 
+ * The parameters of the function are expected as follows:
+ * - SpreadFunctorConfiguration<T, Dim>: the specific implementations of the computation
+ * - nu_point_collection<Dim, const T> input: the collection of non-uniform points to process
+ * - int64_t const* sort_index: indirect index to gather points
+ * - std::array<int64_t, Dim> const& sizes: the size of the output
+ * - T* output: the target buffer to write the data to
+ * 
+ */
 template <typename T, std::size_t Dim>
-struct SpreadProcessor {
-};
+using SpreadProcessor = fu2::unique_function<void(
+    SpreadFunctorConfiguration<T, Dim> const &, nu_point_collection<Dim, const T> const &,
+    int64_t const *, std::array<int64_t, Dim> const &, T *) const>;
 
 /** This structure represents the output information of the spreading operation.
  *
@@ -398,7 +381,6 @@ template <std::size_t Dim, typename T> struct SpreaderMemoryInput : nu_point_col
     SpreaderMemoryInput(SpreaderMemoryInput const &) = delete;
     SpreaderMemoryInput(SpreaderMemoryInput &&) = default;
 };
-
 
 /** Utility structure which mimics an array with constant values.
  *

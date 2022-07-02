@@ -86,5 +86,19 @@ void gather_and_fold(
     }
 }
 
+/** gather-rescale functor with reference implementation.
+ *
+ */
+struct GatherAndFoldReferenceFunctor {
+    FoldRescaleRange rescale_range_;
+
+    template <typename T, std::size_t Dim>
+    void operator()(
+        nu_point_collection<Dim, T> const &memory, nu_point_collection<Dim, T const> const &input,
+        std::array<int64_t, Dim> const &sizes, int64_t const *sort_indices) const {
+        gather_and_fold(memory, input, sizes, sort_indices, rescale_range_);
+    }
+};
+
 } // namespace spreading
 } // namespace finufft

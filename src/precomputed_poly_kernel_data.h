@@ -3,7 +3,7 @@
 #include <cstddef>
 #include <tuple>
 
-#include "kernels/span.hpp"
+#include <tcb/span.hpp>
 #include "spreading.h"
 
 namespace finufft {

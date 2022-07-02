@@ -18,14 +18,13 @@
 #include <array>
 #include <cstddef>
 #include <cstdlib>
+#include <functional>
 #include <memory>
 #include <mutex>
 #include <numeric>
 #include <type_traits>
 #include <utility>
 #include <vector>
-
-#include <iostream>
 
 #include <omp.h>
 
@@ -288,6 +287,40 @@ template <typename T, std::size_t Dim> class SynchronizedAccumulateFactory {
     }
 };
 
+/** Enum representing the range of the input data.
+ * 
+ * @var Identity The input range is the same as the output range
+ * @var Pi The input range is (-pi, pi).
+ * 
+ */
+enum class FoldRescaleRange { Identity, Pi };
+
+/** This functor represents an implementation to gather and rescale the data.
+ * 
+ * Note: as the gather rescale is currently straightforward, we do not implement
+ * a custom erased type but simply rely on the stdlib's std::function type erasure.
+ * 
+ */
+template <typename T, std::size_t Dim>
+using GatherRescaleFunctor = std::function<void(
+    nu_point_collection<Dim, T> const &, nu_point_collection<Dim, const T> const &,
+    std::array<int64_t, Dim>, int64_t const *, FoldRescaleRange)>;
+
+
+/** This structure groups the necessary sub-components of a spread implementation.
+ * 
+ */
+template <typename T, std::size_t Dim>
+struct SpreadFunctorConfiguration {
+    SpreadSubproblemFunctor<T, Dim> spread_subproblem;
+    GatherRescaleFunctor<T, Dim> gather_rescale;
+    SynchronizedAccumulateFactory<T, Dim> make_synchronized_accumulate;
+};
+
+template <typename T, std::size_t Dim>
+struct SpreadProcessor {
+};
+
 /** This structure represents the output information of the spreading operation.
  *
  * It specifies a set of non-uniform points, by their coordinates and their
@@ -366,7 +399,6 @@ template <std::size_t Dim, typename T> struct SpreaderMemoryInput : nu_point_col
     SpreaderMemoryInput(SpreaderMemoryInput &&) = default;
 };
 
-enum class FoldRescaleRange { Identity, Pi };
 
 /** Utility structure which mimics an array with constant values.
  *

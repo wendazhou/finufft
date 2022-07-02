@@ -1,5 +1,7 @@
 #pragma once
 
+#include <finufft/defs.h>
+
 #include "kernels/legacy/spreading_legacy.h"
 #include "kernels/legacy/synchronized_accumulate_legacy.h"
 #include "kernels/reference/gather_fold_reference.h"
@@ -8,29 +10,28 @@
 namespace finufft {
 namespace spreading {
 
-template <std::size_t Dim, typename T, typename IdxT>
-SubgridData<Dim, T> spread_block(
-    IdxT const *sort_indices, std::array<std::int64_t, Dim> const &sizes, std::size_t num_points,
-    std::array<T const *, Dim> const &coordinates, T const *strengths, T *output,
-    const kernel_specification &kernel, FoldRescaleRange range) {
-
-    // subproblem implementation being used (TODO: make parameter).
-    auto spread_subproblem = SpreadSubproblemLegacyFunctor{kernel};
+/** Standard templatized implementation of spreading for a given block.
+ * 
+ */
+template <
+    std::size_t Dim, typename T, typename IdxT, typename SubproblemFn, typename GatherRescaleFn>
+SubgridData<Dim, T> spread_block_impl(
+    IdxT const *sort_indices, nu_point_collection<Dim, const T> const &input,
+    std::array<std::int64_t, Dim> const &sizes, T *output, FoldRescaleRange range,
+    SubproblemFn const &spread_subproblem, GatherRescaleFn const &gather_rescale) {
 
     // round up to required number of points
     auto num_points_padded =
-        round_to_next_multiple(num_points, spread_subproblem.num_points_multiple());
+        round_to_next_multiple(input.num_points, spread_subproblem.num_points_multiple());
 
     SpreaderMemoryInput<Dim, T> memory(num_points_padded);
     nu_point_collection<Dim, const T> memory_reference(memory);
 
-    // Set number of points for now to the values to be provided
-    // memory.num_points = num_points;
-    gather_and_fold(memory, {num_points, coordinates, strengths}, sizes, sort_indices, range);
+    gather_rescale(memory, input, sizes, sort_indices, range);
 
     // Compute subgrid for given set of points.
     auto padding = spread_subproblem.target_padding();
-    auto subgrid = compute_subgrid<Dim, T>(num_points, memory_reference.coordinates, padding);
+    auto subgrid = compute_subgrid<Dim, T>(input.num_points, memory_reference.coordinates, padding);
     // Round up subgrid extent to required multiple for subproblem implementation.
     auto extent_multiple = spread_subproblem.extent_multiple();
     for (std::size_t i = 0; i < Dim; ++i) {
@@ -89,19 +90,25 @@ inline void spread(
     std::copy(sizes.begin(), sizes.end(), sizes_unsigned.begin());
     auto accumulate_subgrid = accumulate_subgrid_factory(output, sizes_unsigned);
 
+    nu_point_collection<Dim, const T> input{num_points, coordinates, strengths};
+
+    // subproblem implementation being used (TODO: make parameter).
+    kernel_specification kernel_spec{opts.ES_beta, opts.nspread};
+    auto spread_subproblem = SpreadSubproblemLegacyFunctor{kernel_spec};
+    auto gather_rescale = &gather_and_fold<Dim, int64_t, T>;
+
 #pragma omp parallel for schedule(dynamic, 1) // each is big
     for (int isub = 0; isub < nb; isub++) {   // Main loop through the subproblems
         std::size_t num_points_block =
             breaks[isub + 1] - breaks[isub]; // # NU pts in this subproblem
-        SubgridData<Dim, T> block = spread_block(
+        SubgridData<Dim, T> block = spread_block_impl(
             sort_indices + breaks[isub],
+            input,
             sizes,
-            num_points_block,
-            coordinates,
-            strengths,
             output,
-            {opts.ES_beta, opts.nspread},
-            opts.pirange ? FoldRescaleRange::Pi : FoldRescaleRange::Identity);
+            opts.pirange ? FoldRescaleRange::Pi : FoldRescaleRange::Identity,
+            spread_subproblem,
+            gather_rescale);
 
         accumulate_subgrid(block.strengths.get(), block.grid);
     }

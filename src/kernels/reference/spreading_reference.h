@@ -5,7 +5,7 @@
 
 #include "../../precomputed_poly_kernel_data.h"
 #include "../../spreading.h"
-#include "../span.hpp"
+#include <tcb/span.hpp>
 
 namespace finufft {
 namespace spreading {

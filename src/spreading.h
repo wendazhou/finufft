@@ -62,11 +62,11 @@ struct kernel_specification {
  */
 template <std::size_t Dim> struct grid_specification {
     std::array<std::int64_t, Dim> offsets;
-    std::array<std::int64_t, Dim> extents;
+    std::array<std::size_t, Dim> extents;
 
     const std::int64_t num_elements() const {
         return std::reduce(
-            extents.begin(), extents.end(), static_cast<std::int64_t>(1), std::multiplies<>());
+            extents.begin(), extents.end(), static_cast<std::size_t>(1), std::multiplies<>());
     }
 };
 
@@ -375,7 +375,7 @@ grid_specification<Dim> compute_subgrid(
     std::size_t M, std::array<T const *, Dim> const &coordinates,
     std::array<KernelWriteSpec<T>, Dim> const &padding) {
     std::array<std::int64_t, Dim> offsets;
-    std::array<std::int64_t, Dim> sizes;
+    std::array<std::size_t, Dim> sizes;
 
     for (int i = 0; i < Dim; ++i) {
         auto minmax = std::minmax_element(coordinates[i], coordinates[i] + M);
@@ -387,7 +387,7 @@ grid_specification<Dim> compute_subgrid(
         // (especially in single precision).
         offsets[i] =
             static_cast<int64_t>(std::ceil(min_val - padding[i].offset) - padding[i].grid_left);
-        sizes[i] = static_cast<int64_t>(std::ceil(max_val - padding[i].offset)) +
+        sizes[i] = static_cast<size_t>(std::ceil(max_val - padding[i].offset)) +
                    padding[i].grid_right - offsets[i];
     }
 

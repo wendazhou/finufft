@@ -1,6 +1,7 @@
 #pragma once
 
 #include <algorithm>
+#include <cstring>
 #include <functional>
 #include <numeric>
 #include <vector>
@@ -84,7 +85,7 @@ struct SingleThreadedProcessor {
 
         auto total_size =
             std::reduce(sizes.begin(), sizes.end(), static_cast<int64_t>(1), std::multiplies<>{});
-        std::fill_n(output, 2 * total_size, 0);
+        std::memset(output, 0,  2 * total_size * sizeof(T));
 
         auto max_num_threads = static_cast<std::size_t>(1);
 
@@ -139,7 +140,7 @@ struct OmpSpreadProcessor {
 
         auto total_size =
             std::reduce(sizes.begin(), sizes.end(), static_cast<int64_t>(1), std::multiplies<>{});
-        std::fill_n(output, 2 * total_size, 0);
+        std::memset(output, 0,  2 * total_size * sizeof(T));
 
         auto max_num_threads = static_cast<std::size_t>(omp_get_num_threads());
         if (num_threads_ > 0) {

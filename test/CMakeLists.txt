@@ -59,12 +59,18 @@ endfunction()
 add_tests_with_prec(float 1e-5 2e-4 f)
 add_tests_with_prec(double 1e-12 1e-11 "")
 
+add_library(finufft_test_utils STATIC test_utils.cpp)
+target_link_libraries(finufft_test_utils PRIVATE finufft OpenMP::OpenMP_CXX)
+target_include_directories(finufft_test_utils PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/../third_party)
+# Always enable optimization to avoid initialization taking too long
+target_compile_options(finufft_test_utils PRIVATE -O3)
+
 include(GoogleTest)
 
 # Now add gtest-based tests
 function (add_gtest_test name source)
   add_executable(${name} ${source})
-  target_link_libraries(${name} PRIVATE finufft gtest_main gmock)
+  target_link_libraries(${name} PRIVATE finufft gtest_main gmock finufft_test_utils)
   target_include_directories(${name} PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/../third_party)
   enable_asan(${name})
   gtest_discover_tests(${name})

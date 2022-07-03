@@ -16,13 +16,6 @@ template <std::size_t Dim, typename T>
 finufft::spreading::SpreaderMemoryInput<Dim, T> make_random_point_collection(
     std::size_t num_points, uint32_t seed, std::array<std::pair<T, T>, Dim> const &range) {
 
-    typedef r123::Philox4x32 RNG;
-    RNG rng;
-    RNG::ctr_type c = {{}};
-    RNG::ukey_type ukey = {{}};
-
-    ukey[0] = seed;
-
     auto points = finufft::spreading::SpreaderMemoryInput<Dim, T>(num_points);
 
     for (std::size_t dim = 0; dim < Dim; ++dim) {

@@ -65,7 +65,8 @@ template <std::size_t Dim> struct grid_specification {
     std::array<std::int64_t, Dim> extents;
 
     const std::int64_t num_elements() const {
-        return std::reduce(extents.begin(), extents.end(), 1, std::multiplies<>());
+        return std::reduce(
+            extents.begin(), extents.end(), static_cast<std::int64_t>(1), std::multiplies<>());
     }
 };
 
@@ -98,22 +99,22 @@ template <std::size_t Dim, typename T> struct nu_point_collection {
 /** This structure captures the exact information required to deduce
  * the location being written to by a spreading operation, even in the
  * presence of potential floating point errors, in a single dimension.
- * 
+ *
  * The locations written to, for a given point at coordinate x represented
  * in type T, is computed in the following fashion:
- * - let xi = (int64_t)ceil(x + offset), where all computations are done in floating point precision T
+ * - let xi = (int64_t)ceil(x + offset), where all computations are done in floating point precision
+ * T
  * - the functor will write to (at most) locations [xi - grid_left, xi + grid_right).
- * 
+ *
  * Note that this constraint may be violated at individual points (in particular,
  * vectorized implementations may write to the left of unaligned points without declaring
  * it in the write specification), but it is guaranteed that this holds for the convex hull
  * of the intervals of the points. (In the vectorized case, as the array is implicitly aligned
  * by using the index 0 as the start of the dimension after offset, further aligning the
  * write-out index can never bring it below 0). See also compute_subgrid.
- * 
+ *
  */
-template<typename T>
-struct KernelWriteSpec {
+template <typename T> struct KernelWriteSpec {
     T offset;
     int grid_left;
     int grid_right;
@@ -122,7 +123,8 @@ struct KernelWriteSpec {
     T max_valid_value(std::int64_t grid_offset, std::size_t grid_size) const {
         // Slightly imprecise below, this value should be:
         // max_{x \in T} x + offset \leq grid_size + grid_offset - grid_right - 1
-        return static_cast<T>(static_cast<int64_t>(grid_size) + grid_offset - grid_right - 1) - offset;
+        return static_cast<T>(static_cast<int64_t>(grid_size) + grid_offset - grid_right - 1) -
+               offset;
     }
 
     /// Minimum valid value in the array, give a grid offset and size.
@@ -171,7 +173,7 @@ template <typename T, std::size_t Dim> class SpreadSubproblemFunctor {
          *
          * See the documentation of KernelWriteSpec to understand the exact
          * computation of location written to.
-         * 
+         *
          */
         virtual std::array<KernelWriteSpec<T>, Dim> target_padding() const = 0;
 
@@ -220,9 +222,7 @@ template <typename T, std::size_t Dim> class SpreadSubproblemFunctor {
 
     std::size_t num_points_multiple() const { return impl_->num_points_multiple(); }
     std::array<std::size_t, Dim> extent_multiple() const { return impl_->extent_multiple(); }
-    std::array<KernelWriteSpec<T>, Dim> target_padding() const {
-        return impl_->target_padding();
-    }
+    std::array<KernelWriteSpec<T>, Dim> target_padding() const { return impl_->target_padding(); }
     void operator()(
         nu_point_collection<Dim, T const> const &input, grid_specification<Dim> const &grid,
         T *__restrict output) const {
@@ -329,14 +329,14 @@ template <typename T, std::size_t Dim> struct SpreadFunctorConfiguration {
  * The processor is responsible for handling the multithreading and coordination
  * of the spreading process. The components of the computation are provided
  * to the processor through the `SpreadFunctorConfiguration` structure.
- * 
+ *
  * The parameters of the function are expected as follows:
  * - SpreadFunctorConfiguration<T, Dim>: the specific implementations of the computation
  * - nu_point_collection<Dim, const T> input: the collection of non-uniform points to process
  * - int64_t const* sort_index: indirect index to gather points
  * - std::array<int64_t, Dim> const& sizes: the size of the output
  * - T* output: the target buffer to write the data to
- * 
+ *
  */
 template <typename T, std::size_t Dim>
 using SpreadProcessor = fu2::unique_function<void(
@@ -385,8 +385,10 @@ grid_specification<Dim> compute_subgrid(
         // Note: must cast to ensure computation same as during spreading.
         // At large values of min_val / max_val there can be significant floating point errors
         // (especially in single precision).
-        offsets[i] = static_cast<int64_t>(std::ceil(min_val - padding[i].offset) - padding[i].grid_left);
-        sizes[i] = static_cast<int64_t>(std::ceil(max_val - padding[i].offset)) + padding[i].grid_right - offsets[i];
+        offsets[i] =
+            static_cast<int64_t>(std::ceil(min_val - padding[i].offset) - padding[i].grid_left);
+        sizes[i] = static_cast<int64_t>(std::ceil(max_val - padding[i].offset)) +
+                   padding[i].grid_right - offsets[i];
     }
 
     return {offsets, sizes};

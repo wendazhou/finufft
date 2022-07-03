@@ -1,6 +1,7 @@
 #pragma once
 
 #include <cstddef>
+#include <cstring>
 
 #include "align_split_routines.h"
 #include "poly_eval_routines.h"
@@ -131,23 +132,26 @@ template <std::size_t Degree> struct SpreadSubproblemPoly2DW8 {
 
         // Store integer coordinates for accumulation later (adjust indices to account for offset)
         // First 4 correspond to x indices, second 4 correspond to y indices.
-        alignas(16) uint32_t indices_base[4];
-        alignas(16) uint32_t indices_offset[4];
+        alignas(32) uint64_t indices_base[4];
+        alignas(32) uint64_t indices_offset[4];
 
-        {
-            __m128i idx_x =
-                _mm_sub_epi32(_mm256_castsi256_si128(xy_ceili), _mm_set1_epi32(offset_x));
-            __m128i idx_y =
-                _mm_sub_epi32(_mm256_extracti128_si256(xy_ceili, 1), _mm_set1_epi32(offset_y));
-            __m128i idx_x_aligned = _mm_and_si128(_mm_set1_epi32(~7), idx_x);
-            __m128i idx_x_remainder = _mm_sub_epi32(idx_x, idx_x_aligned);
-            // base = 2 * idx_x_aligned + idx_y * stride_y
-            __m128i idx_base = _mm_add_epi32(
-                _mm_add_epi32(idx_x_aligned, idx_x_aligned),
-                _mm_mullo_epi32(idx_y, _mm_set1_epi32(stride_y)));
-            _mm_store_epi32(indices_base, idx_base);
-            _mm_store_epi32(indices_offset, idx_x_remainder);
-        }
+        // Do index computation in 64 bit to avoid overflow issues on large domains.
+        __m256i x_ceil_i = _mm256_cvtepi32_epi64(_mm256_castsi256_si128(xy_ceili));
+
+        __m256i idx_x = _mm256_sub_epi64(x_ceil_i, _mm256_set1_epi64x(offset_x));
+        __m256i idx_y = _mm256_sub_epi64(
+            _mm256_cvtepi32_epi64(_mm256_extracti128_si256(xy_ceili, 1)),
+            _mm256_set1_epi64x(offset_y));
+
+        __m256i idx_x_aligned = _mm256_and_si256(_mm256_set1_epi64x(~7), idx_x);
+        __m256i idx_x_remainder = _mm256_sub_epi64(idx_x, idx_x_aligned);
+        // base = 2 * idx_x_aligned + idx_y * stride_y
+        // Risk of overflow, convert to 64 bit indices
+        __m256i idx_base = _mm256_add_epi64(
+            _mm256_add_epi64(idx_x_aligned, idx_x_aligned),
+            _mm256_mullo_epi64(idx_y, _mm256_set1_epi64x(stride_y)));
+        _mm256_store_epi64(indices_base, idx_base);
+        _mm256_store_epi64(indices_offset, idx_x_remainder);
 
         __m512 vx1, vx2;
         alignas(64) float vy[16];
@@ -180,7 +184,7 @@ template <std::size_t Degree> struct SpreadSubproblemPoly2DW8 {
         nu_point_collection<2, float const> const &input, grid_specification<2> const &grid,
         float *__restrict output) const {
 
-        std::fill_n(output, 2 * grid.num_elements(), 0.0f);
+        std::memset(output, 0, 2 * grid.num_elements() * sizeof(float));
 
         float const *coord_x = input.coordinates[0];
         float const *coord_y = input.coordinates[1];
@@ -241,7 +245,7 @@ template <std::size_t Degree> struct SpreadSubproblemPoly2DW8F64 {
      *
      */
     void compute_kernel(
-        __m512d z, double const *strengths, __m512d &vx1, __m512d &vx2, double* vy) const {
+        __m512d z, double const *strengths, __m512d &vx1, __m512d &vx2, double *vy) const {
         // Extract x and y coordinates from z.
         // Input format: z = [x y x y x y x y]
         __m512d zx = _mm512_permute_pd(z, 0b00000000);
@@ -262,7 +266,7 @@ template <std::size_t Degree> struct SpreadSubproblemPoly2DW8F64 {
 
     void accumulate_strengths(
         double *__restrict output, int ix, int iy, std::size_t stride_y, __m512d vx1, __m512d vx2,
-        double const* vy) const {
+        double const *vy) const {
         // Compute index as base index to aligned location
         // and offset from aligned location to actual index.
         int i_aligned = ix & ~3;
@@ -359,7 +363,7 @@ template <std::size_t Degree> struct SpreadSubproblemPoly2DW8F64 {
         nu_point_collection<2, double const> const &input, grid_specification<2> const &grid,
         double *__restrict output) const {
 
-        std::fill_n(output, 2 * grid.num_elements(), 0.0);
+        std::memset(output, 0, 2 * grid.num_elements() * sizeof(double));
 
         double const *coord_x = input.coordinates[0];
         double const *coord_y = input.coordinates[1];

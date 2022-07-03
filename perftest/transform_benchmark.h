@@ -31,7 +31,7 @@ template <typename T, std::size_t Dim> void benchmark_type1(benchmark::State &st
 
     finufft::nuft_plan_type1<T, Dim> plan(sizes, 1e-5, &opts);
 
-    auto points = make_random_point_collection<Dim, T>(n, 0, {-M_PI, M_PI});
+    auto points = make_random_point_collection<Dim, T>(num_modes, 0, {-M_PI, M_PI});
     finufft::spreading::nu_point_collection<Dim, T> points_view = points;
 
     auto output = finufft::allocate_aligned_array<std::complex<T>>(num_modes, 64);

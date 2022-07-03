@@ -973,6 +973,7 @@ int finufft_execute_type1(FINUFFT_PLAN p, CPX* cj, CPX* fk) {
     timer.restart();
     // STEP 1: spread NU pts p->X, weights cj, to fw grid
     spreadinterpSortedBatch(thisBatchSize, p, cjb);
+    t_sprint += timer.elapsedsec();
 
     // STEP 2: call the pre-planned FFT on this batch
     timer.restart();

@@ -12,6 +12,15 @@ namespace finufft {
 namespace spreading {
 
 namespace detail {
+
+/** Recursive implementation of wrapped subgrid accumulation.
+ *
+ * This template implements a functor which accumulates a subgrid
+ * into the main grid, with wrapping. The implementation is performs
+ * the wrapping in three parts, by splitting the subgrid into the elements
+ * which are to the left, within, and to the right of the main grid.
+ *
+ */
 template <typename T, std::size_t Dim> struct WrappedSubgridAccumulator {
     void operator()(
         T const *input, tcb::span<const int64_t, Dim> offsets,
@@ -63,9 +72,7 @@ template <typename T, std::size_t Dim> struct WrappedSubgridAccumulator {
         }
 
         // Loop through main part
-        for (int64_t i = std::max<int64_t>(offset, 0);
-             i < std::min(size, subgrid_end);
-             ++i) {
+        for (int64_t i = std::max<int64_t>(offset, 0); i < std::min(size, subgrid_end); ++i) {
             auto index = i - offset;
 
             WrappedSubgridAccumulator<T, Dim - 1>{}(
@@ -99,7 +106,7 @@ template <typename T, std::size_t Dim> struct NonSynchronizedAccumulateWrappedSu
      */
     void operator()(
         T const *input, grid_specification<Dim> const &grid, T *output,
-        std::array<std::size_t, Dim> const &sizes) const noexcept {
+        tcb::span<const std::size_t, Dim> sizes) const noexcept {
 
         std::array<std::size_t, Dim> strides_output;
         {

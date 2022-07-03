@@ -43,47 +43,40 @@ template <typename T, std::size_t Dim> struct WrappedSubgridAccumulator {
 
         auto subgrid_end = offset + extent;
 
-        // Loop through left wrapping
-        for (int64_t i = offset; i < std::min<int64_t>(subgrid_end, 0); ++i) {
-            auto index = i - offset;
+        // factor out contiguous (in the strided dimension) part
+        auto accumulate_contiguous = [&](int64_t length, T const *input, T *output) {
+            for (int64_t i = 0; i < length; ++i) {
+                WrappedSubgridAccumulator<T, Dim - 1>{}(
+                    input + i * input_strides[Dim - 1],
+                    offsets.template subspan<0, Dim - 1>(),
+                    extents.template subspan<0, Dim - 1>(),
+                    input_strides.template subspan<0, Dim - 1>(),
+                    output + i * strides[Dim - 1],
+                    sizes.template subspan<0, Dim - 1>(),
+                    strides.template subspan<0, Dim - 1>());
+            }
+        };
 
-            WrappedSubgridAccumulator<T, Dim - 1>{}(
-                input + index * input_strides[Dim - 1],
-                offsets.template subspan<0, Dim - 1>(),
-                extents.template subspan<0, Dim - 1>(),
-                input_strides.template subspan<0, Dim - 1>(),
-                output + (i + size) * strides[Dim - 1],
-                sizes.template subspan<0, Dim - 1>(),
-                strides.template subspan<0, Dim - 1>());
-        }
+        // Loop through left wrapping
+        // This loop takes the initial part of the subgrid which does not yet overlap
+        // with the main grid, and adds it to the end of the main grid.
+        accumulate_contiguous(
+            std::min<int64_t>(subgrid_end, 0) - offset,
+            input,
+            output + (size + offset) * strides[Dim - 1]);
 
         // Loop through right wrapping
-        for (int64_t i = size; i < subgrid_end; ++i) {
-            auto index = i - offset;
-
-            WrappedSubgridAccumulator<T, Dim - 1>{}(
-                input + index * input_strides[Dim - 1],
-                offsets.template subspan<0, Dim - 1>(),
-                extents.template subspan<0, Dim - 1>(),
-                input_strides.template subspan<0, Dim - 1>(),
-                output + (i - size) * strides[Dim - 1],
-                sizes.template subspan<0, Dim - 1>(),
-                strides.template subspan<0, Dim - 1>());
-        }
+        // This loop takes the final part of the subgrid which overhangs the main grid,
+        // and adds it to the start of the main grid.
+        accumulate_contiguous(
+            subgrid_end - size, input + (size - offset) * input_strides[Dim - 1], output);
 
         // Loop through main part
-        for (int64_t i = std::max<int64_t>(offset, 0); i < std::min(size, subgrid_end); ++i) {
-            auto index = i - offset;
-
-            WrappedSubgridAccumulator<T, Dim - 1>{}(
-                input + index * input_strides[Dim - 1],
-                offsets.template subspan<0, Dim - 1>(),
-                extents.template subspan<0, Dim - 1>(),
-                input_strides.template subspan<0, Dim - 1>(),
-                output + i * strides[Dim - 1],
-                sizes.template subspan<0, Dim - 1>(),
-                strides.template subspan<0, Dim - 1>());
-        }
+        // This loop takes the intersection of the subgrid and the main grid.
+        accumulate_contiguous(
+            std::min(size, subgrid_end) - std::max<int64_t>(offset, 0),
+            input - std::min<int64_t>(offset, 0) * input_strides[Dim - 1],
+            output + std::max<int64_t>(offset, 0) * strides[Dim - 1]);
     }
 };
 

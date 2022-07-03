@@ -12,13 +12,19 @@ namespace spreading {
 
 template <typename T> struct FoldRescalePi {
     T operator()(T x, T extent) const {
-        if (x < -M_PI) {
-            x += 2 * M_PI;
-        } else if (x >= M_PI) {
-            x -= 2 * M_PI;
+        // Create temporaries in correct precision
+        // to have exact same behavior as vectorized versions.
+        T pi = M_PI;
+        T two_pi = 2 * pi;
+        T one_over_2_pi = 0.5 * M_1_PI;
+
+        if (x < -pi) {
+            x += two_pi;
+        } else if (x >= pi) {
+            x -= two_pi;
         }
 
-        return (x + M_PI) * extent * 0.5 * M_1_PI;
+        return (x + pi) * extent * one_over_2_pi;
     }
 };
 

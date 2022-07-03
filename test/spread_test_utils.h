@@ -8,34 +8,38 @@
 #include <utility>
 #include <vector>
 
+#include "test_utils.h"
+
 namespace {
 
 template <std::size_t Dim, typename T>
 finufft::spreading::SpreaderMemoryInput<Dim, T> make_random_point_collection(
     std::size_t num_points, uint32_t seed, std::array<std::pair<T, T>, Dim> const &range) {
 
-    auto points = finufft::spreading::SpreaderMemoryInput<Dim, T>(num_points);
+    typedef r123::Philox4x32 RNG;
+    RNG rng;
+    RNG::ctr_type c = {{}};
+    RNG::ukey_type ukey = {{}};
 
-    std::minstd_rand rng(seed);
+    ukey[0] = seed;
+
+    auto points = finufft::spreading::SpreaderMemoryInput<Dim, T>(num_points);
 
     for (std::size_t dim = 0; dim < Dim; ++dim) {
         if (range[dim].first > range[dim].second) {
             throw std::invalid_argument("range[dim].first > range[dim].second");
         }
 
-        std::uniform_real_distribution<T> uniform_dist(range[dim].first, range[dim].second);
-
-        for (std::size_t i = 0; i < num_points; ++i) {
-            points.coordinates[dim][i] = uniform_dist(rng);
-        }
+        finufft::testing::fill_random_uniform(
+            points.coordinates[dim],
+            num_points,
+            dim + seed,
+            range[dim].first,
+            range[dim].second);
     }
 
-    std::normal_distribution<T> normal_dist;
-
-    for (std::size_t i = 0; i < num_points; ++i) {
-        points.strengths[2 * i] = normal_dist(rng);
-        points.strengths[2 * i + 1] = normal_dist(rng);
-    }
+    finufft::testing::fill_random_uniform(
+        points.strengths, 2 * num_points, Dim + seed, -1, 1);
 
     return points;
 }

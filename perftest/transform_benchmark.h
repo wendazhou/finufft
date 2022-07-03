@@ -25,7 +25,11 @@ template <typename T, std::size_t Dim> void benchmark_type1(benchmark::State &st
 
     int64_t num_modes = std::reduce(sizes.begin(), sizes.end(), 1, std::multiplies<int64_t>());
 
-    finufft::nuft_plan_type1<T, Dim> plan(sizes, 1e-5, nullptr);
+    finufft_opts opts;
+    finufft_default_opts(&opts);
+    opts.upsampfac = 2.0;
+
+    finufft::nuft_plan_type1<T, Dim> plan(sizes, 1e-5, &opts);
 
     auto points = make_random_point_collection<Dim, T>(n, 0, {-M_PI, M_PI});
     finufft::spreading::nu_point_collection<Dim, T> points_view = points;

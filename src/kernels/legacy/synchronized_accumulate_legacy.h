@@ -156,8 +156,8 @@ SynchronizedAccumulateFactory<T, Dim> get_legacy_singlethreaded_accumulator() {
     return make_lambda_synchronized_accumulate_factory<T, Dim>(
         [](T *output, std::array<std::size_t, Dim> const &sizes) {
             return SynchronizedAccumulateFunctor<T, Dim>(
-                NonLockedSynchronizedAccumulate<T, Dim, NonSynchronizedAccumulateWrappedSubgrid>(
-                    output, sizes));
+                NonLockedSynchronizedAccumulate<T, Dim, NonSynchronizedAccumulateWrappedSubgrid>{
+                    output, sizes});
         });
 }
 
@@ -166,8 +166,8 @@ SynchronizedAccumulateFactory<T, Dim> get_legacy_atomic_accumulator() {
     return make_lambda_synchronized_accumulate_factory<T, Dim>(
         [](T *output, std::array<std::size_t, Dim> const &sizes) {
             return SynchronizedAccumulateFunctor<T, Dim>(
-                NonLockedSynchronizedAccumulate<T, Dim, ThreadSafeAccumulateWrappedSubgrid>(
-                    output, sizes));
+                NonLockedSynchronizedAccumulate<T, Dim, ThreadSafeAccumulateWrappedSubgrid>{
+                    output, sizes});
         });
 }
 

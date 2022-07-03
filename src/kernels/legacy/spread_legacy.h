@@ -22,7 +22,11 @@ get_spread_configuration_legacy(finufft_spread_opts const &opts) {
     kernel_specification kernel_spec{opts.ES_beta, opts.nspread};
     SpreadSubproblemLegacyFunctor<T, Dim> spread_subproblem{kernel_spec};
 
-    auto accumulate_subgrid_factory = get_legacy_locking_accumulator<T, Dim>();
+//     auto accumulate_subgrid_factory = (opts.nthreads > opts.atomic_threshold || opts.nthreads == 0)
+//                                           ? get_legacy_atomic_accumulator<T, Dim>()
+//                                           : get_legacy_locking_accumulator<T, Dim>();
+// 
+    auto accumulate_subgrid_factory = get_legacy_atomic_accumulator<T, Dim>();
 
     return SpreadFunctorConfiguration<T, Dim>{
         std::move(gather_rescale),

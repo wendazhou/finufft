@@ -25,117 +25,49 @@ void add_wrapped_subgrid_thread_safe(
 namespace finufft {
 namespace spreading {
 
-struct NonSynchronizedAccumulateWrappedSubgrid {
-    template <typename T>
+struct LegacyAccumulateWrappedSubgrid {
+    template <typename T, std::size_t Dim>
     void operator()(
-        T const *input, grid_specification<1> const &subgrid, T *output,
-        std::array<std::size_t, 1> const &output_grid) const {
-        finufft::spreadinterp::add_wrapped_subgrid(
-            subgrid.offsets[0],
-            0,
-            0,
-            subgrid.extents[0],
-            1,
-            1,
-            output_grid[0],
-            1,
-            1,
-            output,
-            const_cast<T *>(input));
-    }
+        T const *input, grid_specification<Dim> const &subgrid, T *output,
+        std::array<std::size_t, Dim> const &output_grid) const {
 
-    template <typename T>
-    void operator()(
-        T const *input, grid_specification<2> const &subgrid, T *output,
-        std::array<std::size_t, 2> const &output_grid) const {
+        static_assert(Dim >= 1, "Dimension must be at least 1");
+        static_assert(Dim <= 3, "Legacy add wrapped subgrid only supports up to dimension 3.");
 
         finufft::spreadinterp::add_wrapped_subgrid(
             subgrid.offsets[0],
-            subgrid.offsets[1],
-            0,
+            Dim > 1 ? subgrid.offsets[1] : 0,
+            Dim > 2 ? subgrid.offsets[2] : 0,
             subgrid.extents[0],
-            subgrid.extents[1],
-            1,
+            Dim > 1 ? subgrid.extents[1] : 1,
+            Dim > 2 ? subgrid.extents[2] : 1,
             output_grid[0],
-            output_grid[1],
-            1,
-            output,
-            const_cast<T *>(input));
-    }
-
-    template <typename T>
-    void operator()(
-        T const *input, grid_specification<3> const &subgrid, T *output,
-        std::array<std::size_t, 3> const &output_grid) const {
-
-        finufft::spreadinterp::add_wrapped_subgrid(
-            subgrid.offsets[0],
-            subgrid.offsets[1],
-            subgrid.offsets[2],
-            subgrid.extents[0],
-            subgrid.extents[1],
-            subgrid.extents[2],
-            output_grid[0],
-            output_grid[1],
-            output_grid[2],
+            Dim > 1 ? output_grid[1] : 1,
+            Dim > 2 ? output_grid[2] : 1,
             output,
             const_cast<T *>(input));
     }
 };
 
-struct ThreadSafeAccumulateWrappedSubgrid {
-    template <typename T>
+struct LegacyThreadSafeAccumulateWrappedSubgrid {
+    template <typename T, std::size_t Dim>
     void operator()(
-        T const *input, grid_specification<1> const &subgrid, T *output,
-        std::array<std::size_t, 1> const &output_grid) const {
-        finufft::spreadinterp::add_wrapped_subgrid_thread_safe(
-            subgrid.offsets[0],
-            0,
-            0,
-            subgrid.extents[0],
-            1,
-            1,
-            output_grid[0],
-            1,
-            1,
-            output,
-            const_cast<T *>(input));
-    }
+        T const *input, grid_specification<Dim> const &subgrid, T *output,
+        std::array<std::size_t, Dim> const &output_grid) const {
 
-    template <typename T>
-    void operator()(
-        T const *input, grid_specification<2> const &subgrid, T *output,
-        std::array<std::size_t, 2> const &output_grid) const {
+        static_assert(Dim >= 1, "Dimension must be at least 1");
+        static_assert(Dim <= 3, "Legacy add wrapped subgrid only supports up to dimension 3.");
 
         finufft::spreadinterp::add_wrapped_subgrid_thread_safe(
             subgrid.offsets[0],
-            subgrid.offsets[1],
-            0,
+            Dim > 1 ? subgrid.offsets[1] : 0,
+            Dim > 2 ? subgrid.offsets[2] : 0,
             subgrid.extents[0],
-            subgrid.extents[1],
-            1,
+            Dim > 1 ? subgrid.extents[1] : 1,
+            Dim > 2 ? subgrid.extents[2] : 1,
             output_grid[0],
-            output_grid[1],
-            1,
-            output,
-            const_cast<T *>(input));
-    }
-
-    template <typename T>
-    void operator()(
-        T const *input, grid_specification<3> const &subgrid, T *output,
-        std::array<std::size_t, 3> const &output_grid) const {
-
-        finufft::spreadinterp::add_wrapped_subgrid_thread_safe(
-            subgrid.offsets[0],
-            subgrid.offsets[1],
-            subgrid.offsets[2],
-            subgrid.extents[0],
-            subgrid.extents[1],
-            subgrid.extents[2],
-            output_grid[0],
-            output_grid[1],
-            output_grid[2],
+            Dim > 1 ? output_grid[1] : 1,
+            Dim > 2 ? output_grid[2] : 1,
             output,
             const_cast<T *>(input));
     }
@@ -146,7 +78,7 @@ SynchronizedAccumulateFactory<T, Dim> get_legacy_locking_accumulator() {
     return make_lambda_synchronized_accumulate_factory<T, Dim>(
         [](T *output, std::array<std::size_t, Dim> const &sizes) {
             return SynchronizedAccumulateFunctor<T, Dim>(
-                GlobalLockedSynchronizedAccumulate<T, Dim, NonSynchronizedAccumulateWrappedSubgrid>(
+                GlobalLockedSynchronizedAccumulate<T, Dim, LegacyAccumulateWrappedSubgrid>(
                     output, sizes));
         });
 }
@@ -156,7 +88,7 @@ SynchronizedAccumulateFactory<T, Dim> get_legacy_singlethreaded_accumulator() {
     return make_lambda_synchronized_accumulate_factory<T, Dim>(
         [](T *output, std::array<std::size_t, Dim> const &sizes) {
             return SynchronizedAccumulateFunctor<T, Dim>(
-                NonLockedSynchronizedAccumulate<T, Dim, NonSynchronizedAccumulateWrappedSubgrid>{
+                NonLockedSynchronizedAccumulate<T, Dim, LegacyAccumulateWrappedSubgrid>{
                     output, sizes});
         });
 }
@@ -166,7 +98,7 @@ SynchronizedAccumulateFactory<T, Dim> get_legacy_atomic_accumulator() {
     return make_lambda_synchronized_accumulate_factory<T, Dim>(
         [](T *output, std::array<std::size_t, Dim> const &sizes) {
             return SynchronizedAccumulateFunctor<T, Dim>(
-                NonLockedSynchronizedAccumulate<T, Dim, ThreadSafeAccumulateWrappedSubgrid>{
+                NonLockedSynchronizedAccumulate<T, Dim, LegacyThreadSafeAccumulateWrappedSubgrid>{
                     output, sizes});
         });
 }

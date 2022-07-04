@@ -21,6 +21,7 @@ function(add_benchmark name source)
   enable_asan(${name})
 endfunction()
 
+add_benchmark(spread_binsort_perf spread_binsort_perf.cpp)
 add_benchmark(spread_gather_perf spread_gather_perf.cpp)
 add_benchmark(spread_subproblem_1d_perf spread_subproblem_1d_perf.cpp)
 add_benchmark(spread_subproblem_2d_perf spread_subproblem_2d_perf.cpp)

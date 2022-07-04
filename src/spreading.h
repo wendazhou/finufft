@@ -66,7 +66,10 @@ template <std::size_t Dim> struct grid_specification {
 
     const std::int64_t num_elements() const {
         return std::accumulate(
-            extents.begin(), extents.end(), static_cast<std::size_t>(1), std::multiplies<std::size_t>());
+            extents.begin(),
+            extents.end(),
+            static_cast<std::size_t>(1),
+            std::multiplies<std::size_t>());
     }
 };
 
@@ -239,7 +242,7 @@ template <typename T, std::size_t Dim> class SpreadSubproblemFunctor {
  *
  * In order to initialize a reduction for a new target buffer, see the
  * `SynchronizedAccumulateFactory` trait.
- * 
+ *
  * The parameters of the function are expected as follows:
  * - T const* input: The input data to the accumulation.
  * - grid_specification<Dim> const &grid: The grid specification specifying the logical
@@ -256,15 +259,15 @@ using SynchronizedAccumulateFunctor =
  * accumulation strategy into a target buffer of the given size.
  * This is used to implement the final step of the spreading process where
  * the data is accumulated into the target buffer.
- * 
+ *
  * The paramaters of the function are expected as follows:
  * - T* target: The target buffer to accumulate into.
  * - std::array<std::size_t, Dim> const& size: The size of the target buffer in each dimension.
  *
  */
 template <typename T, std::size_t Dim>
-using SynchronizedAccumulateFactory = 
-    fu2::unique_function<SynchronizedAccumulateFunctor<T, Dim>(T*, std::array<std::size_t, Dim> const&) const>;
+using SynchronizedAccumulateFactory = fu2::unique_function<SynchronizedAccumulateFunctor<T, Dim>(
+    T *, std::array<std::size_t, Dim> const &) const>;
 
 /** Enum representing the range of the input data.
  *
@@ -314,6 +317,25 @@ template <typename T, std::size_t Dim>
 using SpreadProcessor = fu2::unique_function<void(
     SpreadFunctorConfiguration<T, Dim> const &, nu_point_collection<Dim, const T> const &,
     int64_t const *, std::array<int64_t, Dim> const &, T *) const>;
+
+/** This function represents a strategy to obtain an indirect sort
+ * of the given points according to their bin index. The parameters
+ * are expected as follows:
+ * 
+ * - int64_t* sort_index: an array of size num_points, which will be
+ *      filled with a permutation representing the indirect sort at
+ *      the end of the function.
+ * - std::size_t num_points: The number of points to sort
+ * - std::array<T const*, Dim> coordinates: The coordinates of the points to sort
+ * - std::array<T, Dim> bin_sizes: The fractional size of each bin in each dimension
+ *      (the fractional size is the size interpreted as a fraction of [0, 1]).
+ * - FoldRescaleRange input_range: The range of the input data.
+ * 
+ */
+template <typename T, std::size_t Dim>
+using BinSortFunctor = fu2::unique_function<void(
+    int64_t *, std::size_t, std::array<T const *, Dim> const &,
+    std::array<T, Dim> const &, FoldRescaleRange) const>;
 
 /** This structure represents the output information of the spreading operation.
  *

@@ -5,6 +5,8 @@
 #include "spread_subproblem_reference.h"
 #include "synchronized_accumulate_reference.h"
 
+#include "../legacy/synchronized_accumulate_legacy.h"
+
 namespace finufft {
 namespace spreading {
 

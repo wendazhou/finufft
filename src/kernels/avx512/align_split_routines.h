@@ -43,21 +43,27 @@ namespace avx512 {
  *  i = 3: [x1, x2, x3, x4], [y1, y2, y3, y4] -> [x2, x3, x4, y1]
  *
  */
-alignas(64) static constexpr std::array<int64_t, 8 * 8> rotate_2vec_shuffle_lut = ([] {
-    std::array<int64_t, 8 * 8> result = {};
+struct rotate_2vec_shuffle_lut_t {
+    int64_t data_[8 * 8];
 
-    for (int i = 0; i < 8; ++i) {
-        for (int j = 0; j < i; ++j) {
-            result[i * 8 + j] = (8 - i) + j;
-        }
+    // Note: we hold the array creation in a constructor to enable
+    // compatibility with C++14 constexpr.
+    constexpr rotate_2vec_shuffle_lut_t() : data_() {
+        for (int i = 0; i < 8; ++i) {
+            for (int j = 0; j < i; ++j) {
+                data_[i * 8 + j] = (8 - i) + j;
+            }
 
-        for (int j = i; j < 8; ++j) {
-            result[i * 8 + j] = 0b1000 + (j - i);
+            for (int j = i; j < 8; ++j) {
+                data_[i * 8 + j] = 0b1000 + (j - i);
+            }
         }
     }
 
-    return result;
-})();
+    int64_t const* data() const { return data_; }
+};
+
+alignas(64) static constexpr rotate_2vec_shuffle_lut_t rotate_2vec_shuffle_lut = {};
 
 /** Split unaligned offset 8-wide double vector into two aligned 8-wide double vectors.
  *

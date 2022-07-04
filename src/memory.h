@@ -13,6 +13,8 @@
 
 namespace finufft {
 
+#ifdef __cpp_aligned_new
+
 /// @{
 
 /** Allocator for aligned array memory using C++ standard new.
@@ -43,6 +45,8 @@ template <typename T> struct NewAlignedArrayAllocator {
 };
 
 /// @}
+
+#endif
 
 /** Simple deleter using cstdlib's free operation.
  *

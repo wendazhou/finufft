@@ -65,8 +65,8 @@ template <std::size_t Dim> struct grid_specification {
     std::array<std::size_t, Dim> extents;
 
     const std::int64_t num_elements() const {
-        return std::reduce(
-            extents.begin(), extents.end(), static_cast<std::size_t>(1), std::multiplies<>());
+        return std::accumulate(
+            extents.begin(), extents.end(), static_cast<std::size_t>(1), std::multiplies<std::size_t>());
     }
 };
 

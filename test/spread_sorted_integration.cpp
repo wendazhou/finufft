@@ -133,7 +133,7 @@ std::pair<std::vector<T>, std::vector<T>> run_spread_interp(double eps, ConfigTy
     // Cannot make too small or some kernels may require multiple wraps,
     // which is not supported by accumulation process
     sizes.fill(35);
-    auto output_size = std::reduce(sizes.begin(), sizes.end(), 1ll, std::multiplies<int64_t>());
+    auto output_size = std::accumulate(sizes.begin(), sizes.end(), 1ll, std::multiplies<int64_t>());
 
     auto num_points = 100;
 

@@ -22,7 +22,7 @@ std::vector<T> run_add_subgrid(
     std::array<std::size_t, Dim> output_size;
     output_size.fill(output_base_size);
 
-    auto total_size = std::reduce(
+    auto total_size = std::accumulate(
         output_size.begin(),
         output_size.end(),
         static_cast<std::size_t>(1),

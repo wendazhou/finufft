@@ -1,6 +1,7 @@
 #pragma once
 
 #include <algorithm>
+#include <atomic>
 #include <memory>
 #include <mutex>
 #include <thread>
@@ -40,6 +41,56 @@ template <typename T> bool has_single_bit(T x) noexcept {
 
 } // namespace detail
 
+
+#ifdef __cpp_lib_atomic_wait
+
+/** Thin mutex implementation based on C++20 atomic_wait.
+ * 
+ */
+class ThinMutex {
+    std::atomic<int> value_;
+
+  public:
+    ThinMutex() : value_(0) {}
+    ThinMutex(ThinMutex const &) = delete;
+    ThinMutex(ThinMutex &&) = delete;
+
+    void lock() noexcept {
+        int c = 0;
+        // Check if mutex is held
+        if (!value_.compare_exchange_strong(c, 1)) {
+            // Mutex is held, declare that there are multiple waiters
+            // By storing 2.
+            if (c != 2) {
+                c = value_.exchange(2);
+            }
+
+            // Wait on value
+            while (c != 0) {
+                std::atomic_wait(&value_, 2);
+                c = value_.exchange(2);
+            }
+        }
+    }
+
+    void unlock() noexcept {
+        // Release mutex, and check for waiters
+        if (--value_ != 1) {
+            // If there are waiters, wake one up
+            value_ = 0;
+            std::atomic_notify_one(&value_);
+        }
+    }
+};
+
+typedef ThinMutex Mutex;
+
+#else
+
+typedef std::mutex Mutex;
+
+#endif
+
 /** Array of mutexes.
  *
  * This class encapsulates a system to provide exclusion at a given
@@ -49,12 +100,14 @@ template <typename T> bool has_single_bit(T x) noexcept {
  *
  */
 class MutexArray {
-    std::size_t size_;
-    std::unique_ptr<std::mutex[]> mutexes_;
-
   public:
     // The underlying type of the mutex currently used by this array.
-    typedef std::mutex mutex_type;
+    typedef Mutex mutex_type;
+  private:
+    std::size_t size_;
+    std::unique_ptr<mutex_type[]> mutexes_;
+
+  public:
 
     static std::size_t compute_size(std::size_t num_elements) {
         auto max_mutexes = detail::get_next_power_of_two(8 * std::thread::hardware_concurrency());
@@ -67,11 +120,9 @@ class MutexArray {
     }
 
     MutexArray(std::size_t size)
-        : size_(compute_size(size)), mutexes_(std::make_unique<std::mutex[]>(size_)) {}
-    std::mutex &operator[](std::size_t i) const {
-        // Multiply by a prime to avoid needless collisions due to aliasing
-        // across small powers of 2
-        return mutexes_[(i * 17) & (size_ - 1)];
+        : size_(size), mutexes_(std::make_unique<mutex_type[]>(size_)) {}
+    mutex_type &operator[](std::size_t i) const {
+        return mutexes_[i];
     }
 };
 

@@ -84,7 +84,7 @@ struct SingleThreadedProcessor {
         int64_t const *sort_index, std::array<int64_t, Dim> const &sizes, T *output) const {
 
         auto total_size =
-            std::reduce(sizes.begin(), sizes.end(), static_cast<int64_t>(1), std::multiplies<>{});
+            std::accumulate(sizes.begin(), sizes.end(), static_cast<int64_t>(1), std::multiplies<std::size_t>{});
         std::memset(output, 0,  2 * total_size * sizeof(T));
 
         auto max_num_threads = static_cast<std::size_t>(1);
@@ -139,7 +139,7 @@ struct OmpSpreadProcessor {
         int64_t const *sort_index, std::array<int64_t, Dim> const &sizes, T *output) const {
 
         auto total_size =
-            std::reduce(sizes.begin(), sizes.end(), static_cast<int64_t>(1), std::multiplies<>{});
+            std::accumulate(sizes.begin(), sizes.end(), static_cast<int64_t>(1), std::multiplies<int64_t>{});
         std::memset(output, 0,  2 * total_size * sizeof(T));
 
         auto max_num_threads = static_cast<std::size_t>(omp_get_num_threads());
@@ -147,9 +147,10 @@ struct OmpSpreadProcessor {
             max_num_threads = std::min(max_num_threads, static_cast<std::size_t>(num_threads_));
         }
 
+        std::size_t max_subproblem_size = 2 << 15;
         std::size_t num_blocks = std::min(max_num_threads, input.num_points);
-        if (num_blocks * max_subproblem_size_ < input.num_points) {
-            num_blocks = 1 + (input.num_points - 1) / max_subproblem_size_;
+        if (num_blocks * max_subproblem_size < input.num_points) {
+            num_blocks = 1 + (input.num_points - 1) / max_subproblem_size;
         }
 
         std::vector<std::size_t> breaks(num_blocks + 1);
@@ -162,7 +163,7 @@ struct OmpSpreadProcessor {
         std::copy(sizes.begin(), sizes.end(), sizes_unsigned.begin());
         auto accumulate_subgrid = config.make_synchronized_accumulate(output, sizes_unsigned);
 
-#pragma omp parallel for schedule(dynamic, 1)
+#pragma omp parallel for
         for (std::size_t b = 0; b < num_blocks; ++b) {
             std::size_t num_points_block = breaks[b + 1] - breaks[b];
 

@@ -171,16 +171,18 @@ struct WrappedSubgridAccumulator {
  */
 template <typename T, typename ContiguousAccumulate> class BlockLockingContiguousAccumulateAdapter {
     ContiguousAccumulate const &accumulate_; ///< The underlying contiguous accumulator.
-    MutexArray const &mutexes_; ///< Array of mutexes to control access to each block.
-    std::size_t block_size_; ///< Size of each block (must be a power of 2).
+    MutexArray const &mutexes_;              ///< Array of mutexes to control access to each block.
+    std::size_t block_size_;                 ///< Size of each block (must be a power of 2).
 
     /** Helper function to lock the mutex for a given block starting at the output index.
-     * 
+     *
      */
     std::lock_guard<MutexArray::mutex_type> lock_block(std::size_t output_index) const {
         // TODO: change division to bitwise operation as block_size_ is a power of 2.
         auto block_index = output_index / block_size_;
-        return std::lock_guard<MutexArray::mutex_type>(mutexes_[block_index]);
+        auto& mutex = mutexes_[block_index];
+        mutex.lock();
+        return {mutex, std::adopt_lock};
     }
 
   public:
@@ -206,7 +208,7 @@ template <typename T, typename ContiguousAccumulate> class BlockLockingContiguou
                 std::min<std::size_t>(length, block_size_ - (output_offset - block_offset));
 
             {
-                auto lock = lock_block(block_offset);
+                auto const& lock = lock_block(block_offset);
                 accumulate_(input_offset, output_offset, block_length);
             }
 
@@ -222,7 +224,7 @@ template <typename T, typename ContiguousAccumulate> class BlockLockingContiguou
             auto &block_mutex = mutexes_[output_offset / block_size_];
 
             {
-                auto lock = lock_block(output_offset);
+                auto const& lock = lock_block(output_offset);
                 // Note: potential adjustment for last block which is not a full block.
                 accumulate_(
                     input_offset,
@@ -282,8 +284,8 @@ template <typename T, std::size_t Dim> struct BlockSynchronizedAccumulateWrapped
     MutexArray mutexes_;
 
     static const std::size_t compute_num_blocks(tcb::span<const std::size_t, Dim> sizes) {
-        auto total_size =
-            std::reduce(sizes.begin(), sizes.end(), std::size_t{1}, std::multiplies{});
+        auto total_size = std::accumulate(
+            sizes.begin(), sizes.end(), std::size_t{1}, std::multiplies<std::size_t>{});
         return (total_size + block_size - 1) / block_size;
     }
 
@@ -333,7 +335,7 @@ template <typename T, std::size_t Dim, typename Impl> struct GlobalLockedSynchro
     GlobalLockedSynchronizedAccumulate(GlobalLockedSynchronizedAccumulate &&) = default;
 
     void operator()(T const *data, grid_specification<Dim> const &grid) const {
-        std::scoped_lock lock(*mutex_);
+        std::lock_guard<std::mutex> lock(*mutex_);
         Impl{}(data, grid, output_, sizes);
     }
 };
@@ -381,6 +383,17 @@ SynchronizedAccumulateFactory<T, Dim> get_reference_locking_accumulator() {
 }
 
 template <typename T, std::size_t Dim>
+SynchronizedAccumulateFactory<T, Dim> get_reference_singlethreaded_accumulator() {
+    return make_lambda_synchronized_accumulate_factory<T, Dim>(
+        [](T *output, std::array<std::size_t, Dim> const &sizes) {
+            return NonLockedSynchronizedAccumulate<
+                T,
+                Dim,
+                NonSynchronizedAccumulateWrappedSubgridReference<T, Dim>>{output, sizes};
+        });
+}
+
+template <typename T, std::size_t Dim>
 SynchronizedAccumulateFactory<T, Dim> get_reference_block_locking_accumulator() {
     return make_lambda_synchronized_accumulate_factory<T, Dim>(
         [](T *output, std::array<std::size_t, Dim> const &sizes) {
@@ -388,33 +401,24 @@ SynchronizedAccumulateFactory<T, Dim> get_reference_block_locking_accumulator() 
         });
 }
 
-extern template SynchronizedAccumulateFactory<float, 1>
-get_reference_locking_accumulator<float, 1>();
-extern template SynchronizedAccumulateFactory<float, 2>
-get_reference_locking_accumulator<float, 2>();
-extern template SynchronizedAccumulateFactory<float, 3>
-get_reference_locking_accumulator<float, 3>();
+#define FINUFFT_DECLARE_ACCUMULATE_FACTORY_IMPLEMENTATIONS(fn, type, dim)                          \
+    extern template SynchronizedAccumulateFactory<type, dim> fn<type, dim>();
 
-extern template SynchronizedAccumulateFactory<double, 1>
-get_reference_locking_accumulator<double, 1>();
-extern template SynchronizedAccumulateFactory<double, 2>
-get_reference_locking_accumulator<double, 2>();
-extern template SynchronizedAccumulateFactory<double, 3>
-get_reference_locking_accumulator<double, 3>();
+#define FINUFFT_DECLARE_STANDARD_ACCUMULATE_FACTORY_IMPLEMENTATIONS(fn)                            \
+    FINUFFT_DECLARE_ACCUMULATE_FACTORY_IMPLEMENTATIONS(fn, float, 1)                               \
+    FINUFFT_DECLARE_ACCUMULATE_FACTORY_IMPLEMENTATIONS(fn, float, 2)                               \
+    FINUFFT_DECLARE_ACCUMULATE_FACTORY_IMPLEMENTATIONS(fn, float, 3)                               \
+    FINUFFT_DECLARE_ACCUMULATE_FACTORY_IMPLEMENTATIONS(fn, double, 1)                              \
+    FINUFFT_DECLARE_ACCUMULATE_FACTORY_IMPLEMENTATIONS(fn, double, 2)                              \
+    FINUFFT_DECLARE_ACCUMULATE_FACTORY_IMPLEMENTATIONS(fn, double, 3)
 
-extern template SynchronizedAccumulateFactory<float, 1>
-get_reference_block_locking_accumulator<float, 1>();
-extern template SynchronizedAccumulateFactory<float, 2>
-get_reference_block_locking_accumulator<float, 2>();
-extern template SynchronizedAccumulateFactory<float, 3>
-get_reference_block_locking_accumulator<float, 3>();
+FINUFFT_DECLARE_STANDARD_ACCUMULATE_FACTORY_IMPLEMENTATIONS(get_reference_locking_accumulator)
+FINUFFT_DECLARE_STANDARD_ACCUMULATE_FACTORY_IMPLEMENTATIONS(
+    get_reference_singlethreaded_accumulator)
+FINUFFT_DECLARE_STANDARD_ACCUMULATE_FACTORY_IMPLEMENTATIONS(get_reference_block_locking_accumulator)
 
-extern template SynchronizedAccumulateFactory<double, 1>
-get_reference_block_locking_accumulator<double, 1>();
-extern template SynchronizedAccumulateFactory<double, 2>
-get_reference_block_locking_accumulator<double, 2>();
-extern template SynchronizedAccumulateFactory<double, 3>
-get_reference_block_locking_accumulator<double, 3>();
+#undef FINUFFT_DECLARE_STANDARD_ACCUMULATE_FACTORY_IMPLEMENTATIONS
+#undef FINUFFT_DECLARE_ACCUMULATE_FACTORY_IMPLEMENTATIONS
 
 } // namespace spreading
 } // namespace finufft

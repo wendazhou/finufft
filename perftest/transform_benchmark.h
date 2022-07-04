@@ -3,17 +3,16 @@
 #include <complex>
 #include <cstddef>
 
-#include <finufft/finufft.hpp>
 #include "../test/spread_test_utils.h"
+#include <finufft/finufft.hpp>
 
 #include "../src/memory.h"
 
 /** @file
- * 
+ *
  * Utilities for benchmarking transforms end-to-end.
- * 
+ *
  */
-
 
 namespace {
 
@@ -23,10 +22,12 @@ template <typename T, std::size_t Dim> void benchmark_type1(benchmark::State &st
     std::array<int64_t, Dim> sizes;
     sizes.fill(n);
 
-    int64_t num_modes = std::reduce(sizes.begin(), sizes.end(), 1, std::multiplies<int64_t>());
+    int64_t num_modes = std::accumulate(
+        sizes.begin(), sizes.end(), static_cast<int64_t>(1), std::multiplies<int64_t>());
 
     finufft_opts opts;
     finufft_default_opts(&opts);
+
     opts.upsampfac = 2.0;
 
     finufft::nuft_plan_type1<T, Dim> plan(sizes, 1e-5, &opts);
@@ -37,7 +38,7 @@ template <typename T, std::size_t Dim> void benchmark_type1(benchmark::State &st
     auto output = finufft::allocate_aligned_array<std::complex<T>>(num_modes, 64);
 
     for (auto _ : state) {
-        plan.set_points(n, points_view.coordinates);
+        plan.set_points(num_modes, points_view.coordinates);
         plan.execute(reinterpret_cast<std::complex<T> *>(points_view.strengths), output.get());
         benchmark::DoNotOptimize(output[0]);
         benchmark::DoNotOptimize(points.strengths[0]);
@@ -46,4 +47,4 @@ template <typename T, std::size_t Dim> void benchmark_type1(benchmark::State &st
     }
 }
 
-}
+} // namespace

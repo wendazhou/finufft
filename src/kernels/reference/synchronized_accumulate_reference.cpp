@@ -3,22 +3,23 @@
 namespace finufft {
 namespace spreading {
 
-template SynchronizedAccumulateFactory<float, 1> get_reference_locking_accumulator<float, 1>();
-template SynchronizedAccumulateFactory<float, 2> get_reference_locking_accumulator<float, 2>();
-template SynchronizedAccumulateFactory<float, 3> get_reference_locking_accumulator<float, 3>();
+#define FINUFFT_DEFINE_ACCUMULATE_FACTORY_IMPLEMENTATIONS(fn, type, dim)                           \
+    template SynchronizedAccumulateFactory<type, dim> fn<type, dim>();
 
-template SynchronizedAccumulateFactory<double, 1> get_reference_locking_accumulator<double, 1>();
-template SynchronizedAccumulateFactory<double, 2> get_reference_locking_accumulator<double, 2>();
-template SynchronizedAccumulateFactory<double, 3> get_reference_locking_accumulator<double, 3>();
+#define FINUFFT_DEFINE_STANDARD_ACCUMULATE_FACTORY_IMPLEMENTATIONS(fn)                             \
+    FINUFFT_DEFINE_ACCUMULATE_FACTORY_IMPLEMENTATIONS(fn, float, 1)                                \
+    FINUFFT_DEFINE_ACCUMULATE_FACTORY_IMPLEMENTATIONS(fn, float, 2)                                \
+    FINUFFT_DEFINE_ACCUMULATE_FACTORY_IMPLEMENTATIONS(fn, float, 3)                                \
+    FINUFFT_DEFINE_ACCUMULATE_FACTORY_IMPLEMENTATIONS(fn, double, 1)                               \
+    FINUFFT_DEFINE_ACCUMULATE_FACTORY_IMPLEMENTATIONS(fn, double, 2)                               \
+    FINUFFT_DEFINE_ACCUMULATE_FACTORY_IMPLEMENTATIONS(fn, double, 3)
 
+FINUFFT_DEFINE_STANDARD_ACCUMULATE_FACTORY_IMPLEMENTATIONS(get_reference_locking_accumulator)
+FINUFFT_DEFINE_STANDARD_ACCUMULATE_FACTORY_IMPLEMENTATIONS(get_reference_block_locking_accumulator)
+FINUFFT_DEFINE_STANDARD_ACCUMULATE_FACTORY_IMPLEMENTATIONS(get_reference_singlethreaded_accumulator)
 
-template SynchronizedAccumulateFactory<float, 1> get_reference_block_locking_accumulator<float, 1>();
-template SynchronizedAccumulateFactory<float, 2> get_reference_block_locking_accumulator<float, 2>();
-template SynchronizedAccumulateFactory<float, 3> get_reference_block_locking_accumulator<float, 3>();
+#undef FINUFFT_DEFINE_STANDARD_ACCUMULATE_FACTORY_IMPLEMENTATIONS
+#undef FINUFFT_DEFINE_ACCUMULATE_FACTORY_IMPLEMENTATIONS
 
-template SynchronizedAccumulateFactory<double, 1> get_reference_block_locking_accumulator<double, 1>();
-template SynchronizedAccumulateFactory<double, 2> get_reference_block_locking_accumulator<double, 2>();
-template SynchronizedAccumulateFactory<double, 3> get_reference_block_locking_accumulator<double, 3>();
-
-}
+} // namespace spreading
 } // namespace finufft

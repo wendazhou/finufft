@@ -387,8 +387,6 @@ struct SpreadSubproblemPolynomialReference {
     std::size_t kernel_width_;
     PolynomialBatch<T, Width, Degree> kernel_polynomial_;
 
-    SpreadSubproblemPolynomialReference(SpreadSubproblemPolynomialReference &&) = default;
-
     template <std::size_t Dim>
     void operator()(
         nu_point_collection<Dim, typename identity<T>::type const> const &input,

@@ -89,7 +89,7 @@ endfunction()
 # Utility function to set finufft compilation options.
 function(set_finufft_options target)
     set_property(TARGET ${target} PROPERTY POSITION_INDEPENDENT_CODE ON)
-    set_property(TARGET ${target} PROPERTY CMAKE_CXX_STANDARD 14)
+    set_property(TARGET ${target} PROPERTY CXX_STANDARD 14)
     enable_asan(${target})
 
     target_compile_options(${target} PRIVATE SHELL:$<$<CONFIG:Release,RelWithDebInfo>:${FINUFFT_ARCH_FLAGS}>)

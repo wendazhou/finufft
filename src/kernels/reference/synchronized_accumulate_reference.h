@@ -251,5 +251,14 @@ SynchronizedAccumulateFactory<T, Dim> get_reference_locking_accumulator() {
         });
 }
 
+extern template SynchronizedAccumulateFactory<float, 1> get_reference_locking_accumulator<float, 1>();
+extern template SynchronizedAccumulateFactory<float, 2> get_reference_locking_accumulator<float, 2>();
+extern template SynchronizedAccumulateFactory<float, 3> get_reference_locking_accumulator<float, 3>();
+
+extern template SynchronizedAccumulateFactory<double, 1> get_reference_locking_accumulator<double, 1>();
+extern template SynchronizedAccumulateFactory<double, 2> get_reference_locking_accumulator<double, 2>();
+extern template SynchronizedAccumulateFactory<double, 3> get_reference_locking_accumulator<double, 3>();
+
+
 } // namespace spreading
 } // namespace finufft

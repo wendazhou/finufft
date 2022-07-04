@@ -1,6 +1,6 @@
 #include "spread_avx512.h"
 
-#include "../legacy/synchronized_accumulate_legacy.h"
+#include "../reference/synchronized_accumulate_reference.h"
 #include "gather_fold_avx512.h"
 
 #include <finufft_spread_opts.h>
@@ -15,7 +15,7 @@ get_spread_configuration_avx512(finufft_spread_opts const &opts) {
         opts.pirange ? FoldRescaleRange::Pi : FoldRescaleRange::Identity};
     auto spread_supbroblem =
         get_subproblem_polynomial_avx512_functor<T, Dim>({opts.ES_beta, opts.nspread});
-    auto accumulate_subgrid_factory = get_legacy_atomic_accumulator<T, Dim>();
+    auto accumulate_subgrid_factory = get_reference_block_locking_accumulator<T, Dim>();
 
     return SpreadFunctorConfiguration<T, Dim>{
         std::move(gather_rescale),

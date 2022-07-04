@@ -33,8 +33,8 @@ inline void spread(
     IdxT const *sort_indices, nu_point_collection<Dim, T const> const &input,
     std::array<std::int64_t, Dim> const &sizes, T *output, const finufft_spread_opts &opts) {
 
-    auto config = get_spread_configuration_legacy<T, Dim>(opts);
-    // auto config = get_spread_configuration_avx512<T, Dim>(opts);
+    //auto config = get_spread_configuration_legacy<T, Dim>(opts);
+    auto config = get_spread_configuration_avx512<T, Dim>(opts);
 
     spread_with_configuration<Dim, T>(sort_indices, input, sizes, output, opts, config);
 }

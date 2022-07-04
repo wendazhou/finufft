@@ -1,9 +1,11 @@
 #pragma once
 
 #include <array>
+#include <cassert>
 #include <memory>
 #include <mutex>
 
+#include "../../mutex_array.h"
 #include "../../spreading.h"
 
 #include <tcb/span.hpp>
@@ -157,6 +159,84 @@ struct WrappedSubgridAccumulator {
 
 } // namespace detail
 
+/** Contiguous accumulator based on a blocked locking system.
+ * This accumulator views the target as a number of contiguous blocks,
+ * and arranges for mutual exclusion for each one of those blocks:
+ * - only a single thread can process a block at a time
+ * - multiple threads can process different blocks at the same time
+ *
+ * This enables the adaptation of a standard contiguous accumulator
+ * into one which suppots multithreaded reduction in an efficient manner.
+ *
+ */
+template <typename T, typename ContiguousAccumulate> class BlockLockingContiguousAccumulateAdapter {
+    ContiguousAccumulate const &accumulate_; ///< The underlying contiguous accumulator.
+    MutexArray const &mutexes_; ///< Array of mutexes to control access to each block.
+    std::size_t block_size_; ///< Size of each block (must be a power of 2).
+
+    /** Helper function to lock the mutex for a given block starting at the output index.
+     * 
+     */
+    std::lock_guard<MutexArray::mutex_type> lock_block(std::size_t output_index) const {
+        // TODO: change division to bitwise operation as block_size_ is a power of 2.
+        auto block_index = output_index / block_size_;
+        return std::lock_guard<MutexArray::mutex_type>(mutexes_[block_index]);
+    }
+
+  public:
+    BlockLockingContiguousAccumulateAdapter(
+        ContiguousAccumulate const &accumulate, MutexArray const &mutexes, std::size_t block_size)
+        : accumulate_(accumulate), mutexes_(mutexes), block_size_(block_size) {
+        // block size must be a power of 2
+        assert(finufft::detail::has_single_bit(block_size));
+    }
+
+    void operator()(
+        std::size_t input_offset, std::size_t output_offset, std::size_t total_length) const {
+        // Work with signed length so that we can easily detect going past 0.
+        std::int64_t length = total_length;
+
+        // Process first (partial block), bring into alignment
+        if (output_offset & (block_size_ - 1)) {
+            // Offset of the block containing the first element
+            auto block_offset = output_offset & ~(block_size_ - 1);
+            // Remaining length in this block from starting offset to end of block
+            // Potentially not reaching end of block if length is too short
+            auto block_length =
+                std::min<std::size_t>(length, block_size_ - (output_offset - block_offset));
+
+            {
+                auto lock = lock_block(block_offset);
+                accumulate_(input_offset, output_offset, block_length);
+            }
+
+            input_offset += block_length;
+            output_offset += block_length;
+            length -= block_length;
+        }
+
+        // From here on, the output_offset is aligned to the block size.
+
+        // Process aligned full blocks
+        while (length > 0) {
+            auto &block_mutex = mutexes_[output_offset / block_size_];
+
+            {
+                auto lock = lock_block(output_offset);
+                // Note: potential adjustment for last block which is not a full block.
+                accumulate_(
+                    input_offset,
+                    output_offset,
+                    std::min(block_size_, static_cast<std::size_t>(length)));
+            }
+
+            length -= block_size_;
+            input_offset += block_size_;
+            output_offset += block_size_;
+        }
+    }
+};
+
 template <typename T, std::size_t Dim> struct NonSynchronizedAccumulateWrappedSubgridReference {
     /** Non thread-safe generic reference implementation for wrapped add subgrid.
      *
@@ -186,6 +266,56 @@ template <typename T, std::size_t Dim> struct NonSynchronizedAccumulateWrappedSu
         detail::WrappedSubgridAccumulator<T, Dim, detail::SimpleContiguousAccumulate<T, 2>>{
             contiguous_accumulate}(
             0, grid.offsets, grid.extents, strides_input, 0, sizes, strides_output);
+    }
+};
+
+template <typename T, std::size_t Dim> struct BlockSynchronizedAccumulateWrappedSubgridReference {
+    typedef detail::SimpleContiguousAccumulate<T, 2> BaseAccumulate;
+    typedef BlockLockingContiguousAccumulateAdapter<T, BaseAccumulate> LockedAccumulate;
+
+    // Use 4kb (one page) blocks for now
+    static const std::size_t block_size_bytes = 4096;
+    static const std::size_t block_size = block_size_bytes / (2 * sizeof(T));
+
+    T *output_;
+    std::array<std::size_t, Dim> sizes_;
+    MutexArray mutexes_;
+
+    static const std::size_t compute_num_blocks(tcb::span<const std::size_t, Dim> sizes) {
+        auto total_size =
+            std::reduce(sizes.begin(), sizes.end(), std::size_t{1}, std::multiplies{});
+        return (total_size + block_size - 1) / block_size;
+    }
+
+    BlockSynchronizedAccumulateWrappedSubgridReference(
+        T *output, std::array<std::size_t, Dim> const &sizes)
+        : output_(output), sizes_(sizes), mutexes_(compute_num_blocks(sizes)) {}
+
+    void operator()(T const *input, grid_specification<Dim> const &grid) const noexcept {
+        std::array<std::size_t, Dim> strides_output;
+        {
+            strides_output[0] = 1;
+            for (std::size_t i = 1; i < Dim; ++i) {
+                strides_output[i] = strides_output[i - 1] * sizes_[i - 1];
+            }
+        }
+
+        std::array<std::size_t, Dim> strides_input;
+        {
+            strides_input[0] = 1;
+            for (std::size_t i = 1; i < Dim; ++i) {
+                strides_input[i] = strides_input[i - 1] * grid.extents[i - 1];
+            }
+        }
+
+        // Note: accumulating complex interleaved data, so using packsize = 2
+        typedef detail::SimpleContiguousAccumulate<T, 2> BaseAccumulate;
+        typedef BlockLockingContiguousAccumulateAdapter<T, BaseAccumulate> LockedAccumulate;
+
+        BaseAccumulate base_accumulate{input, output_};
+        LockedAccumulate locked_accumulate{base_accumulate, mutexes_, block_size};
+        detail::WrappedSubgridAccumulator<T, Dim, LockedAccumulate>{locked_accumulate}(
+            0, grid.offsets, grid.extents, strides_input, 0, sizes_, strides_output);
     }
 };
 
@@ -243,22 +373,48 @@ template <typename T, std::size_t Dim>
 SynchronizedAccumulateFactory<T, Dim> get_reference_locking_accumulator() {
     return make_lambda_synchronized_accumulate_factory<T, Dim>(
         [](T *output, std::array<std::size_t, Dim> const &sizes) {
-            return SynchronizedAccumulateFunctor<T, Dim>(
-                GlobalLockedSynchronizedAccumulate<
-                    T,
-                    Dim,
-                    NonSynchronizedAccumulateWrappedSubgridReference<T, Dim>>(output, sizes));
+            return GlobalLockedSynchronizedAccumulate<
+                T,
+                Dim,
+                NonSynchronizedAccumulateWrappedSubgridReference<T, Dim>>(output, sizes);
         });
 }
 
-extern template SynchronizedAccumulateFactory<float, 1> get_reference_locking_accumulator<float, 1>();
-extern template SynchronizedAccumulateFactory<float, 2> get_reference_locking_accumulator<float, 2>();
-extern template SynchronizedAccumulateFactory<float, 3> get_reference_locking_accumulator<float, 3>();
+template <typename T, std::size_t Dim>
+SynchronizedAccumulateFactory<T, Dim> get_reference_block_locking_accumulator() {
+    return make_lambda_synchronized_accumulate_factory<T, Dim>(
+        [](T *output, std::array<std::size_t, Dim> const &sizes) {
+            return BlockSynchronizedAccumulateWrappedSubgridReference<T, Dim>(output, sizes);
+        });
+}
 
-extern template SynchronizedAccumulateFactory<double, 1> get_reference_locking_accumulator<double, 1>();
-extern template SynchronizedAccumulateFactory<double, 2> get_reference_locking_accumulator<double, 2>();
-extern template SynchronizedAccumulateFactory<double, 3> get_reference_locking_accumulator<double, 3>();
+extern template SynchronizedAccumulateFactory<float, 1>
+get_reference_locking_accumulator<float, 1>();
+extern template SynchronizedAccumulateFactory<float, 2>
+get_reference_locking_accumulator<float, 2>();
+extern template SynchronizedAccumulateFactory<float, 3>
+get_reference_locking_accumulator<float, 3>();
 
+extern template SynchronizedAccumulateFactory<double, 1>
+get_reference_locking_accumulator<double, 1>();
+extern template SynchronizedAccumulateFactory<double, 2>
+get_reference_locking_accumulator<double, 2>();
+extern template SynchronizedAccumulateFactory<double, 3>
+get_reference_locking_accumulator<double, 3>();
+
+extern template SynchronizedAccumulateFactory<float, 1>
+get_reference_block_locking_accumulator<float, 1>();
+extern template SynchronizedAccumulateFactory<float, 2>
+get_reference_block_locking_accumulator<float, 2>();
+extern template SynchronizedAccumulateFactory<float, 3>
+get_reference_block_locking_accumulator<float, 3>();
+
+extern template SynchronizedAccumulateFactory<double, 1>
+get_reference_block_locking_accumulator<double, 1>();
+extern template SynchronizedAccumulateFactory<double, 2>
+get_reference_block_locking_accumulator<double, 2>();
+extern template SynchronizedAccumulateFactory<double, 3>
+get_reference_block_locking_accumulator<double, 3>();
 
 } // namespace spreading
 } // namespace finufft

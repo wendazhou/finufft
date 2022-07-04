@@ -92,7 +92,14 @@ struct ReferenceImplementation {
     }
 };
 
-using ImplementationTypes = ::testing::Types<LegacyImplementation, ReferenceImplementation>;
+struct ReferenceBlockLockingImplementation {
+    template <typename T, std::size_t Dim>
+    finufft::spreading::SynchronizedAccumulateFactory<T, Dim> make() const {
+        return finufft::spreading::get_reference_block_locking_accumulator<T, Dim>();
+    }
+};
+
+using ImplementationTypes = ::testing::Types<LegacyImplementation, ReferenceImplementation, ReferenceBlockLockingImplementation>;
 
 } // namespace
 

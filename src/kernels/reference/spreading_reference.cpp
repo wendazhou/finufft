@@ -34,9 +34,10 @@ get_spread_configuration_reference(finufft_spread_opts const &opts) {
     kernel_specification kernel_spec{opts.ES_beta, opts.nspread};
     auto spread_subproblem = get_subproblem_polynomial_reference_functor<T, Dim>(kernel_spec);
 
-    // Note: no reference implementation for accumulate yet, using
-    // legacy implementation for now.
-    auto accumulate_subgrid_factory = get_reference_locking_accumulator<T, Dim>();
+    // Use block locking accumulator.
+    // Locking overhead should be minimal when number of threads is low, so
+    // don't bother special casing a non-synchronized version for single-threaded problem.
+    auto accumulate_subgrid_factory = get_reference_block_locking_accumulator<T, Dim>();
 
     return SpreadFunctorConfiguration<T, Dim>{
         std::move(gather_rescale),

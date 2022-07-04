@@ -239,6 +239,11 @@ template <typename T, std::size_t Dim> class SpreadSubproblemFunctor {
  *
  * In order to initialize a reduction for a new target buffer, see the
  * `SynchronizedAccumulateFactory` trait.
+ * 
+ * The parameters of the function are expected as follows:
+ * - T const* input: The input data to the accumulation.
+ * - grid_specification<Dim> const &grid: The grid specification specifying the logical
+ *      location of the input data with respect to the target buffer.
  *
  */
 template <typename T, std::size_t Dim>
@@ -251,48 +256,15 @@ using SynchronizedAccumulateFunctor =
  * accumulation strategy into a target buffer of the given size.
  * This is used to implement the final step of the spreading process where
  * the data is accumulated into the target buffer.
+ * 
+ * The paramaters of the function are expected as follows:
+ * - T* target: The target buffer to accumulate into.
+ * - std::array<std::size_t, Dim> const& size: The size of the target buffer in each dimension.
  *
  */
-template <typename T, std::size_t Dim> class SynchronizedAccumulateFactory {
-  public:
-    struct Concept {
-        virtual ~Concept() = default;
-        virtual SynchronizedAccumulateFunctor<T, Dim>
-        operator()(T *output, std::array<std::size_t, Dim> const &sizes) const = 0;
-    };
-
-    template <typename Impl> class Model : public Concept {
-      private:
-        Impl impl_;
-
-      public:
-        Model(Impl &&impl) : impl_(std::move(impl)) {}
-        virtual SynchronizedAccumulateFunctor<T, Dim>
-        operator()(T *output, std::array<std::size_t, Dim> const &sizes) const override {
-            return impl_(output, sizes);
-        }
-    };
-
-  private:
-    std::unique_ptr<Concept> impl_;
-
-  public:
-    template <typename Impl>
-    SynchronizedAccumulateFactory(Impl &&impl)
-        : impl_(std::make_unique<Model<Impl>>(std::forward<Impl>(impl))) {}
-
-    /** Create a new accumulation setup targeting the given buffer.
-     *
-     * @param[out] output The target buffer to accumulate into.
-     *     Must have size 2 times the product of the sizes.
-     * @param sizes The size of the target buffer.
-     *
-     */
-    SynchronizedAccumulateFunctor<T, Dim>
-    operator()(T *output, std::array<std::size_t, Dim> const &sizes) const {
-        return impl_->operator()(output, sizes);
-    }
-};
+template <typename T, std::size_t Dim>
+using SynchronizedAccumulateFactory = 
+    fu2::unique_function<SynchronizedAccumulateFunctor<T, Dim>(T*, std::array<std::size_t, Dim> const&) const>;
 
 /** Enum representing the range of the input data.
  *

@@ -321,20 +321,20 @@ using SpreadProcessor = fu2::unique_function<void(
 /** This function represents a strategy to obtain an indirect sort
  * of the given points according to their bin index. The parameters
  * are expected as follows:
- * 
+ *
  * - int64_t* sort_index: an array of size num_points, which will be
  *      filled with a permutation representing the indirect sort at
  *      the end of the function.
  * - std::size_t num_points: The number of points to sort
  * - std::array<T const*, Dim> coordinates: The coordinates of the points to sort
- * - std::array<T, Dim> bin_sizes: The fractional size of each bin in each dimension
- *      (the fractional size is the size interpreted as a fraction of [0, 1]).
+ * - std::array<T, Dim> extents: The virtual size of the target after rescaling
+ * - std::array<T, Dim> bin_sizes: The bin size in each coordinate (in units after rescaling)
  * - FoldRescaleRange input_range: The range of the input data.
- * 
+ *
  */
 template <typename T, std::size_t Dim>
 using BinSortFunctor = fu2::unique_function<void(
-    int64_t *, std::size_t, std::array<T const *, Dim> const &,
+    int64_t *, std::size_t, std::array<T const *, Dim> const &, std::array<T, Dim> const &,
     std::array<T, Dim> const &, FoldRescaleRange) const>;
 
 /** This structure represents the output information of the spreading operation.

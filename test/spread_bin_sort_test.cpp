@@ -14,20 +14,22 @@ namespace {
 template <typename T, std::size_t Dim>
 std::vector<int64_t> compute_bin(
     finufft::spreading::nu_point_collection<Dim, T const> const &points,
-    int64_t const *sort_indices, std::array<T, Dim> const &bin_sizes) {
+    int64_t const *sort_indices, std::array<int64_t, Dim> const &sizes,
+    std::array<T, Dim> const &bin_sizes) {
 
     finufft::spreading::SpreaderMemoryInput<Dim, T> points_folded(points.num_points);
     finufft::spreading::nu_point_collection<Dim, const T> points_folded_view = points_folded;
-
-    std::array<int64_t, Dim> sizes;
-    sizes.fill(1);
 
     finufft::spreading::gather_and_fold(
         points_folded, points, sizes, sort_indices, finufft::spreading::FoldRescaleRange::Pi);
 
     std::vector<int64_t> bin_index(points.num_points);
+
+    std::array<T, Dim> extents;
+    std::copy(sizes.begin(), sizes.end(), extents.begin());
+
     finufft::spreading::compute_bin_index(
-        bin_index.data(), points.num_points, points_folded_view.coordinates, bin_sizes);
+        bin_index.data(), points.num_points, points_folded_view.coordinates, extents, bin_sizes);
 
     return bin_index;
 }
@@ -40,17 +42,24 @@ void test_binsort_implementation(
 
     auto output = finufft::allocate_aligned_array<int64_t>(points.num_points, 64);
 
+    std::array<int64_t, Dim> sizes;
+    sizes.fill(256);
+
+    std::array<T, Dim> extents;
+    std::copy(sizes.begin(), sizes.end(), extents.begin());
+
     std::array<T, Dim> bin_sizes;
-    bin_sizes.fill(0.1);
+    bin_sizes.fill(16);
 
     functor(
         output.get(),
         points.num_points,
         points_view.coordinates,
+        extents,
         bin_sizes,
         finufft::spreading::FoldRescaleRange::Pi);
 
-    auto bin_index = compute_bin(points_view, output.get(), bin_sizes);
+    auto bin_index = compute_bin(points_view, output.get(), sizes, bin_sizes);
 
     ASSERT_TRUE(std::is_sorted(bin_index.begin(), bin_index.end()));
 }

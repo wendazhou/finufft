@@ -17,14 +17,18 @@ void benchmark_binsort(
 
     auto output = finufft::allocate_aligned_array<int64_t>(points.num_points, 64);
 
+    std::array<T, Dim> extents;
+    extents.fill(256);
+
     std::array<T, Dim> bin_sizes;
-    bin_sizes.fill(1. / num_bins);
+    bin_sizes.fill(16);
 
     for (auto _ : state) {
         functor(
             output.get(),
             points.num_points,
             points_view.coordinates,
+            extents,
             bin_sizes,
             finufft::spreading::FoldRescaleRange::Pi);
     }

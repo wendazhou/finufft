@@ -1,3 +1,19 @@
+/** @file
+ * 
+ * Vectorized implementation of bin-sorting.
+ * 
+ * This file provides a vectorized implementation of bin-sorting.
+ * It makes use of google/highway to enable portable intrinsics.
+ * 
+ * The implementation is separated into two parts (+ fixup):
+ * - a bin index computation, which performs a first part to compute
+ *   aggregated bin and point index packed into a 64-bit integer.
+ * - a sort, which sorts all points according to the bin index.
+ * - a fixup, where the high bits of the index are masked to recover
+ *   the point index.
+ *
+ */
+
 #include <array>
 #include <cstring>
 #include <limits>
@@ -27,9 +43,6 @@ void compute_bin_index_impl(
     int64_t *index, std::size_t num_points, std::array<float const *, Dim> const &coordinates,
     std::array<float, Dim> const &extents, std::array<float, Dim> const &bin_sizes,
     FoldRescale &&fold_rescale) {
-
-    // Zero memory
-    std::memset(index, 0, sizeof(int64_t) * num_points);
 
     // Pre-compute information
     std::array<std::size_t, Dim> num_bins;
@@ -94,6 +107,8 @@ void compute_bin_index_impl(
             index_even = hn::Add(index_even, hn::Set(di64, 1));
             index_odd = hn::Add(index_odd, hn::Set(di64, 1));
 
+            // Note: OK to store not in order, since we're going to sort in any case.
+            // Our store order here unpacks even and odd elements by group.
             hn::Store(bin_index_even, di64, reinterpret_cast<uint64_t *>(index) + i);
             hn::Store(
                 bin_index_even, di64, reinterpret_cast<uint64_t *>(index) + i + hn::Lanes(di64));
@@ -119,9 +134,6 @@ void compute_bin_index_impl(
     int64_t *index, std::size_t num_points, std::array<double const *, Dim> const &coordinates,
     std::array<double, Dim> const &extents, std::array<double, Dim> const &bin_sizes,
     FoldRescale &&fold_rescale) {
-
-    // Zero memory
-    std::memset(index, 0, sizeof(int64_t) * num_points);
 
     // Pre-compute information
     std::array<std::size_t, Dim> num_bins;
@@ -191,6 +203,13 @@ void compute_bin_index_impl(
     }
 }
 
+/** Implementation of bin index computation.
+ * 
+ * This function packs a bin index and the original index
+ * into a 64-bit integer, with the bin index being placed
+ * in the high bits and the original index in the low bits.
+ * 
+ */
 template <typename T, std::size_t Dim>
 void compute_bin_index(
     int64_t *index, std::size_t num_points, std::array<T const *, Dim> const &coordinates,
@@ -211,9 +230,16 @@ void bin_sort(
     std::array<T, Dim> const &extents, std::array<T, Dim> const &bin_sizes,
     FoldRescaleRange input_range) {
 
+    // Zero memory
+    std::memset(index, 0, sizeof(int64_t) * num_points);
+
+    // Step 1: compute bin-original index pairs in index.
     compute_bin_index(index, num_points, coordinates, extents, bin_sizes, input_range);
+
+    // Step 2: directly sort the bin-original index pairs.
     hwy::Sorter{}(index, num_points, hwy::SortAscending{});
 
+    // Step 3: fixup the index by masking out the index.
     std::size_t point_bits = bit_width(num_points);
     auto mask = (size_t(1) << point_bits) - 1;
 

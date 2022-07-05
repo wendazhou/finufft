@@ -2,8 +2,9 @@
 
 #include "../src/kernels/avx2/gather_fold_avx2.h"
 #include "../src/kernels/avx512/gather_fold_avx512.h"
-#include "../src/kernels/reference/gather_fold_reference.h"
 #include "../src/kernels/dispatch.h"
+#include "../src/kernels/hwy/gather_fold_hwy.h"
+#include "../src/kernels/reference/gather_fold_reference.h"
 
 #include <random>
 #include <tuple>
@@ -63,6 +64,8 @@ MAKE_INVOKE_FUNCTOR(
 MAKE_INVOKE_FUNCTOR(
     GatherFoldAVX512Fn, finufft::spreading::gather_and_fold_avx512,
     finufft::DispatchCapability::AVX512)
+MAKE_INVOKE_FUNCTOR(
+    GatherFoldHwyFn, finufft::spreading::gather_and_fold_hwy, finufft::DispatchCapability::Scalar)
 
 // clang-format off
 typedef ::testing::Types<
@@ -80,7 +83,10 @@ typedef ::testing::Types<
     std::tuple<std::integral_constant<std::size_t, 3>, double, GatherFoldAVX512Fn>,
     std::tuple<std::integral_constant<std::size_t, 1>, float, GatherFoldAVX2Fn>,
     std::tuple<std::integral_constant<std::size_t, 2>, float, GatherFoldAVX2Fn>,
-    std::tuple<std::integral_constant<std::size_t, 3>, float, GatherFoldAVX2Fn>
+    std::tuple<std::integral_constant<std::size_t, 3>, float, GatherFoldAVX2Fn>,
+    std::tuple<std::integral_constant<std::size_t, 1>, float, GatherFoldHwyFn>,
+    std::tuple<std::integral_constant<std::size_t, 2>, float, GatherFoldHwyFn>,
+    std::tuple<std::integral_constant<std::size_t, 3>, float, GatherFoldHwyFn>
 >
     GatherRescaleTestsParameters;
 // clang-format on
@@ -107,8 +113,8 @@ TYPED_TEST_P(GatherRescaleFixture, GatherRescaleIdentity) {
 
     auto range = finufft::spreading::FoldRescaleRange::Identity;
 
-    auto result =
-        run_spreader<Dim, FloatingType>(num_gather_points, points, permutation.get(), range, FnType{});
+    auto result = run_spreader<Dim, FloatingType>(
+        num_gather_points, points, permutation.get(), range, FnType{});
     auto result_expected = run_spreader<Dim, FloatingType>(
         num_gather_points,
         points,
@@ -131,12 +137,12 @@ TYPED_TEST_P(GatherRescaleFixture, GatherRescaleIdentity) {
             result_expected.coordinates[i] + result_expected.num_points,
             result_expected_vector.begin());
 
-        EXPECT_EQ(result_vector, result_expected_vector);
+        ASSERT_EQ(result_vector, result_expected_vector);
     }
 
     for (std::size_t i = 0; i < result.num_points; ++i) {
-        EXPECT_EQ(result.strengths[2 * i], result_expected.strengths[2 * i]) << "i = " << i;
-        EXPECT_EQ(result.strengths[2 * i + 1], result_expected.strengths[2 * i + 1]) << "i = " << i;
+        ASSERT_EQ(result.strengths[2 * i], result_expected.strengths[2 * i]) << "i = " << i;
+        ASSERT_EQ(result.strengths[2 * i + 1], result_expected.strengths[2 * i + 1]) << "i = " << i;
     }
 }
 
@@ -154,8 +160,8 @@ TYPED_TEST_P(GatherRescaleFixture, GatherRescalePi) {
 
     auto range = finufft::spreading::FoldRescaleRange::Pi;
 
-    auto result =
-        run_spreader<Dim, FloatingType>(num_gather_points, points, permutation.get(), range, FnType{});
+    auto result = run_spreader<Dim, FloatingType>(
+        num_gather_points, points, permutation.get(), range, FnType{});
     auto result_expected = run_spreader<Dim, FloatingType>(
         num_gather_points,
         points,
@@ -183,8 +189,8 @@ TYPED_TEST_P(GatherRescaleFixture, GatherRescalePi) {
     }
 
     for (std::size_t i = 0; i < result.num_points; ++i) {
-        EXPECT_EQ(result.strengths[2 * i], result_expected.strengths[2 * i]);
-        EXPECT_EQ(result.strengths[2 * i + 1], result_expected.strengths[2 * i + 1]);
+        ASSERT_EQ(result.strengths[2 * i], result_expected.strengths[2 * i]) << "i = " << i;
+        ASSERT_EQ(result.strengths[2 * i + 1], result_expected.strengths[2 * i + 1]) << "i = " << i;
     }
 }
 

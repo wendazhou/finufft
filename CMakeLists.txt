@@ -26,6 +26,18 @@ FetchContent_Declare(
 )
 
 
+FetchContent_Declare(
+    highway
+    GIT_REPOSITORY https://github.com/google/highway.git 
+    GIT_TAG 32754dc13d8be3cb272f029d135f36fbaea1e491)
+
+# Function to create a new scope in order to set variables
+set (HWY_ENABLE_INSTALL OFF)
+set (HWY_ENABLE_EXAMPLES OFF)
+set (BUILD_TESTING OFF)
+FetchContent_MakeAvailable(highway)
+set (BUILD_TESTING ON)
+
 set(FINUFFT_ARCH_FLAGS "-march=native" CACHE STRING "Compiler flags for specifying target architecture.")
 set(FINUFFT_FFTW_SUFFIX "OpenMP" CACHE STRING "Suffix for FFTW libraries (e.g. OpenMP, Threads etc.)")
 set(FINUFFT_BUILD_EXAMPLES "OFF" CACHE BOOL "Whether to build the FINUFFT examples")
@@ -108,6 +120,8 @@ function(set_finufft_options target)
             target_compile_options(${target} PRIVATE "-Wno-unknown-pragmas")
         endif()
     endif()
+
+    target_link_libraries(${target} PUBLIC hwy hwy_contrib)
 endfunction()
 
 # Main finufft libraries
@@ -173,7 +187,11 @@ add_finufft_kernel(finufft_avx512
         src/kernels/avx512/spread_3d_avx512_impl.cpp
     FLAGS -mavx512f -mavx512vl -mavx512dq)
 add_finufft_kernel(finufft_avx2 SOURCES src/kernels/avx2/gather_fold_avx2.cpp FLAGS -mavx -mavx2 -mfma)
-
+add_finufft_kernel(finufft_hwy
+    SOURCES
+        src/kernels/hwy/gather_fold_hwy_impl.cpp
+        src/kernels/hwy/spread_bin_sort_hwy_impl.cpp)
+target_include_directories(finufft_hwy PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/src/kernels/hwy")
 
 # Add tests defined in their own directory
 if(BUILD_TESTING AND FINUFFT_BUILD_TESTS)

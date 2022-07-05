@@ -2,6 +2,7 @@
 
 #include "../src/kernels/avx2/gather_fold_avx2.h"
 #include "../src/kernels/avx512/gather_fold_avx512.h"
+#include "../src/kernels/hwy/gather_fold_hwy.h"
 #include "../src/kernels/reference/gather_fold_reference.h"
 #include "../src/kernels/dispatch.h"
 #include "../test/spread_test_utils.h"
@@ -59,6 +60,10 @@ template <std::size_t Dim, typename T> void gather_rescale_avx512(benchmark::Sta
     gather_rescale_impl<Dim, T>(state, finufft::spreading::gather_and_fold_avx512);
 }
 
+template <std::size_t Dim, typename T> void gather_rescale_hwy(benchmark::State &state) {
+    gather_rescale_impl<Dim, T>(state, &finufft::spreading::gather_and_fold_hwy<T, Dim>);
+}
+
 } // namespace
 
 BENCHMARK(gather_rescale_reference<1, float>)->RangeMultiplier(16)->Range(2 << 12, 2 << 18);
@@ -72,6 +77,10 @@ BENCHMARK(gather_rescale_avx2<3, float>)->RangeMultiplier(16)->Range(2 << 12, 2 
 BENCHMARK(gather_rescale_avx512<1, float>)->RangeMultiplier(16)->Range(2 << 12, 2 << 18);
 BENCHMARK(gather_rescale_avx512<2, float>)->RangeMultiplier(16)->Range(2 << 12, 2 << 18);
 BENCHMARK(gather_rescale_avx512<3, float>)->RangeMultiplier(16)->Range(2 << 12, 2 << 18);
+
+BENCHMARK(gather_rescale_hwy<1, float>)->RangeMultiplier(16)->Range(2 << 12, 2 << 18);
+BENCHMARK(gather_rescale_hwy<2, float>)->RangeMultiplier(16)->Range(2 << 12, 2 << 18);
+BENCHMARK(gather_rescale_hwy<3, float>)->RangeMultiplier(16)->Range(2 << 12, 2 << 18);
 
 BENCHMARK(gather_rescale_reference<1, double>)->RangeMultiplier(16)->Range(2 << 12, 2 << 18);
 BENCHMARK(gather_rescale_reference<2, double>)->RangeMultiplier(16)->Range(2 << 12, 2 << 18);

@@ -9,7 +9,6 @@
 #include "../../spreading.h"
 
 #include "gather_fold_reference.h"
-#include "pdqsort.h"
 
 namespace finufft {
 namespace spreading {
@@ -100,8 +99,7 @@ void bin_sort_reference_impl(
     }
 
     // Sort values
-    // std::sort(index, index + num_points);
-    pdqsort_branchless(index, index + num_points);
+    std::sort(index, index + num_points);
 
     // Mask indices to only retain index and not bin
     // Note: in principle would be more efficient to move this responsibility to the reader

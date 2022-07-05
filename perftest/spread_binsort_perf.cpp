@@ -1,6 +1,7 @@
 #include <benchmark/benchmark.h>
 
 #include "../src/kernels/legacy/spread_bin_sort_legacy.h"
+#include "../src/kernels/reference/spread_bin_sort_reference.h"
 #include "../src/spreading.h"
 
 #include "../test/spread_test_utils.h"
@@ -36,12 +37,23 @@ void benchmark_binsort(
     state.SetItemsProcessed(state.iterations() * points.num_points);
 }
 
-template<typename T, std::size_t Dim>
-void benchmark_binsort_legacy(benchmark::State &state) {
+template <typename T, std::size_t Dim> void benchmark_binsort_legacy(benchmark::State &state) {
     benchmark_binsort(state, finufft::spreading::get_bin_sort_functor_legacy<T, Dim>());
 }
 
+template <typename T, std::size_t Dim> void benchmark_binsort_reference(benchmark::State &state) {
+    benchmark_binsort(state, finufft::spreading::get_bin_sort_functor_reference<T, Dim>());
 }
+
+} // namespace
+
+BENCHMARK(benchmark_binsort_reference<float, 1>)->Args({1 << 20, 256})->Unit(benchmark::kMillisecond);
+BENCHMARK(benchmark_binsort_reference<float, 2>)->Args({1 << 20, 256})->Unit(benchmark::kMillisecond);
+BENCHMARK(benchmark_binsort_reference<float, 3>)->Args({1 << 20, 256})->Unit(benchmark::kMillisecond);
+
+BENCHMARK(benchmark_binsort_reference<double, 1>)->Args({1 << 20, 256})->Unit(benchmark::kMillisecond);
+BENCHMARK(benchmark_binsort_reference<double, 2>)->Args({1 << 20, 256})->Unit(benchmark::kMillisecond);
+BENCHMARK(benchmark_binsort_reference<double, 3>)->Args({1 << 20, 256})->Unit(benchmark::kMillisecond);
 
 BENCHMARK(benchmark_binsort_legacy<float, 1>)->Args({1 << 20, 256})->Unit(benchmark::kMillisecond);
 BENCHMARK(benchmark_binsort_legacy<float, 2>)->Args({1 << 20, 256})->Unit(benchmark::kMillisecond);

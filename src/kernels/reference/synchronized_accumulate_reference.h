@@ -190,7 +190,7 @@ template <typename T, typename ContiguousAccumulate> class BlockLockingContiguou
         ContiguousAccumulate const &accumulate, MutexArray const &mutexes, std::size_t block_size)
         : accumulate_(accumulate), mutexes_(mutexes), block_size_(block_size) {
         // block size must be a power of 2
-        assert(finufft::detail::has_single_bit(block_size));
+        assert(finufft::has_single_bit(block_size));
     }
 
     void operator()(

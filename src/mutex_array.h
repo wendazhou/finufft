@@ -6,41 +6,9 @@
 #include <mutex>
 #include <thread>
 
-#ifdef __cpp_lib_int_pow2
-#include <bit>
-#endif
+#include "bit.h"
 
 namespace finufft {
-namespace detail {
-
-inline std::size_t get_next_power_of_two(std::size_t n) noexcept {
-#ifdef __cpp_lib_int_pow2
-    return std::bit_ceil(n);
-#else
-    n--;
-    n |= n >> 1;
-    n |= n >> 2;
-    n |= n >> 4;
-    n |= n >> 8;
-    n |= n >> 16;
-    if (sizeof(std::size_t) == 8) {
-        n |= n >> 32;
-    }
-
-    return n + 1;
-#endif
-}
-
-template <typename T> bool has_single_bit(T x) noexcept {
-#ifdef __cpp_lib_int_pow2
-    return std::has_single_bit(x);
-#else
-    return x != 0 && (x & (x - 1)) == 0;
-#endif
-}
-
-} // namespace detail
-
 
 #ifdef __cpp_lib_atomic_wait
 
@@ -110,12 +78,12 @@ class MutexArray {
   public:
 
     static std::size_t compute_size(std::size_t num_elements) {
-        auto max_mutexes = detail::get_next_power_of_two(8 * std::thread::hardware_concurrency());
+        auto max_mutexes = bit_ceil(8 * std::thread::hardware_concurrency());
 
         if (num_elements > max_mutexes) {
             return max_mutexes;
         } else {
-            return detail::get_next_power_of_two(num_elements);
+            return bit_ceil(num_elements);
         }
     }
 

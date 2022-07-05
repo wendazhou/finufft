@@ -1,3 +1,4 @@
+#include <gmock/gmock.h>
 #include <gtest/gtest.h>
 
 #include <vector>
@@ -41,6 +42,7 @@ void test_binsort_implementation(
     finufft::spreading::nu_point_collection<Dim, const T> points_view = points;
 
     auto output = finufft::allocate_aligned_array<int64_t>(points.num_points, 64);
+    auto output_ptr = output.get();
 
     std::array<int64_t, Dim> sizes;
     sizes.fill(256);
@@ -59,8 +61,15 @@ void test_binsort_implementation(
         bin_sizes,
         finufft::spreading::FoldRescaleRange::Pi);
 
-    auto bin_index = compute_bin(points_view, output.get(), sizes, bin_sizes);
+    // Check that we did indeed get a permutation as output
+    std::vector<int64_t> indices(output.get(), output.get() + points.num_points);
+    std::sort(indices.begin(), indices.end());
+    std::vector<int64_t> iota(points.num_points);
+    std::iota(iota.begin(), iota.end(), static_cast<int64_t>(0));
+    ASSERT_EQ(indices, iota);
 
+    // Check that the bin index is in sorted order
+    auto bin_index = compute_bin(points_view, output.get(), sizes, bin_sizes);
     ASSERT_TRUE(std::is_sorted(bin_index.begin(), bin_index.end()));
 }
 
@@ -72,34 +81,40 @@ struct LegacyImplementation {
     }
 };
 
-using ImplementationTypes = ::testing::Types<LegacyImplementation>;
+struct ReferenceImplementation {
+    template <typename T, std::size_t Dim> finufft::spreading::BinSortFunctor<T, Dim> make() const {
+        return finufft::spreading::get_bin_sort_functor_reference<T, Dim>();
+    }
+};
+
+using ImplementationTypes = ::testing::Types<LegacyImplementation, ReferenceImplementation>;
 
 } // namespace
 
 TYPED_TEST_SUITE_P(SpreadBinSortTest);
 
 TYPED_TEST_P(SpreadBinSortTest, Test1DF32) {
-    test_binsort_implementation(100, TypeParam{}.template make<float, 1>());
+    test_binsort_implementation(10, TypeParam{}.template make<float, 1>());
 }
 
 TYPED_TEST_P(SpreadBinSortTest, Test2DF32) {
-    test_binsort_implementation(100, TypeParam{}.template make<float, 2>());
+    test_binsort_implementation(10, TypeParam{}.template make<float, 2>());
 }
 
 TYPED_TEST_P(SpreadBinSortTest, Test3DF32) {
-    test_binsort_implementation(100, TypeParam{}.template make<float, 3>());
+    test_binsort_implementation(10, TypeParam{}.template make<float, 3>());
 }
 
 TYPED_TEST_P(SpreadBinSortTest, Test1DF64) {
-    test_binsort_implementation(100, TypeParam{}.template make<double, 1>());
+    test_binsort_implementation(10, TypeParam{}.template make<double, 1>());
 }
 
 TYPED_TEST_P(SpreadBinSortTest, Test2DF64) {
-    test_binsort_implementation(100, TypeParam{}.template make<double, 2>());
+    test_binsort_implementation(10, TypeParam{}.template make<double, 2>());
 }
 
 TYPED_TEST_P(SpreadBinSortTest, Test3DF64) {
-    test_binsort_implementation(100, TypeParam{}.template make<double, 3>());
+    test_binsort_implementation(10, TypeParam{}.template make<double, 3>());
 }
 
 REGISTER_TYPED_TEST_SUITE_P(

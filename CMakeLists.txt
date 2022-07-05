@@ -128,6 +128,7 @@ add_library(finufft_obj OBJECT
     src/precomputed_poly_kernel_data_helper.cpp
     src/kernels/dispatch.cpp
     src/kernels/legacy/spread_legacy.cpp
+    src/kernels/reference/spread_bin_sort_reference.cpp
     src/kernels/reference/spreading_reference.cpp
     src/kernels/reference/synchronized_accumulate_reference.cpp)
 set_finufft_options(finufft_obj)

@@ -75,6 +75,18 @@ void test_binsort_implementation(
     ASSERT_TRUE(std::is_sorted(bin_index.begin(), bin_index.end()));
 }
 
+template <typename T, std::size_t Dim>
+void test_binsort_implementation(finufft::spreading::BinSortFunctor<T, Dim> const &functor) {
+    {
+        SCOPED_TRACE("num_points = 10");
+        test_binsort_implementation(10, functor);
+    }
+    {
+        SCOPED_TRACE("num_points = 100");
+        test_binsort_implementation(100, functor);
+    }
+}
+
 template <typename T> class SpreadBinSortTest : public ::testing::Test {};
 
 struct LegacyImplementation {
@@ -102,27 +114,27 @@ using ImplementationTypes = ::testing::Types<LegacyImplementation, ReferenceImpl
 TYPED_TEST_SUITE_P(SpreadBinSortTest);
 
 TYPED_TEST_P(SpreadBinSortTest, Test1DF32) {
-    test_binsort_implementation(10, TypeParam{}.template make<float, 1>());
+    test_binsort_implementation(TypeParam{}.template make<float, 1>());
 }
 
 TYPED_TEST_P(SpreadBinSortTest, Test2DF32) {
-    test_binsort_implementation(10, TypeParam{}.template make<float, 2>());
+    test_binsort_implementation(TypeParam{}.template make<float, 2>());
 }
 
 TYPED_TEST_P(SpreadBinSortTest, Test3DF32) {
-    test_binsort_implementation(10, TypeParam{}.template make<float, 3>());
+    test_binsort_implementation(TypeParam{}.template make<float, 3>());
 }
 
 TYPED_TEST_P(SpreadBinSortTest, Test1DF64) {
-    test_binsort_implementation(10, TypeParam{}.template make<double, 1>());
+    test_binsort_implementation(TypeParam{}.template make<double, 1>());
 }
 
 TYPED_TEST_P(SpreadBinSortTest, Test2DF64) {
-    test_binsort_implementation(10, TypeParam{}.template make<double, 2>());
+    test_binsort_implementation(TypeParam{}.template make<double, 2>());
 }
 
 TYPED_TEST_P(SpreadBinSortTest, Test3DF64) {
-    test_binsort_implementation(10, TypeParam{}.template make<double, 3>());
+    test_binsort_implementation(TypeParam{}.template make<double, 3>());
 }
 
 REGISTER_TYPED_TEST_SUITE_P(

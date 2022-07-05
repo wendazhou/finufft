@@ -104,14 +104,14 @@ void compute_bin_index_impl(
             bin_index_even = hn::Add(bin_index_even, index_even);
             bin_index_odd = hn::Add(bin_index_odd, index_odd);
 
-            index_even = hn::Add(index_even, hn::Set(di64, 1));
-            index_odd = hn::Add(index_odd, hn::Set(di64, 1));
+            index_even = hn::Add(index_even, hn::Set(di64, N));
+            index_odd = hn::Add(index_odd, hn::Set(di64, N));
 
             // Note: OK to store not in order, since we're going to sort in any case.
             // Our store order here unpacks even and odd elements by group.
             hn::Store(bin_index_even, di64, reinterpret_cast<uint64_t *>(index) + i);
             hn::Store(
-                bin_index_even, di64, reinterpret_cast<uint64_t *>(index) + i + hn::Lanes(di64));
+                bin_index_odd, di64, reinterpret_cast<uint64_t *>(index) + i + hn::Lanes(di64));
         }
     }
     {
@@ -185,7 +185,7 @@ void compute_bin_index_impl(
 
             hn::Store(bin_index, di64, reinterpret_cast<uint64_t *>(index) + i);
 
-            i_v = hn::Add(i_v, hn::Set(di64, 1));
+            i_v = hn::Add(i_v, hn::Set(di64, N));
         }
     }
     {

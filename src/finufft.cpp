@@ -17,6 +17,8 @@
 #include <vector>
 #include "../contrib/legendre_rule_fast.h"
 
+#include "spreading.h"
+
 using namespace std;
 using namespace finufft;
 using namespace finufft::utils;
@@ -764,7 +766,7 @@ int FINUFFT_SETPTS(FINUFFT_PLAN p, BIGINT nj, FLT* xj, FLT* yj, FLT* zj,
       return ier;    
     timer.restart();
     free(p->sortIndices); // free previously set sortIndices, if any
-    p->sortIndices = (BIGINT *)malloc(sizeof(BIGINT)*p->nj);
+    p->sortIndices = (BIGINT *)aligned_alloc(64, finufft::spreading::round_to_next_multiple(sizeof(BIGINT)*p->nj, 64));
     if (!p->sortIndices) {
       fprintf(stderr,"[%s] failed to allocate sortIndices!\n",__func__);
       return ERR_SPREAD_ALLOC;
@@ -919,7 +921,7 @@ int FINUFFT_SETPTS(FINUFFT_PLAN p, BIGINT nj, FLT* xj, FLT* yj, FLT* zj,
 
     // Set up sort for spreading Cp (from primed NU src pts X, Y, Z) to fw...
     timer.restart();
-    p->sortIndices = (BIGINT *)malloc(sizeof(BIGINT)*p->nj);
+    p->sortIndices = (BIGINT *)aligned_alloc(64, finufft::spreading::round_to_next_multiple(sizeof(BIGINT)*p->nj, 64));
     if (!p->sortIndices) {
       fprintf(stderr,"[%s t3] failed to allocate sortIndices!\n",__func__);
       return ERR_SPREAD_ALLOC;

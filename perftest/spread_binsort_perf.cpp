@@ -52,16 +52,22 @@ template <typename T, std::size_t Dim> void benchmark_binsort_highway(benchmark:
 
 } // namespace
 
-#define MAKE_BENCHMARKS(fn, type) \
-    BENCHMARK(fn<type, 1>) \
-        ->Args({1 << 20, 256}) \
-        ->Unit(benchmark::kMillisecond); \
-    BENCHMARK(fn<type, 2>) \
-        ->Args({1 << 20, 256}) \
-        ->Unit(benchmark::kMillisecond); \
-    BENCHMARK(fn<type, 3>) \
-        ->Args({1 << 20, 256}) \
-        ->Unit(benchmark::kMillisecond); \
+#define MAKE_BENCHMARKS(fn, type)                                                                  \
+    BENCHMARK(fn<type, 1>)                                                                         \
+        ->Args({1 << 20, 256})                                                                     \
+        ->Args({1 << 24, 256})                                                                     \
+        ->UseRealTime()                                                                            \
+        ->Unit(benchmark::kMillisecond);                                                           \
+    BENCHMARK(fn<type, 2>)                                                                         \
+        ->Args({1 << 20, 256})                                                                     \
+        ->Args({1 << 24, 256})                                                                     \
+        ->UseRealTime()                                                                            \
+        ->Unit(benchmark::kMillisecond);                                                           \
+    BENCHMARK(fn<type, 3>)                                                                         \
+        ->Args({1 << 20, 256})                                                                     \
+        ->Args({1 << 24, 256})                                                                     \
+        ->UseRealTime()                                                                            \
+        ->Unit(benchmark::kMillisecond);
 
 MAKE_BENCHMARKS(benchmark_binsort_highway, float)
 MAKE_BENCHMARKS(benchmark_binsort_reference, float)

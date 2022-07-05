@@ -15,12 +15,13 @@
 #undef FINUFFT_SET_MATH_DEFINES
 #endif
 
-#include "hwy/highway.h"
 #include "../reference/gather_fold_reference.h"
+#include "hwy/highway.h"
 
 HWY_BEFORE_NAMESPACE();
 namespace finufft {
 namespace spreading {
+namespace highway {
 namespace HWY_NAMESPACE {
 
 namespace hn = hwy::HWY_NAMESPACE;
@@ -56,6 +57,7 @@ template <typename T> struct FoldRescaleIdentity : finufft::spreading::FoldResca
 };
 
 } // namespace HWY_NAMESPACE
+} // namespace hwy
 } // namespace spreading
 } // namespace finufft
 

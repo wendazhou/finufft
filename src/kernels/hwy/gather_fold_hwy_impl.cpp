@@ -1,6 +1,13 @@
 #include <limits>
 #include <stdexcept>
 
+/** @file
+ *
+ * Implementation of gather-fold in highway for all vectorization types.
+ * TODO: implement the function for double precision inputs.
+ *
+ */
+
 #include "../../spreading.h"
 
 #undef HWY_TARGET_INCLUDE
@@ -13,8 +20,10 @@
 HWY_BEFORE_NAMESPACE();
 namespace finufft {
 namespace spreading {
+namespace highway {
 namespace HWY_NAMESPACE {
 
+namespace hn = ::hwy::HWY_NAMESPACE;
 template <typename T, std::size_t Dim> struct GatherFoldImplLoop;
 
 template <std::size_t Dim, typename RescaleFn>
@@ -103,6 +112,7 @@ INSTANTIATE_GATHER_AND_FOLD(float, 3)
 #undef INSTANTIATE_GATHER_AND_FOLD
 
 } // namespace HWY_NAMESPACE
+} // namespace highway
 } // namespace spreading
 } // namespace finufft
 HWY_AFTER_NAMESPACE();
@@ -111,6 +121,7 @@ HWY_AFTER_NAMESPACE();
 
 namespace finufft {
 namespace spreading {
+namespace highway {
 
 template <typename T, std::size_t Dim>
 void gather_and_fold_hwy(
@@ -135,6 +146,7 @@ EXPORT_GATHER_AND_FOLD(float, 1)
 EXPORT_GATHER_AND_FOLD(float, 2)
 EXPORT_GATHER_AND_FOLD(float, 3)
 
+} // namespace highway
 } // namespace spreading
 } // namespace finufft
 

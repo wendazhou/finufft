@@ -4,6 +4,7 @@
 #include <vector>
 
 #include "../src/kernels/legacy/spread_bin_sort_legacy.h"
+#include "../src/kernels/hwy/spread_bin_sort_hwy.h"
 #include "../src/kernels/reference/gather_fold_reference.h"
 #include "../src/kernels/reference/spread_bin_sort_reference.h"
 #include "../src/memory.h"
@@ -41,7 +42,8 @@ void test_binsort_implementation(
     auto points = make_random_point_collection<Dim, T>(num_points, 0, {-3 * M_PI, 3 * M_PI});
     finufft::spreading::nu_point_collection<Dim, const T> points_view = points;
 
-    auto output = finufft::allocate_aligned_array<int64_t>(points.num_points, 64);
+    auto output = finufft::allocate_aligned_array<int64_t>(
+        finufft::spreading::round_to_next_multiple(points.num_points, 64 / sizeof(int64_t)), 64);
     auto output_ptr = output.get();
 
     std::array<int64_t, Dim> sizes;
@@ -87,7 +89,13 @@ struct ReferenceImplementation {
     }
 };
 
-using ImplementationTypes = ::testing::Types<LegacyImplementation, ReferenceImplementation>;
+struct HighwayImplementation {
+    template <typename T, std::size_t Dim> finufft::spreading::BinSortFunctor<T, Dim> make() const {
+        return finufft::spreading::highway::get_bin_sort_functor<T, Dim>();
+    }
+};
+
+using ImplementationTypes = ::testing::Types<LegacyImplementation, ReferenceImplementation, HighwayImplementation>;
 
 } // namespace
 

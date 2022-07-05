@@ -61,7 +61,7 @@ template <std::size_t Dim, typename T> void gather_rescale_avx512(benchmark::Sta
 }
 
 template <std::size_t Dim, typename T> void gather_rescale_hwy(benchmark::State &state) {
-    gather_rescale_impl<Dim, T>(state, &finufft::spreading::gather_and_fold_hwy<T, Dim>);
+    gather_rescale_impl<Dim, T>(state, &finufft::spreading::highway::gather_and_fold_hwy<T, Dim>);
 }
 
 } // namespace

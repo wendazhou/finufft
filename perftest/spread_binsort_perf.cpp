@@ -1,5 +1,6 @@
 #include <benchmark/benchmark.h>
 
+#include "../src/kernels/hwy/spread_bin_sort_hwy.h"
 #include "../src/kernels/legacy/spread_bin_sort_legacy.h"
 #include "../src/kernels/reference/spread_bin_sort_reference.h"
 #include "../src/spreading.h"
@@ -45,20 +46,29 @@ template <typename T, std::size_t Dim> void benchmark_binsort_reference(benchmar
     benchmark_binsort(state, finufft::spreading::get_bin_sort_functor_reference<T, Dim>());
 }
 
+template <typename T, std::size_t Dim> void benchmark_binsort_highway(benchmark::State &state) {
+    benchmark_binsort(state, finufft::spreading::highway::get_bin_sort_functor<T, Dim>());
+}
+
 } // namespace
 
-BENCHMARK(benchmark_binsort_reference<float, 1>)->Args({1 << 20, 256})->Unit(benchmark::kMillisecond);
-BENCHMARK(benchmark_binsort_reference<float, 2>)->Args({1 << 20, 256})->Unit(benchmark::kMillisecond);
-BENCHMARK(benchmark_binsort_reference<float, 3>)->Args({1 << 20, 256})->Unit(benchmark::kMillisecond);
+#define MAKE_BENCHMARKS(fn, type) \
+    BENCHMARK(fn<type, 1>) \
+        ->Args({1 << 20, 256}) \
+        ->Unit(benchmark::kMillisecond); \
+    BENCHMARK(fn<type, 2>) \
+        ->Args({1 << 20, 256}) \
+        ->Unit(benchmark::kMillisecond); \
+    BENCHMARK(fn<type, 3>) \
+        ->Args({1 << 20, 256}) \
+        ->Unit(benchmark::kMillisecond); \
 
-BENCHMARK(benchmark_binsort_reference<double, 1>)->Args({1 << 20, 256})->Unit(benchmark::kMillisecond);
-BENCHMARK(benchmark_binsort_reference<double, 2>)->Args({1 << 20, 256})->Unit(benchmark::kMillisecond);
-BENCHMARK(benchmark_binsort_reference<double, 3>)->Args({1 << 20, 256})->Unit(benchmark::kMillisecond);
+MAKE_BENCHMARKS(benchmark_binsort_highway, float)
+MAKE_BENCHMARKS(benchmark_binsort_reference, float)
+MAKE_BENCHMARKS(benchmark_binsort_legacy, float)
 
-BENCHMARK(benchmark_binsort_legacy<float, 1>)->Args({1 << 20, 256})->Unit(benchmark::kMillisecond);
-BENCHMARK(benchmark_binsort_legacy<float, 2>)->Args({1 << 20, 256})->Unit(benchmark::kMillisecond);
-BENCHMARK(benchmark_binsort_legacy<float, 3>)->Args({1 << 20, 256})->Unit(benchmark::kMillisecond);
+MAKE_BENCHMARKS(benchmark_binsort_highway, double)
+MAKE_BENCHMARKS(benchmark_binsort_reference, double)
+MAKE_BENCHMARKS(benchmark_binsort_legacy, double)
 
-BENCHMARK(benchmark_binsort_legacy<double, 1>)->Args({1 << 20, 256})->Unit(benchmark::kMillisecond);
-BENCHMARK(benchmark_binsort_legacy<double, 2>)->Args({1 << 20, 256})->Unit(benchmark::kMillisecond);
-BENCHMARK(benchmark_binsort_legacy<double, 3>)->Args({1 << 20, 256})->Unit(benchmark::kMillisecond);
+#undef MAKE_BENCHMARKS

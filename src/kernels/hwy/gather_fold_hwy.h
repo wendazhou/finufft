@@ -4,6 +4,7 @@
 
 namespace finufft {
 namespace spreading {
+namespace highway {
 
 template <typename T, std::size_t Dim>
 void gather_and_fold_hwy(
@@ -28,5 +29,6 @@ template <typename T, std::size_t Dim> GatherRescaleFunctor<T, Dim> get_gather_r
     return &gather_and_fold_hwy<T, Dim>;
 }
 
+} // namespace hwy
 } // namespace spreading
 } // namespace finufft

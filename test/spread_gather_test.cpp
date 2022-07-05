@@ -65,7 +65,7 @@ MAKE_INVOKE_FUNCTOR(
     GatherFoldAVX512Fn, finufft::spreading::gather_and_fold_avx512,
     finufft::DispatchCapability::AVX512)
 MAKE_INVOKE_FUNCTOR(
-    GatherFoldHwyFn, finufft::spreading::gather_and_fold_hwy, finufft::DispatchCapability::Scalar)
+    GatherFoldHwyFn, finufft::spreading::highway::gather_and_fold_hwy, finufft::DispatchCapability::Scalar)
 
 // clang-format off
 typedef ::testing::Types<

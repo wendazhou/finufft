@@ -40,34 +40,51 @@ namespace HWY_NAMESPACE {
 
 namespace hn = ::hwy::HWY_NAMESPACE;
 
+/** Basic structure which keeps track of useful
+ * information about the bin structure for sorting.
+ *
+ */
+template <typename T, std::size_t Dim> struct BinInfo {
+    BinInfo(
+        std::size_t num_points, std::array<T, Dim> const &extents,
+        std::array<T, Dim> const &bin_sizes)
+        : extents(extents) {
+        for (std::size_t i = 0; i < Dim; ++i) {
+            num_bins[i] = static_cast<std::size_t>(extents[i] / bin_sizes[i]) + 1;
+            bin_scaling[i] = static_cast<T>(1.0 / bin_sizes[i]);
+        }
+
+        bin_stride[0] = 1;
+        for (std::size_t i = 1; i < Dim; ++i) {
+            bin_stride[i] = bin_stride[i - 1] * num_bins[i - 1];
+        }
+
+        bin_key_shift = bit_width(num_points);
+
+        if (bit_width(num_bins_total()) + bit_width(num_points) > 64) {
+            throw std::runtime_error("Too many bins to sort");
+        }
+    }
+
+    std::array<std::size_t, Dim> num_bins;
+    std::array<T, Dim> bin_scaling;
+    std::array<std::size_t, Dim> bin_stride;
+    std::array<T, Dim> const &extents;
+    std::size_t bin_key_shift;
+
+    std::size_t num_bins_total() const {
+        std::size_t total = 1;
+        for (std::size_t i = 0; i < Dim; ++i) {
+            total *= num_bins[i];
+        }
+        return total;
+    }
+};
+
 template <std::size_t Dim, typename FoldRescale>
 void compute_bin_index_impl(
     int64_t *index, std::size_t num_points, std::array<float const *, Dim> const &coordinates,
-    std::array<float, Dim> const &extents, std::array<float, Dim> const &bin_sizes,
-    FoldRescale &&fold_rescale) {
-
-    // Pre-compute information
-    std::array<std::size_t, Dim> num_bins;
-    std::array<float, Dim> bin_scaling;
-
-    for (std::size_t i = 0; i < Dim; ++i) {
-        num_bins[i] = static_cast<std::size_t>(extents[i] / bin_sizes[i]) + 1;
-        bin_scaling[i] = static_cast<float>(1. / bin_sizes[i]);
-    }
-
-    std::array<std::size_t, Dim> stride;
-    stride[0] = 1;
-    for (std::size_t i = 1; i < Dim; ++i) {
-        stride[i] = stride[i - 1] * num_bins[i - 1];
-    }
-
-    std::size_t bins_total = stride[Dim - 1] * num_bins[Dim - 1];
-
-    if (bit_width(bins_total) + bit_width(num_points) > 64) {
-        throw std::runtime_error("Too many bins to sort");
-    }
-
-    std::size_t points_bits = bit_width(num_points);
+    BinInfo<float, Dim> const &info, FoldRescale &&fold_rescale) {
 
     // Set up for main loop
     std::size_t i = 0;
@@ -88,20 +105,23 @@ void compute_bin_index_impl(
             auto bin_index_odd = hn::Zero(di64);
 
             for (std::size_t dim = 0; dim < Dim; ++dim) {
-                auto folded = fold_rescale(hn::LoadU(d, coordinates[dim] + i), extents[dim], d);
-                auto bin_floating = hn::Mul(folded, hn::Set(d, bin_scaling[dim]));
+                auto folded =
+                    fold_rescale(hn::LoadU(d, coordinates[dim] + i), info.extents[dim], d);
+                auto bin_floating = hn::Mul(folded, hn::Set(d, info.bin_scaling[dim]));
                 auto bin_int = hn::BitCast(di, hn::ConvertTo(di_s, bin_floating));
 
-                auto bin_index_even_dim = hn::MulEven(bin_int, hn::Set(di, stride[dim]));
+                auto bin_index_even_dim = hn::MulEven(bin_int, hn::Set(di, info.bin_stride[dim]));
                 auto bin_index_odd_dim =
-                    hn::MulEven(hn::Reverse2(di, bin_int), hn::Set(di, stride[dim]));
+                    hn::MulEven(hn::Reverse2(di, bin_int), hn::Set(di, info.bin_stride[dim]));
 
                 bin_index_even = hn::Add(bin_index_even, bin_index_even_dim);
                 bin_index_odd = hn::Add(bin_index_odd, bin_index_odd_dim);
             }
 
-            bin_index_even = hn::ShiftLeftSame(bin_index_even, static_cast<int>(points_bits));
-            bin_index_odd = hn::ShiftLeftSame(bin_index_odd, static_cast<int>(points_bits));
+            bin_index_even =
+                hn::ShiftLeftSame(bin_index_even, static_cast<int>(info.bin_key_shift));
+            bin_index_odd =
+                hn::ShiftLeftSame(bin_index_odd, static_cast<int>(info.bin_key_shift));
 
             bin_index_even = hn::Add(bin_index_even, index_even);
             bin_index_odd = hn::Add(bin_index_odd, index_odd);
@@ -122,11 +142,11 @@ void compute_bin_index_impl(
             std::size_t bin_index = 0;
             for (std::size_t j = 0; j < Dim; ++j) {
                 auto bin_index_j = static_cast<std::size_t>(
-                    fold_rescale(coordinates[j][i], extents[j]) * bin_scaling[j]);
-                bin_index += bin_index_j * stride[j];
+                    fold_rescale(coordinates[j][i], info.extents[j]) * info.bin_scaling[j]);
+                bin_index += bin_index_j * info.bin_stride[j];
             }
 
-            index[i] = (bin_index << points_bits) + i;
+            index[i] = (bin_index << info.bin_key_shift) + i;
         }
     }
 }
@@ -134,31 +154,7 @@ void compute_bin_index_impl(
 template <std::size_t Dim, typename FoldRescale>
 void compute_bin_index_impl(
     int64_t *index, std::size_t num_points, std::array<double const *, Dim> const &coordinates,
-    std::array<double, Dim> const &extents, std::array<double, Dim> const &bin_sizes,
-    FoldRescale &&fold_rescale) {
-
-    // Pre-compute information
-    std::array<std::size_t, Dim> num_bins;
-    std::array<double, Dim> bin_scaling;
-
-    for (std::size_t i = 0; i < Dim; ++i) {
-        num_bins[i] = static_cast<std::size_t>(extents[i] / bin_sizes[i]) + 1;
-        bin_scaling[i] = static_cast<double>(1. / bin_sizes[i]);
-    }
-
-    std::array<std::size_t, Dim> stride;
-    stride[0] = 1;
-    for (std::size_t i = 1; i < Dim; ++i) {
-        stride[i] = stride[i - 1] * num_bins[i - 1];
-    }
-
-    std::size_t bins_total = stride[Dim - 1] * num_bins[Dim - 1];
-
-    if (bit_width(bins_total) + bit_width(num_points) > 64) {
-        throw std::runtime_error("Too many bins to sort");
-    }
-
-    std::size_t points_bits = bit_width(num_points);
+    BinInfo<double, Dim> const &info, FoldRescale &&fold_rescale) {
 
     // Set up for main loop
     std::size_t i = 0;
@@ -175,14 +171,16 @@ void compute_bin_index_impl(
             auto bin_index = hn::Zero(di64);
 
             for (std::size_t dim = 0; dim < Dim; ++dim) {
-                auto folded = fold_rescale(hn::LoadU(d, coordinates[dim] + i), extents[dim], d);
-                auto bin_floating = hn::Mul(folded, hn::Set(d, bin_scaling[dim]));
+                auto folded =
+                    fold_rescale(hn::LoadU(d, coordinates[dim] + i), info.extents[dim], d);
+                auto bin_floating = hn::Mul(folded, hn::Set(d, info.bin_scaling[dim]));
 
                 auto bin_int = hn::BitCast(di, hn::ConvertTo(di64_s, bin_floating));
-                bin_index = hn::Add(bin_index, hn::MulEven(bin_int, hn::Set(di, stride[dim])));
+                bin_index =
+                    hn::Add(bin_index, hn::MulEven(bin_int, hn::Set(di, info.bin_stride[dim])));
             }
 
-            bin_index = hn::ShiftLeftSame(bin_index, static_cast<int>(points_bits));
+            bin_index = hn::ShiftLeftSame(bin_index, static_cast<int>(info.bin_key_shift));
             bin_index = hn::Add(bin_index, i_v);
 
             hn::Store(bin_index, di64, reinterpret_cast<uint64_t *>(index) + i);
@@ -196,11 +194,11 @@ void compute_bin_index_impl(
             std::size_t bin_index = 0;
             for (std::size_t j = 0; j < Dim; ++j) {
                 auto bin_index_j = static_cast<std::size_t>(
-                    fold_rescale(coordinates[j][i], extents[j]) * bin_scaling[j]);
-                bin_index += bin_index_j * stride[j];
+                    fold_rescale(coordinates[j][i], info.extents[j]) * info.bin_scaling[j]);
+                bin_index += bin_index_j * info.bin_stride[j];
             }
 
-            index[i] = (bin_index << points_bits) + i;
+            index[i] = (bin_index << info.bin_key_shift) + i;
         }
     }
 }
@@ -215,14 +213,11 @@ void compute_bin_index_impl(
 template <typename T, std::size_t Dim>
 void compute_bin_index(
     int64_t *index, std::size_t num_points, std::array<T const *, Dim> const &coordinates,
-    std::array<T, Dim> const &extents, std::array<T, Dim> const &bin_sizes,
-    FoldRescaleRange rescale_range) {
+    BinInfo<T, Dim> const &info, FoldRescaleRange rescale_range) {
     if (rescale_range == FoldRescaleRange::Pi) {
-        compute_bin_index_impl(
-            index, num_points, coordinates, extents, bin_sizes, FoldRescalePi<T>{});
+        compute_bin_index_impl(index, num_points, coordinates, info, FoldRescalePi<T>{});
     } else {
-        compute_bin_index_impl(
-            index, num_points, coordinates, extents, bin_sizes, FoldRescaleIdentity<T>{});
+        compute_bin_index_impl(index, num_points, coordinates, info, FoldRescaleIdentity<T>{});
     }
 }
 
@@ -234,6 +229,8 @@ void bin_sort_generic(
 
     ScopedTimerGuard guard(timers.total);
 
+    BinInfo<T, Dim> info(num_points, extents, bin_sizes);
+
     // Zero memory
     {
         ScopedTimerGuard guard(timers.index_zero);
@@ -243,7 +240,7 @@ void bin_sort_generic(
     // Step 1: compute bin-original index pairs in index.
     {
         ScopedTimerGuard guard(timers.bin_index_computation);
-        compute_bin_index(index, num_points, coordinates, extents, bin_sizes, input_range);
+        compute_bin_index(index, num_points, coordinates, info, input_range);
     }
 
     // Step 2: directly sort the bin-original index pairs.

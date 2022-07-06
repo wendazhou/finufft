@@ -22,8 +22,9 @@ class ScopedTimerGuard;
 class Timer {
   public:
     friend class TimerRoot;
-    typedef std::chrono::high_resolution_clock::time_point time_point;
-    typedef std::chrono::high_resolution_clock::duration duration;
+    typedef std::chrono::steady_clock clock_t;
+    typedef clock_t::time_point time_point;
+    typedef clock_t::duration duration;
 
   private:
     TimerRoot *root_;

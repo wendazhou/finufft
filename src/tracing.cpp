@@ -2,13 +2,13 @@
 
 namespace finufft {
 
-void Timer::start() noexcept { start_ = std::chrono::high_resolution_clock::now(); }
+void Timer::start() noexcept { start_ = clock_t::now(); }
 
 Timer::duration Timer::end() noexcept {
     if (!root_) {
         return Timer::duration{0};
     }
-    auto result = std::chrono::high_resolution_clock::now() - start_;
+    auto result = clock_t::now() - start_;
     root_->record(index_, result);
     return result;
 }

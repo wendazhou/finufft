@@ -1,10 +1,10 @@
 /** @file
- * 
+ *
  * Vectorized implementation of bin-sorting.
- * 
+ *
  * This file provides a vectorized implementation of bin-sorting.
  * It makes use of google/highway to enable portable intrinsics.
- * 
+ *
  * The implementation is separated into two parts (+ fixup):
  * - a bin index computation, which performs a first part to compute
  *   aggregated bin and point index packed into a 64-bit integer.
@@ -13,6 +13,8 @@
  *   the point index.
  *
  */
+
+#include "spread_bin_sort_hwy.h"
 
 #include <array>
 #include <cstring>
@@ -204,11 +206,11 @@ void compute_bin_index_impl(
 }
 
 /** Implementation of bin index computation.
- * 
+ *
  * This function packs a bin index and the original index
  * into a 64-bit integer, with the bin index being placed
  * in the high bits and the original index in the low bits.
- * 
+ *
  */
 template <typename T, std::size_t Dim>
 void compute_bin_index(
@@ -225,36 +227,52 @@ void compute_bin_index(
 }
 
 template <typename T, std::size_t Dim>
-void bin_sort(
+void bin_sort_generic(
     int64_t *index, std::size_t num_points, std::array<T const *, Dim> const &coordinates,
     std::array<T, Dim> const &extents, std::array<T, Dim> const &bin_sizes,
-    FoldRescaleRange input_range) {
+    FoldRescaleRange input_range, BinSortTimers &timers) {
+
+    ScopedTimerGuard guard(timers.total);
 
     // Zero memory
-    std::memset(index, 0, sizeof(int64_t) * num_points);
+    {
+        ScopedTimerGuard guard(timers.index_zero);
+        std::memset(index, 0, sizeof(int64_t) * num_points);
+    }
 
     // Step 1: compute bin-original index pairs in index.
-    compute_bin_index(index, num_points, coordinates, extents, bin_sizes, input_range);
+    {
+        ScopedTimerGuard guard(timers.bin_index_computation);
+        compute_bin_index(index, num_points, coordinates, extents, bin_sizes, input_range);
+    }
 
     // Step 2: directly sort the bin-original index pairs.
-    hwy::Sorter{}(index, num_points, hwy::SortAscending{});
+    {
+        ScopedTimerGuard guard(timers.index_sort);
+        hwy::Sorter{}(index, num_points, hwy::SortAscending{});
+        // ips4o::parallel::sort(index, index + num_points);
+    }
 
     // Step 3: fixup the index by masking out the index.
-    std::size_t point_bits = bit_width(num_points);
-    auto mask = (size_t(1) << point_bits) - 1;
-
     {
-        hn::ScalableTag<int64_t> di;
+        ScopedTimerGuard guard(timers.index_fixup);
+        std::size_t point_bits = bit_width(num_points);
+        auto mask = (size_t(1) << point_bits) - 1;
 
-        const auto N = hn::Lanes(di);
-        auto mask_v = hn::Set(di, mask);
+        {
+            hn::ScalableTag<int64_t> di;
 
-        // Note: rely on alignment and padding of underlying array here.
-        for (std::size_t i = 0; i < num_points; i += N) {
-            auto v = hn::Load(di, index + i);
-            v = hn::And(v, mask_v);
-            hn::Store(v, di, index + i);
+            const auto N = hn::Lanes(di);
+            auto mask_v = hn::Set(di, mask);
+
+            // Note: rely on alignment and padding of underlying array here.
+            for (std::size_t i = 0; i < num_points; i += N) {
+                auto v = hn::Load(di, index + i);
+                v = hn::And(v, mask_v);
+                hn::Store(v, di, index + i);
+            }
         }
+        timers.index_fixup.end();
     }
 }
 
@@ -267,8 +285,10 @@ void bin_sort(
         std::array<type const *, dim> const &coordinates,                                          \
         std::array<type, dim> const &extents,                                                      \
         std::array<type, dim> const &bin_sizes,                                                    \
-        FoldRescaleRange rescale_range) {                                                          \
-        bin_sort<type, dim>(index, num_points, coordinates, extents, bin_sizes, rescale_range);    \
+        FoldRescaleRange rescale_range,                                                            \
+        BinSortTimers &timers) {                                                                   \
+        bin_sort_generic<type, dim>(                                                               \
+            index, num_points, coordinates, extents, bin_sizes, rescale_range, timers);            \
     }
 
 INSTANTIATE_BIN_SORT(float, 1)
@@ -293,12 +313,6 @@ namespace finufft {
 namespace spreading {
 namespace highway {
 
-template <typename T, std::size_t Dim>
-void bin_sort(
-    int64_t *index, std::size_t num_points, std::array<T const *, Dim> const &coordinates,
-    std::array<T, Dim> const &extents, std::array<T, Dim> const &bin_sizes,
-    FoldRescaleRange rescale_range);
-
 #define EXPORT_AND_INSTANTIATE(type, dim)                                                          \
     HWY_EXPORT(BIN_SORT_NAME(type, dim));                                                          \
     template <>                                                                                    \
@@ -308,9 +322,10 @@ void bin_sort(
         std::array<type const *, dim> const &coordinates,                                          \
         std::array<type, dim> const &extents,                                                      \
         std::array<type, dim> const &bin_sizes,                                                    \
-        FoldRescaleRange rescale_range) {                                                          \
+        FoldRescaleRange rescale_range,                                                            \
+        BinSortTimers &timers) {                                                                   \
         HWY_DYNAMIC_DISPATCH(BIN_SORT_NAME(type, dim))                                             \
-        (index, num_points, coordinates, extents, bin_sizes, rescale_range);                       \
+        (index, num_points, coordinates, extents, bin_sizes, rescale_range, timers);               \
     }
 
 EXPORT_AND_INSTANTIATE(float, 1)
@@ -322,6 +337,47 @@ EXPORT_AND_INSTANTIATE(double, 2)
 EXPORT_AND_INSTANTIATE(double, 3)
 
 #undef EXPORT_AND_INSTANTIATE
+
+template <typename T, std::size_t Dim> BinSortFunctor<T, Dim> get_bin_sort_functor(Timer *timer) {
+    return [timers = timer ? BinSortTimers(*timer) : BinSortTimers()](
+               int64_t *index,
+               std::size_t num_points,
+               std::array<T const *, Dim> const &coordinates,
+               std::array<T, Dim> const &extents,
+               std::array<T, Dim> const &bin_sizes,
+               FoldRescaleRange rescale_range) mutable {
+        bin_sort<T, Dim>(index, num_points, coordinates, extents, bin_sizes, rescale_range, timers);
+    };
+}
+
+template <typename T, std::size_t Dim>
+void bin_sort(
+    int64_t *index, std::size_t num_points, std::array<T const *, Dim> const &coordinates,
+    std::array<T, Dim> const &extents, std::array<T, Dim> const &bin_sizes,
+    FoldRescaleRange rescale_range) {
+    BinSortTimers timers;
+    bin_sort(index, num_points, coordinates, extents, bin_sizes, rescale_range, timers);
+}
+
+#define INSTANTIATE_TEMPLATES(T, Dim)                                                              \
+    template void bin_sort<T, Dim>(                                                                \
+        int64_t * index,                                                                           \
+        std::size_t num_points,                                                                    \
+        std::array<T const *, Dim> const &coordinates,                                             \
+        std::array<T, Dim> const &extents,                                                         \
+        std::array<T, Dim> const &bin_sizes,                                                       \
+        FoldRescaleRange rescale_range);                                                           \
+    template BinSortFunctor<T, Dim> get_bin_sort_functor<T, Dim>(Timer * timer = nullptr);
+
+INSTANTIATE_TEMPLATES(float, 1)
+INSTANTIATE_TEMPLATES(float, 2)
+INSTANTIATE_TEMPLATES(float, 3)
+
+INSTANTIATE_TEMPLATES(double, 1)
+INSTANTIATE_TEMPLATES(double, 2)
+INSTANTIATE_TEMPLATES(double, 3)
+
+#undef INSTANTIATE_TEMPLATES
 
 } // namespace highway
 } // namespace spreading

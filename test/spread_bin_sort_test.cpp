@@ -3,8 +3,8 @@
 
 #include <vector>
 
-#include "../src/kernels/legacy/spread_bin_sort_legacy.h"
 #include "../src/kernels/hwy/spread_bin_sort_hwy.h"
+#include "../src/kernels/legacy/spread_bin_sort_legacy.h"
 #include "../src/kernels/reference/gather_fold_reference.h"
 #include "../src/kernels/reference/spread_bin_sort_reference.h"
 #include "../src/memory.h"
@@ -38,7 +38,7 @@ std::vector<int64_t> compute_bin(
 
 template <typename T, std::size_t Dim>
 void test_binsort_implementation(
-    std::size_t num_points, finufft::spreading::BinSortFunctor<T, Dim> const &functor) {
+    std::size_t num_points, finufft::spreading::BinSortFunctor<T, Dim> &functor) {
     auto points = make_random_point_collection<Dim, T>(num_points, 0, {-3 * M_PI, 3 * M_PI});
     finufft::spreading::nu_point_collection<Dim, const T> points_view = points;
 
@@ -76,7 +76,7 @@ void test_binsort_implementation(
 }
 
 template <typename T, std::size_t Dim>
-void test_binsort_implementation(finufft::spreading::BinSortFunctor<T, Dim> const &functor) {
+void test_binsort_implementation(finufft::spreading::BinSortFunctor<T, Dim> &functor) {
     {
         SCOPED_TRACE("num_points = 10");
         test_binsort_implementation(10, functor);
@@ -107,34 +107,41 @@ struct HighwayImplementation {
     }
 };
 
-using ImplementationTypes = ::testing::Types<LegacyImplementation, ReferenceImplementation, HighwayImplementation>;
+using ImplementationTypes =
+    ::testing::Types<LegacyImplementation, ReferenceImplementation, HighwayImplementation>;
 
 } // namespace
 
 TYPED_TEST_SUITE_P(SpreadBinSortTest);
 
 TYPED_TEST_P(SpreadBinSortTest, Test1DF32) {
-    test_binsort_implementation(TypeParam{}.template make<float, 1>());
+    auto functor = TypeParam{}.template make<float, 1>();
+    test_binsort_implementation(functor);
 }
 
 TYPED_TEST_P(SpreadBinSortTest, Test2DF32) {
-    test_binsort_implementation(TypeParam{}.template make<float, 2>());
+    auto functor = TypeParam{}.template make<float, 2>();
+    test_binsort_implementation(functor);
 }
 
 TYPED_TEST_P(SpreadBinSortTest, Test3DF32) {
-    test_binsort_implementation(TypeParam{}.template make<float, 3>());
+    auto functor = TypeParam{}.template make<float, 3>();
+    test_binsort_implementation(functor);
 }
 
 TYPED_TEST_P(SpreadBinSortTest, Test1DF64) {
-    test_binsort_implementation(TypeParam{}.template make<double, 1>());
+    auto functor = TypeParam{}.template make<double, 1>();
+    test_binsort_implementation(functor);
 }
 
 TYPED_TEST_P(SpreadBinSortTest, Test2DF64) {
-    test_binsort_implementation(TypeParam{}.template make<double, 2>());
+    auto functor = TypeParam{}.template make<double, 2>();
+    test_binsort_implementation(functor);
 }
 
 TYPED_TEST_P(SpreadBinSortTest, Test3DF64) {
-    test_binsort_implementation(TypeParam{}.template make<double, 3>());
+    auto functor = TypeParam{}.template make<double, 3>();
+    test_binsort_implementation(functor);
 }
 
 REGISTER_TYPED_TEST_SUITE_P(

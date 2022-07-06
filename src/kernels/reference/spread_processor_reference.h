@@ -1,8 +1,10 @@
 #pragma once
 
 #include <algorithm>
+#include <chrono>
 #include <cstring>
 #include <functional>
+#include <iostream>
 #include <numeric>
 #include <vector>
 
@@ -38,7 +40,8 @@ SubgridData<Dim, T> spread_block_impl(
 
     // Compute subgrid for given set of points.
     auto padding = spread_subproblem.target_padding();
-    auto subgrid = compute_subgrid<Dim, T>(memory.num_points, memory_reference.coordinates, padding);
+    auto subgrid =
+        compute_subgrid<Dim, T>(memory.num_points, memory_reference.coordinates, padding);
     // Round up subgrid extent to required multiple for subproblem implementation.
     auto extent_multiple = spread_subproblem.extent_multiple();
     for (std::size_t i = 0; i < Dim; ++i) {
@@ -83,9 +86,9 @@ struct SingleThreadedProcessor {
         nu_point_collection<Dim, typename identity<T>::type const> const &input,
         int64_t const *sort_index, std::array<int64_t, Dim> const &sizes, T *output) const {
 
-        auto total_size =
-            std::accumulate(sizes.begin(), sizes.end(), static_cast<int64_t>(1), std::multiplies<std::size_t>{});
-        std::memset(output, 0,  2 * total_size * sizeof(T));
+        auto total_size = std::accumulate(
+            sizes.begin(), sizes.end(), static_cast<int64_t>(1), std::multiplies<std::size_t>{});
+        std::memset(output, 0, 2 * total_size * sizeof(T));
 
         auto max_num_threads = static_cast<std::size_t>(1);
 

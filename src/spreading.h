@@ -335,7 +335,7 @@ using SpreadProcessor = fu2::unique_function<void(
 template <typename T, std::size_t Dim>
 using BinSortFunctor = fu2::unique_function<void(
     int64_t *, std::size_t, std::array<T const *, Dim> const &, std::array<T, Dim> const &,
-    std::array<T, Dim> const &, FoldRescaleRange) const>;
+    std::array<T, Dim> const &, FoldRescaleRange)>;
 
 /** This structure represents the output information of the spreading operation.
  *

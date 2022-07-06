@@ -14,6 +14,7 @@
 #include <iostream>
 
 #include "spreading_default.h"
+#include "kernels/hwy/spread_bin_sort_hwy.h"
 
 
 /* local NU coord fold+rescale macro: does the following affine transform to x:
@@ -263,7 +264,7 @@ int indexSort(BIGINT* sort_indices, BIGINT N1, BIGINT N2, BIGINT N3, BIGINT M,
   BIGINT N=N1*N2*N3;            // U grid (periodic box) sizes
   
   // heuristic binning box size for U grid... affects performance:
-  double bin_size_x = 16, bin_size_y = 4, bin_size_z = 4;
+  double bin_size_x = 32, bin_size_y = 16, bin_size_z = 16;
   // put in heuristics based on cache sizes (only useful for single-thread) ?
 
   int better_to_sort = !(ndims==1 && (opts.spread_direction==2 || (M > 1000*N1))); // 1D small-N or dir=2 case: don't sort

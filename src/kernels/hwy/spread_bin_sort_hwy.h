@@ -8,21 +8,32 @@ namespace spreading {
 namespace highway {
 
 /** Sub-timers for highway bin sorting.
+ * 
+ * Note that depending on the number of bins, the bin sort
+ * may choose to use a quick sort or a counting sort strategy,
+ * hence only one set of quicksort* or countsort* timers is used.
  *
  */
 struct BinSortTimers {
     Timer total;
     Timer index_zero;            ///< Time spent setting the input array to zero
     Timer bin_index_computation; ///< Time spent calculating the bin indices
-    Timer index_sort;            ///< Time spent sorting the bin indices
-    Timer index_fixup;           ///< Time spend fixing up the bin indices
+    Timer quicksort_sort;        ///< Time spent sorting the bin indices
+    Timer quicksort_fixup;       ///< Time spent fixing up the bin indices
+    Timer countsort_allocate;    ///< Time spent allocating / zeroing the bin counts
+    Timer countsort_count;       ///< Time spent counting the number of elements in each bin
+    Timer countsort_cumsum;      ///< Time spent computing the cumulative sum of the bin counts
+    Timer countsort_spread;      ///< Time spent spreading the elements in each bin
 
     BinSortTimers() = default;
     BinSortTimers(Timer &base)
         : total(base.make_timer("binsort_highway")), index_zero(total.make_timer("zero")),
           bin_index_computation(total.make_timer("comp_index")),
-          index_sort(total.make_timer("sort")), index_fixup(total.make_timer("fixup")) {
-    }
+          quicksort_sort(total.make_timer("qs/sort")),
+          quicksort_fixup(total.make_timer("qs/fixup")),
+          countsort_count(total.make_timer("cs/count")),
+          countsort_cumsum(total.make_timer("cs/cumsum")),
+          countsort_spread(total.make_timer("cs/spread")) {}
 
     BinSortTimers(BinSortTimers &&) = default;
 };

@@ -120,8 +120,7 @@ void compute_bin_index_impl(
 
             bin_index_even =
                 hn::ShiftLeftSame(bin_index_even, static_cast<int>(info.bin_key_shift));
-            bin_index_odd =
-                hn::ShiftLeftSame(bin_index_odd, static_cast<int>(info.bin_key_shift));
+            bin_index_odd = hn::ShiftLeftSame(bin_index_odd, static_cast<int>(info.bin_key_shift));
 
             bin_index_even = hn::Add(bin_index_even, index_even);
             bin_index_odd = hn::Add(bin_index_odd, index_odd);
@@ -222,6 +221,76 @@ void compute_bin_index(
 }
 
 template <typename T, std::size_t Dim>
+inline void counting_sort_with_fixup(
+    std::size_t num, uint64_t *__restrict values, BinInfo<T, Dim> const &info,
+    BinSortTimers &timers) {
+
+    auto bin_counts_holder = allocate_aligned_array<uint64_t>(info.num_bins_total(), 64);
+    auto bin_counts = bin_counts_holder.get();
+
+    {
+        ScopedTimerGuard guard(timers.countsort_allocate);
+        std::memset(bin_counts, 0, info.num_bins_total() * sizeof(uint64_t));
+    }
+
+    {
+        ScopedTimerGuard guard(timers.countsort_count);
+        for (std::size_t i = 0; i < num; ++i) {
+            auto k = values[i] >> info.bin_key_shift;
+            bin_counts[k]++;
+        }
+    }
+
+    {
+        ScopedTimerGuard guard(timers.countsort_cumsum);
+        std::partial_sum(bin_counts, bin_counts + info.num_bins_total(), bin_counts);
+    }
+
+    {
+        ScopedTimerGuard guard(timers.countsort_spread);
+        auto values_target = allocate_aligned_array<uint64_t>(num, 64);
+
+        for (std::size_t i = num; i >= 1; --i) {
+            auto k = values[i - 1] >> info.bin_key_shift;
+            values_target[--bin_counts[k]] = values[i - 1] << info.bin_key_shift;
+        }
+
+        std::memcpy(values, values_target.get(), num * sizeof(uint64_t));
+    }
+}
+
+template <typename T, std::size_t Dim>
+inline void quicksort_and_fixup(
+    std::size_t num, uint64_t *__restrict index, BinInfo<T, Dim> const &info,
+    BinSortTimers &timers) {
+    // Step 2: Sort the bins
+    {
+        ScopedTimerGuard guard(timers.quicksort_sort);
+        hwy::Sorter{}(index, num, hwy::SortAscending{});
+    }
+
+    // Step 3: fixup the index by masking out the index.
+    {
+        ScopedTimerGuard guard(timers.quicksort_fixup);
+        auto mask = (size_t(1) << info.bin_key_shift) - 1;
+
+        {
+            hn::ScalableTag<uint64_t> di;
+
+            const auto N = hn::Lanes(di);
+            auto mask_v = hn::Set(di, mask);
+
+            // Note: rely on alignment and padding of underlying array here.
+            for (std::size_t i = 0; i < num; i += N) {
+                auto v = hn::Load(di, index + i);
+                v = hn::And(v, mask_v);
+                hn::Store(v, di, index + i);
+            }
+        }
+    }
+}
+
+template <typename T, std::size_t Dim>
 void bin_sort_generic(
     int64_t *index, std::size_t num_points, std::array<T const *, Dim> const &coordinates,
     std::array<T, Dim> const &extents, std::array<T, Dim> const &bin_sizes,
@@ -244,33 +313,8 @@ void bin_sort_generic(
     }
 
     // Step 2: directly sort the bin-original index pairs.
-    {
-        ScopedTimerGuard guard(timers.index_sort);
-        hwy::Sorter{}(index, num_points, hwy::SortAscending{});
-        // ips4o::parallel::sort(index, index + num_points);
-    }
-
-    // Step 3: fixup the index by masking out the index.
-    {
-        ScopedTimerGuard guard(timers.index_fixup);
-        std::size_t point_bits = bit_width(num_points);
-        auto mask = (size_t(1) << point_bits) - 1;
-
-        {
-            hn::ScalableTag<int64_t> di;
-
-            const auto N = hn::Lanes(di);
-            auto mask_v = hn::Set(di, mask);
-
-            // Note: rely on alignment and padding of underlying array here.
-            for (std::size_t i = 0; i < num_points; i += N) {
-                auto v = hn::Load(di, index + i);
-                v = hn::And(v, mask_v);
-                hn::Store(v, di, index + i);
-            }
-        }
-        timers.index_fixup.end();
-    }
+    quicksort_and_fixup(num_points, reinterpret_cast<uint64_t *>(index), info, timers);
+    // counting_sort_with_fixup(num_points, reinterpret_cast<uint64_t *>(index), info, timers);
 }
 
 #define BIN_SORT_NAME(type, dim) bin_sort_##type##_##dim

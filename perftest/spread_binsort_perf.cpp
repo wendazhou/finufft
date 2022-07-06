@@ -60,9 +60,12 @@ template <typename T, std::size_t Dim> void bm_binsort_highway(benchmark::State 
             continue;
         }
 
-        state.counters[std::get<0>(name_and_time)] = benchmark::Counter(
-            std::chrono::duration<double>(std::get<1>(name_and_time)).count(),
-            benchmark::Counter::kIsRate);
+        auto time = std::chrono::duration<double>(std::get<1>(name_and_time)).count();
+        if (time == 0) {
+            continue;
+        }
+
+        state.counters[name] = benchmark::Counter(time / state.iterations());
     }
 }
 

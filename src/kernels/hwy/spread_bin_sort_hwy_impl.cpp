@@ -220,6 +220,13 @@ void compute_bin_index(
     }
 }
 
+/** Uses a counting sort to sort the bin indices.
+ *
+ * The counting sort may be faster (compared to a quicksort) when
+ * the number of bins is small, and when the data fits in cache.
+ * It may potentially be easier to fully parallelize?
+ *
+ */
 template <typename T, std::size_t Dim>
 inline void counting_sort_with_fixup(
     std::size_t num, uint64_t *__restrict values, BinInfo<T, Dim> const &info,
@@ -259,6 +266,13 @@ inline void counting_sort_with_fixup(
     }
 }
 
+/** Uses a standard (quicksort) strategy to sort the bins, then fixes up the
+ * array to only contain indices.
+ *
+ * TODO: integrate a parallel sorter such as ips4o in addition to the vectorized
+ * scalar sorter currently being used.
+ *
+ */
 template <typename T, std::size_t Dim>
 inline void quicksort_and_fixup(
     std::size_t num, uint64_t *__restrict index, BinInfo<T, Dim> const &info,

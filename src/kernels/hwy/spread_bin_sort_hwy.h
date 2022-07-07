@@ -16,7 +16,6 @@ namespace highway {
  */
 struct BinSortTimers {
     Timer total;
-    Timer index_zero;            ///< Time spent setting the input array to zero
     Timer bin_index_computation; ///< Time spent calculating the bin indices
     Timer quicksort_sort;        ///< Time spent sorting the bin indices
     Timer quicksort_fixup;       ///< Time spent fixing up the bin indices
@@ -27,7 +26,7 @@ struct BinSortTimers {
 
     BinSortTimers() = default;
     BinSortTimers(Timer &base)
-        : total(base.make_timer("binsort_highway")), index_zero(total.make_timer("zero")),
+        : total(base.make_timer("binsort_highway")),
           bin_index_computation(total.make_timer("comp_index")),
           quicksort_sort(total.make_timer("qs/sort")),
           quicksort_fixup(total.make_timer("qs/fixup")),

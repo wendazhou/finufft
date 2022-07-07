@@ -30,7 +30,7 @@ std::vector<int64_t> compute_bin(
     std::array<T, Dim> extents;
     std::copy(sizes.begin(), sizes.end(), extents.begin());
 
-    finufft::spreading::compute_bin_index(
+    finufft::spreading::reference::compute_bin_index(
         bin_index.data(), points.num_points, points_folded_view.coordinates, extents, bin_sizes);
 
     return bin_index;
@@ -97,7 +97,7 @@ struct LegacyImplementation {
 
 struct ReferenceImplementation {
     template <typename T, std::size_t Dim> finufft::spreading::BinSortFunctor<T, Dim> make() const {
-        return finufft::spreading::get_bin_sort_functor_reference<T, Dim>();
+        return finufft::spreading::reference::get_bin_sort_functor<T, Dim>();
     }
 };
 

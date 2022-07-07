@@ -12,6 +12,68 @@
 
 namespace finufft {
 namespace spreading {
+namespace reference {
+
+/** Basic structure which keeps track of useful
+ * information about the bin structure for sorting.
+ *
+ */
+template <typename T, std::size_t Dim> struct BinInfo {
+    BinInfo(
+        std::size_t num_points, std::array<T, Dim> const &extents,
+        std::array<T, Dim> const &bin_sizes)
+        : extents(extents) {
+        for (std::size_t i = 0; i < Dim; ++i) {
+            num_bins[i] = static_cast<std::size_t>(extents[i] / bin_sizes[i]) + 1;
+            bin_scaling[i] = static_cast<T>(1.0 / bin_sizes[i]);
+        }
+
+        bin_stride[0] = 1;
+        for (std::size_t i = 1; i < Dim; ++i) {
+            bin_stride[i] = bin_stride[i - 1] * num_bins[i - 1];
+        }
+
+        bin_key_shift = bit_width(num_points);
+
+        if (bit_width(num_bins_total()) + bit_width(num_points) > 64) {
+            throw std::runtime_error("Too many bins to sort");
+        }
+    }
+
+    std::array<std::size_t, Dim> num_bins;
+    std::array<T, Dim> bin_scaling;
+    std::array<std::size_t, Dim> bin_stride;
+    std::array<T, Dim> const &extents;
+    std::size_t bin_key_shift;
+
+    std::size_t num_bins_total() const {
+        std::size_t total = 1;
+        for (std::size_t i = 0; i < Dim; ++i) {
+            total *= num_bins[i];
+        }
+        return total;
+    }
+};
+
+
+template <typename T, std::size_t Dim, typename FoldRescale>
+void compute_bin_index_impl(
+    int64_t *index, std::size_t num_points, std::array<T const *, Dim> const &coordinates,
+    BinInfo<T, Dim> const& info,
+    FoldRescale&& fold_rescale) {
+
+    // Set-up the sorted values.
+    for (std::size_t i = 0; i < num_points; ++i) {
+        std::size_t bin_index = 0;
+        for (std::size_t j = 0; j < Dim; ++j) {
+            auto bin_index_j = static_cast<std::size_t>(
+                fold_rescale(coordinates[j][i], info.extents[j]) * info.bin_scaling[j]);
+            bin_index += bin_index_j * info.bin_stride[j];
+        }
+
+        index[i] = (bin_index << info.bin_key_shift) + i;
+    }
+}
 
 /** Computes the bin each point belongs to.
  *
@@ -21,26 +83,15 @@ void compute_bin_index(
     int64_t *index, std::size_t num_points, std::array<T const *, Dim> const &coordinates,
     std::array<T, Dim> const &extents, std::array<T, Dim> const &bin_sizes) {
 
-    std::array<std::size_t, Dim> num_bins;
-    std::array<T, Dim> bin_scaling;
+    BinInfo<T, Dim> info(num_points, extents, bin_sizes);
 
-    for (std::size_t i = 0; i < Dim; ++i) {
-        num_bins[i] = static_cast<std::size_t>(extents[i] / bin_sizes[i]) + 1;
-        bin_scaling[i] = static_cast<T>(1. / bin_sizes[i]);
-    }
+    // Compute bin key + index
+    compute_bin_index_impl(index, num_points, coordinates, info, FoldRescaleIdentity<T>{});
 
-    std::memset(index, 0, sizeof(int64_t) * num_points);
-
-    std::size_t stride = 1;
-
-    for (std::size_t j = 0; j < Dim; ++j) {
-        for (std::size_t i = 0; i < num_points; ++i) {
-            std::size_t bin = static_cast<std::size_t>(coordinates[j][i] * bin_scaling[j]);
-            index[i] += stride * bin;
-        }
-
-        stride *= num_bins[j];
-    }
+    // Shift to only keep the bin key.
+    std::transform(index, index + num_points, index, [&info](int64_t i) {
+        return i >> info.bin_key_shift;
+    });
 }
 
 /** Reference implementation of bin sorting.
@@ -52,7 +103,7 @@ void compute_bin_index(
  * 2) The index array is sorted
  * 3) The sorted index array is masked to only retain the point index and not
  *    the bin index.
- * 
+ *
  * Note that this function is parametrized by the fold-rescale functor.
  *
  */
@@ -62,41 +113,10 @@ void bin_sort_reference_impl(
     std::array<T, Dim> const &extents, std::array<T, Dim> const &bin_sizes,
     FoldRescale &&fold_rescale) {
 
-    std::array<std::size_t, Dim> num_bins;
-    std::array<T, Dim> bin_scaling;
+    BinInfo<T, Dim> info(num_points, extents, bin_sizes);
 
-    for (std::size_t i = 0; i < Dim; ++i) {
-        num_bins[i] = static_cast<std::size_t>(extents[i] / bin_sizes[i]) + 1;
-        bin_scaling[i] = static_cast<T>(1. / bin_sizes[i]);
-    }
-
-    std::memset(index, 0, sizeof(int64_t) * num_points);
-
-    std::array<std::size_t, Dim> stride;
-    stride[0] = 1;
-    for (std::size_t i = 1; i < Dim; ++i) {
-        stride[i] = stride[i - 1] * num_bins[i - 1];
-    }
-
-    std::size_t bins_total = stride[Dim - 1] * num_bins[Dim - 1];
-
-    if (bit_width(bins_total) + bit_width(num_points) > 64) {
-        throw std::runtime_error("Too many bins to sort");
-    }
-
-    std::size_t points_bits = bit_width(num_points);
-
-    // Set-up the sorted values.
-    for (std::size_t i = 0; i < num_points; ++i) {
-        std::size_t bin_index = 0;
-        for (std::size_t j = 0; j < Dim; ++j) {
-            auto bin_index_j = static_cast<std::size_t>(
-                fold_rescale(coordinates[j][i], extents[j]) * bin_scaling[j]);
-            bin_index += bin_index_j * stride[j];
-        }
-
-        index[i] = (bin_index << points_bits) + i;
-    }
+    // Set up key-index pairs
+    compute_bin_index_impl(index, num_points, coordinates, info, fold_rescale);
 
     // Sort values
     std::sort(index, index + num_points);
@@ -104,7 +124,7 @@ void bin_sort_reference_impl(
     // Mask indices to only retain index and not bin
     // Note: in principle would be more efficient to move this responsibility to the reader
     //   (e.g. gather-rescale), but this is significantly easier to coordinate.
-    auto mask = (std::size_t(1) << points_bits) - 1;
+    auto mask = (std::size_t(1) << info.bin_key_shift) - 1;
     for (std::size_t i = 0; i < num_points; ++i) {
         index[i] &= mask;
     }
@@ -118,8 +138,7 @@ void bin_sort_reference(
     if (input_range == FoldRescaleRange::Pi) {
         bin_sort_reference_impl(
             index, num_points, coordinates, extents, bin_sizes, FoldRescalePi<T>{});
-    }
-    else {
+    } else {
         bin_sort_reference_impl(
             index, num_points, coordinates, extents, bin_sizes, FoldRescaleIdentity<T>{});
     }
@@ -144,17 +163,18 @@ FINUFFT_BIN_DECLARE_BIN_SORT(double, 3)
 
 #undef FINUFFT_BIN_DECLARE_BIN_SORT
 
-template <typename T, std::size_t Dim> BinSortFunctor<T, Dim> get_bin_sort_functor_reference() {
+template <typename T, std::size_t Dim> BinSortFunctor<T, Dim> get_bin_sort_functor() {
     return &bin_sort_reference<T, Dim>;
 }
 
-extern template BinSortFunctor<float, 1> get_bin_sort_functor_reference<float, 1>();
-extern template BinSortFunctor<float, 2> get_bin_sort_functor_reference<float, 2>();
-extern template BinSortFunctor<float, 3> get_bin_sort_functor_reference<float, 3>();
+extern template BinSortFunctor<float, 1> get_bin_sort_functor<float, 1>();
+extern template BinSortFunctor<float, 2> get_bin_sort_functor<float, 2>();
+extern template BinSortFunctor<float, 3> get_bin_sort_functor<float, 3>();
 
-extern template BinSortFunctor<double, 1> get_bin_sort_functor_reference<double, 1>();
-extern template BinSortFunctor<double, 2> get_bin_sort_functor_reference<double, 2>();
-extern template BinSortFunctor<double, 3> get_bin_sort_functor_reference<double, 3>();
+extern template BinSortFunctor<double, 1> get_bin_sort_functor<double, 1>();
+extern template BinSortFunctor<double, 2> get_bin_sort_functor<double, 2>();
+extern template BinSortFunctor<double, 3> get_bin_sort_functor<double, 3>();
 
+}
 } // namespace spreading
 } // namespace finufft

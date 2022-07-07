@@ -44,7 +44,7 @@ template <typename T, std::size_t Dim> void bm_binsort_legacy(benchmark::State &
 }
 
 template <typename T, std::size_t Dim> void bm_binsort_reference(benchmark::State &state) {
-    benchmark_binsort(state, finufft::spreading::get_bin_sort_functor_reference<T, Dim>());
+    benchmark_binsort(state, finufft::spreading::reference::get_bin_sort_functor<T, Dim>());
 }
 
 template <typename T, std::size_t Dim> void bm_binsort_highway(benchmark::State &state) {

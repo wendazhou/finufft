@@ -22,6 +22,7 @@
 #include <stdexcept>
 
 #include "../../bit.h"
+#include "../reference/spread_bin_sort_reference.h"
 
 #include <hwy/contrib/sort/vqsort.h>
 
@@ -40,47 +41,25 @@ namespace HWY_NAMESPACE {
 
 namespace hn = ::hwy::HWY_NAMESPACE;
 
-/** Basic structure which keeps track of useful
- * information about the bin structure for sorting.
+using reference::BinInfo;
+
+/** Computes packed bin-key point-index pairs and puts them into the index array.
+ *
+ * This function computes the bin key for each point, packs it with the original
+ * point index, and puts it into the index array. The output of the index array
+ * corresponds to elements such that the high bits contain the bin key, and the
+ * low bits contain the point index.
+ *
+ * This is done to ensure that we can recover an indirect sort of the input points
+ * by directly sorting the index array.
+ *
+ * @param[out] index Array of size num_points to store the bin-key point-index packed pairs.
+ * @param num_points Number of points to sort.
+ * @param coordinates Array of pointers to the coordinates of the points.
+ * @param info Information about the bins.
+ * @param fold_rescale Function to rescale the coordinates.
  *
  */
-template <typename T, std::size_t Dim> struct BinInfo {
-    BinInfo(
-        std::size_t num_points, std::array<T, Dim> const &extents,
-        std::array<T, Dim> const &bin_sizes)
-        : extents(extents) {
-        for (std::size_t i = 0; i < Dim; ++i) {
-            num_bins[i] = static_cast<std::size_t>(extents[i] / bin_sizes[i]) + 1;
-            bin_scaling[i] = static_cast<T>(1.0 / bin_sizes[i]);
-        }
-
-        bin_stride[0] = 1;
-        for (std::size_t i = 1; i < Dim; ++i) {
-            bin_stride[i] = bin_stride[i - 1] * num_bins[i - 1];
-        }
-
-        bin_key_shift = bit_width(num_points);
-
-        if (bit_width(num_bins_total()) + bit_width(num_points) > 64) {
-            throw std::runtime_error("Too many bins to sort");
-        }
-    }
-
-    std::array<std::size_t, Dim> num_bins;
-    std::array<T, Dim> bin_scaling;
-    std::array<std::size_t, Dim> bin_stride;
-    std::array<T, Dim> const &extents;
-    std::size_t bin_key_shift;
-
-    std::size_t num_bins_total() const {
-        std::size_t total = 1;
-        for (std::size_t i = 0; i < Dim; ++i) {
-            total *= num_bins[i];
-        }
-        return total;
-    }
-};
-
 template <std::size_t Dim, typename FoldRescale>
 void compute_bin_index_impl(
     int64_t *index, std::size_t num_points, std::array<float const *, Dim> const &coordinates,
@@ -313,12 +292,6 @@ void bin_sort_generic(
     ScopedTimerGuard guard(timers.total);
 
     BinInfo<T, Dim> info(num_points, extents, bin_sizes);
-
-    // Zero memory
-    {
-        ScopedTimerGuard guard(timers.index_zero);
-        std::memset(index, 0, sizeof(int64_t) * num_points);
-    }
 
     // Step 1: compute bin-original index pairs in index.
     {

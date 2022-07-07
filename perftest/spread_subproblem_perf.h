@@ -25,7 +25,31 @@ namespace fs = finufft::spreading;
 namespace {
 
 template <typename T, std::size_t Dim>
-void benchmark_spread_subroblem(
+void benchmark_spread_subproblem(
+    benchmark::State &state, fs::SpreadSubproblemFunctor<T, Dim> const &functor,
+    std::size_t num_points, fs::grid_specification<Dim> const &grid_spec,
+    bool sort_points = true) {
+
+    auto input = make_spread_subproblem_input<T>(num_points, 0, grid_spec, functor.target_padding());
+
+    if (sort_points) {
+        sort_point_collection(input);
+    }
+
+    auto output = finufft::allocate_aligned_array<T>(2 * grid_spec.num_elements(), 64);
+
+    for (auto _ : state) {
+        benchmark::DoNotOptimize(input.strengths[0]);
+        functor(input, grid_spec, output.get());
+        benchmark::DoNotOptimize(output[0]);
+        benchmark::ClobberMemory();
+    }
+
+    state.SetItemsProcessed(state.iterations() * num_points);
+}
+
+template <typename T, std::size_t Dim>
+void benchmark_spread_subproblem(
     benchmark::State &state, fs::SpreadSubproblemFunctor<T, Dim> const &functor) {
     auto num_points = state.range(0);
 
@@ -55,25 +79,13 @@ void benchmark_spread_subroblem(
     std::fill(grid.offsets.begin(), grid.offsets.end(), 3);
     std::copy(extent.begin(), extent.end(), grid.extents.begin());
 
-    auto input = make_spread_subproblem_input<T>(num_points, 0, grid, padding);
-    sort_point_collection(input);
-
-    auto output = finufft::allocate_aligned_array<T>(2 * grid.num_elements(), 64);
-
-    for (auto _ : state) {
-        benchmark::DoNotOptimize(input.strengths[0]);
-        functor(input, grid, output.get());
-        benchmark::DoNotOptimize(output[0]);
-        benchmark::ClobberMemory();
-    }
-
-    state.SetItemsProcessed(state.iterations() * num_points);
+    benchmark_spread_subproblem<T, Dim>(state, functor, num_points, grid);
 }
 
 template <typename T, std::size_t Dim, typename Factory>
 void benchmark_for_width(benchmark::State &state, Factory const &factory) {
     auto kernel_spec = specification_from_width(state.range(1), 2.0);
-    benchmark_spread_subroblem<T, Dim>(state, factory(kernel_spec));
+    benchmark_spread_subproblem<T, Dim>(state, factory(kernel_spec));
 }
 
 template <typename T, std::size_t Dim> void benchmark_legacy(benchmark::State &state) {

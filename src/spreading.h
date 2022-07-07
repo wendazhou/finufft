@@ -125,8 +125,8 @@ template <typename T> struct KernelWriteSpec {
     /// Maximum valid value in the array, give a grid offset and size.
     T max_valid_value(std::int64_t grid_offset, std::size_t grid_size) const {
         // Slightly imprecise below, this value should be:
-        // max_{x \in T} x + offset \leq grid_size + grid_offset - grid_right - 1
-        return static_cast<T>(static_cast<int64_t>(grid_size) + grid_offset - grid_right - 1) -
+        // max_{x \in T} x - offset \leq grid_size + grid_offset - grid_right - 1
+        return static_cast<T>(static_cast<int64_t>(grid_size) + grid_offset - grid_right - 1) +
                offset;
     }
 

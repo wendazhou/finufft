@@ -1,6 +1,11 @@
 /** Experimental benchmark to demonstrate performance for cache-aligned
  * local block accumulation.
  *
+ * Currently, this benchmark demonstrates that when ensuring that local
+ * block accumulation is cache-aligned, the main performance bottleneck
+ * is the gather stage, which becomes more expensive as the number of
+ * points increases.
+ *
  */
 
 #include <benchmark/benchmark.h>
@@ -262,6 +267,7 @@ void process_points(
     }
 }
 
+///! Debugging utility to check that all points are within the corresponding grid.
 template <typename T, std::size_t Dim, typename FoldRescale>
 std::size_t check_grid_boundaries(
     std::size_t *sort_idx, tcb::span<const std::size_t> block_boundaries,
@@ -294,7 +300,27 @@ std::size_t check_grid_boundaries(
     return -1;
 }
 
-void benchmark_spread_2d(benchmark::State &state) {
+template <typename T, std::size_t Dim>
+void apply_permutation(
+    finufft::spreading::nu_point_collection<Dim, T> const &points, std::size_t *sort_idx) {
+    auto coord_buffer = finufft::allocate_aligned_array<T>(points.num_points, 64);
+
+    for (std::size_t dim = 0; dim < Dim; ++dim) {
+        // Gather according to sorted index
+        for (std::size_t i = 0; i < points.num_points; ++i) {
+            coord_buffer[i] = points.coordinates[dim][sort_idx[i]];
+        }
+
+        // Copy back in sorted order
+        std::memcpy(
+            points.coordinates[dim], coord_buffer.get(), points.num_points * sizeof(T));
+    }
+
+    // Fill sort index with identity permutation
+    std::iota(sort_idx, sort_idx + points.num_points, std::size_t(0));
+}
+
+void benchmark_spread_2d(benchmark::State &state, bool resolve_indirect_sort) {
     auto dim = state.range(0);
     auto num_points = dim * dim;
 
@@ -339,6 +365,10 @@ void benchmark_spread_2d(benchmark::State &state) {
         throw std::runtime_error("Invalid grid boundaries");
     }
 
+    if (resolve_indirect_sort) {
+        apply_permutation<float, 2>(points, reinterpret_cast<std::size_t*>(sort_idx.get()));
+    }
+
     finufft::TimerRoot timer_root("bench");
     auto timer = timer_root.make_timer("spread");
     SpreadBlockedTimers timers(timer);
@@ -375,6 +405,20 @@ void benchmark_spread_2d(benchmark::State &state) {
     }
 }
 
+void bm_spread_2d_indirect(benchmark::State &state) {
+    benchmark_spread_2d(state, false);
+}
+
+void bm_spread_2d_direct(benchmark::State &state) {
+    benchmark_spread_2d(state, true);
+}
+
 } // namespace
 
-BENCHMARK(benchmark_spread_2d)->Arg(1 << 9)->Arg(1 << 10)->Arg(1 << 11)->Unit(benchmark::kMillisecond);
+BENCHMARK(bm_spread_2d_indirect)
+    ->Range(1 << 9, 1 << 11)->RangeMultiplier(2)
+    ->Unit(benchmark::kMillisecond);
+
+BENCHMARK(bm_spread_2d_direct)
+    ->Range(1 << 9, 1 << 11)->RangeMultiplier(2)
+    ->Unit(benchmark::kMillisecond);

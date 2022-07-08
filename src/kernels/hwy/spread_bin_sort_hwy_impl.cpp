@@ -373,8 +373,9 @@ template <typename T, std::size_t Dim> BinSortFunctor<T, Dim> get_bin_sort_funct
                std::array<T const *, Dim> const &coordinates,
                std::array<T, Dim> const &extents,
                std::array<T, Dim> const &bin_sizes,
-               FoldRescaleRange rescale_range) mutable {
-        bin_sort<T, Dim>(index, num_points, coordinates, extents, bin_sizes, rescale_range, timers);
+               FoldRescaleRange rescale_range) {
+        BinSortTimers timers_copy(timers);
+        bin_sort<T, Dim>(index, num_points, coordinates, extents, bin_sizes, rescale_range, timers_copy);
     };
 }
 

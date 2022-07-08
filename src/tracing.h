@@ -32,10 +32,10 @@ class Timer {
     std::size_t index_;
 
     Timer(TimerRoot *root, std::size_t index) : root_(root), start_(), index_(index) {}
-    Timer(Timer const &) = default;
 
   public:
     Timer() : root_(nullptr), start_(), index_(0) {}
+    Timer(Timer const &) = default;
     Timer(Timer &&) = default;
 
     /** Start the timer.

@@ -33,7 +33,7 @@ struct BinSortTimers {
           countsort_count(total.make_timer("cs/count")),
           countsort_cumsum(total.make_timer("cs/cumsum")),
           countsort_spread(total.make_timer("cs/spread")) {}
-
+    BinSortTimers(BinSortTimers const &) = default;
     BinSortTimers(BinSortTimers &&) = default;
 };
 

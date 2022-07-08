@@ -32,14 +32,33 @@ class Timer {
     std::size_t index_;
 
     Timer(TimerRoot *root, std::size_t index) : root_(root), start_(), index_(index) {}
+    Timer(Timer const &) = default;
 
   public:
     Timer() : root_(nullptr), start_(), index_(0) {}
-    Timer(Timer const &) = delete;
     Timer(Timer &&) = default;
 
-    void start() noexcept;
+    /** Start the timer.
+     *
+     */
+    void start() noexcept { start_ = clock_t::now(); }
+
+    /** Stop the timer, and return the time elapsed since start.
+     *
+     * If the timer is associated with a `TimerRoot`, record
+     * the elapsed time to aggregate into the root timer.
+     *
+     */
     duration end() noexcept;
+
+    /** Creates a local copy of the timer.
+     *
+     * The newly created timer has the same name as the original, and is
+     * attached to the same root, but maintains an indpendent
+     * counter to record the start time.
+     *
+     */
+    Timer clone() const noexcept { return *this; }
 
     /** Make a new timer with the given name.
      *
@@ -126,5 +145,14 @@ class TimerRoot {
      */
     std::vector<std::tuple<std::string, Timer::duration>> report(std::string const &prefix);
 };
+
+inline Timer::duration Timer::end() noexcept {
+    auto end = clock_t::now();
+    auto duration = end - start_;
+    if (root_) {
+        root_->record(index_, duration);
+    }
+    return duration;
+}
 
 } // namespace finufft

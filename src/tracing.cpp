@@ -2,17 +2,6 @@
 
 namespace finufft {
 
-void Timer::start() noexcept { start_ = clock_t::now(); }
-
-Timer::duration Timer::end() noexcept {
-    if (!root_) {
-        return Timer::duration{0};
-    }
-    auto result = clock_t::now() - start_;
-    root_->record(index_, result);
-    return result;
-}
-
 Timer Timer::make_timer(std::string const &name) {
     if (!root_) {
         return Timer();

@@ -124,6 +124,9 @@ function(set_finufft_options target)
     target_link_libraries(${target} PUBLIC hwy hwy_contrib)
 endfunction()
 
+find_package(TBB REQUIRED)
+add_subdirectory(third_party/ips4o)
+
 # Main finufft libraries
 add_library(finufft_f32 OBJECT ${FINUFFT_PRECISION_DEPENDENT_SOURCES})
 target_compile_definitions(finufft_f32 PRIVATE SINGLE)

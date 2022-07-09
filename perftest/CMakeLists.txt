@@ -31,3 +31,6 @@ add_benchmark(spread_subproblem_3d_perf spread_subproblem_3d_perf.cpp)
 add_benchmark(transform_type1 transform_type1.cpp)
 add_benchmark(transform_type1_large transform_type1_large.cpp)
 add_benchmark(transform_type1_xlarge transform_type1_xlarge.cpp)
+
+add_benchmark(spread_binfullsort_perf spread_binfullsort_perf.cpp)
+target_link_libraries(spread_binfullsort_perf PRIVATE ips4o)

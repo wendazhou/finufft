@@ -21,6 +21,76 @@ namespace finufft {
 namespace spreading {
 namespace reference {
 
+/** Basic information about a binned grid.
+ *
+ * This structure is used to hold commonly needed information
+ * about a basic integer binned grid.
+ *
+ * An integer binned is defined as a rectangular grid, divided
+ * into equally sized rectangular bins of integer length.
+ *
+ * For a point at (real) coordinates `(x, y, z)`, the bin containing
+ * that point is defined as the bin containing the integer coordinate
+ * `(ceil(x - o_x) + g_x, ceil(y - o_y) + g_y, ceil(z - o_z) + g_z)`,
+ * where o_x etc. denote the offset to apply, and g_x = ceil(-o_x).
+ *
+ */
+template <typename T, std::size_t Dim> struct IntBinInfo {
+    std::array<std::size_t, Dim> size;             ///< Size of the underlying target grid
+    std::array<std::size_t, Dim> bin_size;         ///< Size of each bin
+    std::array<std::size_t, Dim> bin_index_stride; ///< Stride used to compute global bin index
+    std::array<std::size_t, Dim> num_bins;         ///< Number of bins in each dimension
+    std::array<T, Dim> offset;                     ///< Offset to use when computing bin index
+    std::array<int64_t, Dim> global_offset;        ///< Offset to use when computing bin index
+
+    IntBinInfo(
+        tcb::span<const std::size_t, Dim> size, tcb::span<const std::size_t, Dim> bin_size,
+        tcb::span<const T, Dim> offset) {
+        std::copy(size.begin(), size.end(), this->size.begin());
+        std::copy(bin_size.begin(), bin_size.end(), this->bin_size.begin());
+        std::copy(offset.begin(), offset.end(), this->offset.begin());
+
+        for (std::size_t d = 0; d < Dim; ++d) {
+            num_bins[d] = (size[d] + bin_size[d] - 1) / bin_size[d];
+            global_offset[d] = std::ceil(-offset[d]);
+        }
+
+        bin_index_stride[0] = 1;
+        for (std::size_t d = 1; d < Dim; ++d) {
+            bin_index_stride[d] = bin_index_stride[d - 1] * num_bins[d - 1];
+        }
+    }
+
+    std::size_t num_bins_total() const {
+        return std::accumulate(num_bins.begin(), num_bins.end(), 1, std::multiplies<std::size_t>());
+    }
+};
+
+template <typename T, std::size_t Dim>
+std::array<std::size_t, Dim> compute_bin_size_from_grid_and_padding(
+    tcb::span<const std::size_t, Dim> grid_size, tcb::span<const KernelWriteSpec<T>, Dim> padding) {
+    std::array<std::size_t, Dim> bin_size;
+
+    for (std::size_t i = 0; i < Dim; ++i) {
+        if (grid_size[i] < padding[i].grid_left + padding[i].grid_right) {
+            throw std::runtime_error("Grid size is too small for padding");
+        }
+
+        bin_size[i] = grid_size[i] - padding[i].grid_left - padding[i].grid_right;
+    }
+
+    return bin_size;
+}
+
+template <typename T, std::size_t Dim>
+std::array<T, Dim> get_offsets_from_padding(tcb::span<const KernelWriteSpec<T>, Dim> padding) {
+    std::array<T, Dim> offset;
+    for (std::size_t i = 0; i < Dim; ++i) {
+        offset[i] = padding[i].offset;
+    }
+    return offset;
+}
+
 /** Structure representing bin information for integer-sized bins
  * based on target-sized grids.
  *
@@ -30,89 +100,77 @@ namespace reference {
  * required by the subproblem functor.
  *
  */
-template <typename T, std::size_t Dim> struct IntBinInfo {
+template <typename T, std::size_t Dim> struct IntGridBinInfo : IntBinInfo<T, Dim> {
 
     /** Initialize the bin information from the given specification.
      *
-     * @param num_points The total number of points to be spread
      * @param extents The size of the uniform buffer
      * @param grid_sizes The base size of the subproblem grid
      * @param padding The padding required by the subproblem functor
      *
      */
-    IntBinInfo(
-        std::size_t num_points, tcb::span<const std::size_t, Dim> extents,
-        tcb::span<const std::size_t, Dim> grid_sizes,
+    IntGridBinInfo(
+        tcb::span<const std::size_t, Dim> extents, tcb::span<const std::size_t, Dim> grid_size,
         tcb::span<const finufft::spreading::KernelWriteSpec<T>, Dim> padding)
-        : grid_sizes(grid_sizes), extents(extents), padding(padding),
-          bin_key_shift(finufft::bit_width(num_points)) {
+        : IntBinInfo<T, Dim>(
+              extents, compute_bin_size_from_grid_and_padding(grid_size, padding),
+              get_offsets_from_padding(padding)) {
 
-        for (std::size_t i = 0; i < Dim; ++i) {
-            if (grid_sizes[i] < padding[i].grid_left + padding[i].grid_right) {
-                throw std::runtime_error("Grid size is too small for padding");
-            }
-
-            bin_sizes[i] = grid_sizes[i] - padding[i].grid_left - padding[i].grid_right;
-            global_offset[i] = int64_t(std::ceil(-padding[i].offset));
-            num_bins[i] = (extents[i] + bin_sizes[i] - 1) / bin_sizes[i];
-        }
-
-        bin_stride[0] = 1;
-        for (std::size_t i = 1; i < Dim; ++i) {
-            bin_stride[i] = bin_stride[i - 1] * num_bins[i - 1];
-        }
-
-        std::copy(extents.begin(), extents.end(), extents_f.begin());
+        std::copy(grid_size.begin(), grid_size.end(), this->grid_size.begin());
+        std::copy(padding.begin(), padding.end(), this->padding.begin());
     }
 
-    tcb::span<const std::size_t, Dim>
-        grid_sizes; ///< The size of the subproblem grid in each dimension
-    tcb::span<const std::size_t, Dim> extents; ///< The size of the overall grid in each dimension
-    tcb::span<const finufft::spreading::KernelWriteSpec<T>, Dim>
-        padding; ///< The padding required by the subproblem functor
-    std::array<int64_t, Dim>
-        global_offset; ///< Computed global offset introduced by the subfunctor padding
-    std::array<std::size_t, Dim> bin_sizes; ///< The computed size of the bins in each dimension
-    std::array<std::size_t, Dim>
-        bin_stride;            ///< The computed stride of the bin index in each dimension
-    std::size_t bin_key_shift; ///< The computed shift for the bin key.
-    std::array<std::size_t, Dim> num_bins; ///< The number of bins in each dimension
-    std::array<T, Dim> extents_f; ///< Floating point version of the `extents` array.
-
-    std::size_t num_bins_total() const {
-        std::size_t total = 1;
-        for (std::size_t i = 0; i < Dim; ++i) {
-            total *= num_bins[i];
-        }
-        return total;
-    }
+    std::array<std::size_t, Dim> grid_size;      ///< Desired size for subproblem grid
+    std::array<KernelWriteSpec<T>, Dim> padding; ///< The padding required by the subproblem functor
 };
 
-/** Computation of bin grid index based on integer grid indices.
- * 
- * The computation of the bin index is based on the exact computation
- * that is performed for subproblem spreading, and hence we ensure
- * that the point is fully within the bin despite potential rounding
- * issues.
+/** Structure representing a packed bin, coordinate and strength triple.
+ *
+ * When sorting, it is more efficient to move all related information concerning
+ * a given point jointly, rather than computing a permutation and applying it,
+ * due to the fact that advanced parallel sorters such as IPS4o attempt to
+ * break up the sorting in contiguous chunks.
  *
  */
-template <typename T, std::size_t Dim, typename FoldRescale>
-std::size_t compute_bin_index_single(
-    std::array<T, Dim> const &coords, IntBinInfo<T, Dim> const &info, FoldRescale &&fold_rescale) {
-    std::size_t bin_index = 0;
+template <typename T, std::size_t Dim> struct PointBin {
+    uint32_t bin;
+    std::array<T, Dim> coords;
+    std::array<T, 2> strength;
+};
 
-    for (std::size_t j = 0; j < Dim; ++j) {
-        auto coord = fold_rescale(coords[j], info.extents_f[j]);
-        auto coord_grid_left = std::ceil(coord - info.padding[j].offset);
-        std::size_t coord_grid = std::size_t(coord_grid_left - info.global_offset[j]);
+template <typename T, std::size_t Dim>
+bool operator<(const PointBin<T, Dim> &lhs, const PointBin<T, Dim> &rhs) {
+    return lhs.bin < rhs.bin;
+}
 
-        std::size_t bin_index_j = coord_grid / info.bin_sizes[j];
+/** Functor for computing bin index.
+ *
+ */
+template <typename T, std::size_t Dim, typename FoldRescale> struct ComputeBinIndexSingle {
+    IntBinInfo<T, Dim> const &info;
+    FoldRescale fold_rescale;
+    std::array<T, Dim> extents;
 
-        bin_index += bin_index_j * info.bin_stride[j];
+    ComputeBinIndexSingle(IntBinInfo<T, Dim> const &info, FoldRescale fold_rescale)
+        : info(info), fold_rescale(fold_rescale) {
+        std::copy(info.size.begin(), info.size.end(), extents.begin());
     }
 
-    return bin_index;
-}
+    std::size_t operator()(tcb::span<const T, Dim> coords) const {
+        std::size_t bin_index = 0;
+
+        for (std::size_t j = 0; j < Dim; ++j) {
+            auto coord = fold_rescale(coords[j], extents[j]);
+            auto coord_grid_left = std::ceil(coord - info.offset[j]);
+            std::size_t coord_grid = std::size_t(coord_grid_left - info.global_offset[j]);
+            std::size_t bin_index_j = coord_grid / info.bin_size[j];
+
+            bin_index += bin_index_j * info.bin_index_stride[j];
+        }
+
+        return bin_index;
+    }
+};
 
 } // namespace reference
 } // namespace spreading

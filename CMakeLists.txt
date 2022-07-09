@@ -125,7 +125,7 @@ function(set_finufft_options target)
 endfunction()
 
 find_package(TBB REQUIRED)
-add_subdirectory(third_party/ips4o)
+add_subdirectory(third_party)
 
 # Main finufft libraries
 add_library(finufft_f32 OBJECT ${FINUFFT_PRECISION_DEPENDENT_SOURCES})

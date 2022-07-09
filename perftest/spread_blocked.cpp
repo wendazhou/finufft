@@ -29,16 +29,16 @@
 
 namespace {
 
-using finufft::spreading::reference::IntBinInfo;
+using finufft::spreading::reference::IntGridBinInfo;
 
 template <typename T>
 std::vector<finufft::spreading::grid_specification<1>>
-make_bin_grids(IntBinInfo<T, 1> const &info) {
+make_bin_grids(IntGridBinInfo<T, 1> const &info) {
     std::vector<finufft::spreading::grid_specification<1>> grids(info.num_bins_total());
 
     for (std::size_t i = 0; i < info.num_bins[0]; ++i) {
-        grids[i].extents[0] = info.grid_sizes[0];
-        grids[i].offsets[0] = info.global_offset[0] + i * info.bin_sizes[0];
+        grids[i].extents[0] = info.grid_size[0];
+        grids[i].offsets[0] = info.global_offset[0] + i * info.bin_size[0];
     }
 
     return grids;
@@ -46,18 +46,18 @@ make_bin_grids(IntBinInfo<T, 1> const &info) {
 
 template <typename T>
 std::vector<finufft::spreading::grid_specification<2>>
-make_bin_grids(IntBinInfo<T, 2> const &info) {
+make_bin_grids(IntGridBinInfo<T, 2> const &info) {
     std::vector<finufft::spreading::grid_specification<2>> grids(info.num_bins_total());
 
     std::size_t idx = 0;
 
     for (std::size_t j = 0; j < info.num_bins[1]; ++j) {
         for (std::size_t i = 0; i < info.num_bins[0]; ++i) {
-            grids[idx].extents[0] = info.grid_sizes[0];
-            grids[idx].extents[1] = info.grid_sizes[1];
+            grids[idx].extents[0] = info.grid_size[0];
+            grids[idx].extents[1] = info.grid_size[1];
 
-            grids[idx].offsets[0] = info.global_offset[0] + i * info.bin_sizes[0];
-            grids[idx].offsets[1] = info.global_offset[1] + j * info.bin_sizes[1];
+            grids[idx].offsets[0] = info.global_offset[0] + i * info.bin_size[0];
+            grids[idx].offsets[1] = info.global_offset[1] + j * info.bin_size[1];
 
             idx += 1;
         }
@@ -72,10 +72,10 @@ make_bin_grids(IntBinInfo<T, 2> const &info) {
 template <typename T, std::size_t Dim, typename FoldRescale>
 void compute_bin_index_impl(
     std::size_t *index, std::size_t num_points, tcb::span<T const *const, Dim> coordinates,
-    IntBinInfo<T, Dim> const &info, FoldRescale &&fold_rescale) {
+    IntGridBinInfo<T, Dim> const &info, uint32_t bin_key_shift, FoldRescale &&fold_rescale) {
 
-    std::array<T, Dim> extents_f;
-    std::copy(info.extents.begin(), info.extents.end(), extents_f.begin());
+    auto compute_single = finufft::spreading::reference::ComputeBinIndexSingle<T, Dim, FoldRescale>(
+        info, fold_rescale);
 
     for (std::size_t i = 0; i < num_points; ++i) {
         std::array<T, Dim> coords;
@@ -83,19 +83,18 @@ void compute_bin_index_impl(
             coords[j] = coordinates[j][i];
         }
 
-        auto bin_index =
-            finufft::spreading::reference::compute_bin_index_single(coords, info, fold_rescale);
-        index[i] = (bin_index << info.bin_key_shift) + i;
+        auto bin_index = compute_single(coords);
+        index[i] = (bin_index << bin_key_shift) + i;
     }
 }
-
 
 template <typename T, std::size_t Dim>
 std::vector<std::size_t> preprocess_points(
     int64_t *sort_idx, finufft::spreading::nu_point_collection<Dim, const T> const &input,
-    IntBinInfo<T, Dim> const &info) {
+    IntGridBinInfo<T, Dim> const &info) {
 
     auto fold_rescale = finufft::spreading::FoldRescalePi<T>{};
+    auto bin_key_shift = finufft::bit_width(input.num_points);
 
     // Compute all bin indexes
     compute_bin_index_impl<T, Dim>(
@@ -103,6 +102,7 @@ std::vector<std::size_t> preprocess_points(
         input.num_points,
         input.coordinates,
         info,
+        bin_key_shift,
         fold_rescale);
 
     // Sort the bin indexes
@@ -111,9 +111,9 @@ std::vector<std::size_t> preprocess_points(
     // Count number of points in each bin
     std::vector<std::size_t> bin_counts(info.num_bins_total() + 1, 0);
 
-    auto mask = (std::size_t(1) << info.bin_key_shift) - 1;
+    auto mask = (std::size_t(1) << bin_key_shift) - 1;
     for (std::size_t i = 0; i < input.num_points; ++i) {
-        ++bin_counts[(sort_idx[i] >> info.bin_key_shift) + 1];
+        ++bin_counts[(sort_idx[i] >> bin_key_shift) + 1];
         sort_idx[i] &= mask;
     }
 
@@ -214,7 +214,7 @@ std::size_t check_grid_boundaries(
     std::size_t *sort_idx, tcb::span<const std::size_t> block_boundaries,
     tcb::span<const finufft::spreading::grid_specification<Dim>> grids,
     finufft::spreading::nu_point_collection<Dim, const T> points, FoldRescale &&fold_rescale,
-    IntBinInfo<T, Dim> const &info) {
+    IntGridBinInfo<T, Dim> const &info) {
 
     for (std::size_t dim = 0; dim < Dim; ++dim) {
         auto const &coordinates = points.coordinates[dim];
@@ -226,7 +226,7 @@ std::size_t check_grid_boundaries(
             auto block_end = block_boundaries[b + 1];
 
             for (std::size_t i = block_start; i < block_end; ++i) {
-                auto coord = fold_rescale(coordinates[sort_idx[i]], info.extents[dim]);
+                auto coord = fold_rescale(coordinates[sort_idx[i]], static_cast<T>(info.size[dim]));
                 auto coord_grid = std::ceil(coord - padding.offset);
                 coord_grid -= grid.offsets[dim];
 
@@ -288,7 +288,7 @@ void benchmark_spread_2d(benchmark::State &state, bool resolve_indirect_sort) {
     std::array<std::size_t, 2> grid_size = {block_x, block_y};
     auto functor_padding = config.spread_subproblem.target_padding();
 
-    IntBinInfo<float, 2> info(points.num_points, sizes, grid_size, functor_padding);
+    IntGridBinInfo<float, 2> info(sizes, grid_size, functor_padding);
 
     auto bin_boundaries = preprocess_points<float, 2>(sort_idx.get(), points, info);
 

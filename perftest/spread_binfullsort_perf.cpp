@@ -11,6 +11,7 @@
 #include <cstdint>
 
 #include <ips4o/ips4o.hpp>
+#include <libdivide.h>
 
 #include "../src/kernels/reference/gather_fold_reference.h"
 #include "../src/kernels/reference/spread_bin_sort_int.h"
@@ -26,16 +27,65 @@ using namespace finufft::spreading::reference;
 
 namespace {
 
-template <typename T, std::size_t Dim> struct PointBin {
-    uint32_t bin;
-    std::array<T, Dim> coords;
-    std::array<T, 2> strength;
-};
-
+/** Computation of bin grid index based on integer indices, accelerated by libdivide
+ *
+ *
+ */
 template <typename T, std::size_t Dim>
-bool operator<(const PointBin<T, Dim> &lhs, const PointBin<T, Dim> &rhs) {
-    return lhs.bin < rhs.bin;
+std::size_t compute_bin_index_single_dividers(
+    std::array<T, Dim> const &coords, IntBinInfo<T, Dim> const &info,
+    std::array<libdivide::divider<uint32_t>, Dim> const &dividers) {
+    std::size_t bin_index = 0;
+
+    for (std::size_t j = 0; j < Dim; ++j) {
+        auto coord = coords[j];
+        auto coord_grid_left = std::ceil(coord - info.offset[j]);
+        std::uint32_t coord_grid = std::uint32_t(coord_grid_left - info.global_offset[j]);
+
+        std::size_t bin_index_j = coord_grid / dividers[j];
+
+        bin_index += bin_index_j * info.bin_index_stride[j];
+    }
+
+    return bin_index;
 }
+
+template <typename T, std::size_t Dim, typename FoldRescale> struct ComputeAndPackSingle {
+    IntBinInfo<T, Dim> const &info;
+    FoldRescale fold_rescale;
+    std::array<T, Dim> extents_f;
+    std::array<libdivide::divider<uint32_t>, Dim> dividers;
+
+    ComputeAndPackSingle(IntBinInfo<T, Dim> const &info, FoldRescale fold_rescale)
+        : info(info), fold_rescale(fold_rescale) {
+        std::copy(info.size.begin(), info.size.end(), extents_f.begin());
+        for (std::size_t j = 0; j < Dim; ++j) {
+            dividers[j] = libdivide::divider<uint32_t>(info.bin_size[j]);
+        }
+    }
+
+    PointBin<T, Dim> operator()(nu_point_collection<Dim, const T> const& input, std::size_t i) const {
+        PointBin<T, Dim> p;
+        p.bin = 0;
+
+        for (std::size_t j = 0; j < Dim; ++j) {
+            auto coord = fold_rescale(input.coordinates[j][i], extents_f[j]);
+
+            // Pack basic data
+            p.coords[j] = coord;
+            p.strength[0] = input.strengths[2 * i];
+            p.strength[1] = input.strengths[2 * i + 1];
+
+            // Compute bin index
+            auto coord_grid_left = std::ceil(coord - info.offset[j]);
+            std::uint32_t coord_grid = std::uint32_t(coord_grid_left - info.global_offset[j]);
+            std::size_t bin_index_j = coord_grid / dividers[j];
+            p.bin += bin_index_j * info.bin_index_stride[j];
+        }
+
+        return p;
+    }
+};
 
 /** Computes bin index, and collects folded coordinates into
  * given buffer.
@@ -48,22 +98,25 @@ bool operator<(const PointBin<T, Dim> &lhs, const PointBin<T, Dim> &rhs) {
  *
  */
 template <typename T, std::size_t Dim, typename FoldRescale>
-void compute_bins_and_pack(
+void compute_bins_and_pack_impl(
     PointBin<T, Dim> *points_with_bin, nu_point_collection<Dim, const T> input,
     FoldRescale &&fold_rescale, IntBinInfo<T, Dim> const &info) {
 
+    ComputeAndPackSingle<T, Dim, FoldRescale> compute_and_pack(info, fold_rescale);
+
     for (std::size_t i = 0; i < input.num_points; ++i) {
-        auto &p = points_with_bin[i];
+        points_with_bin[i] = compute_and_pack(input, i);
+    }
+}
 
-        for (std::size_t j = 0; j < Dim; ++j) {
-            p.coords[j] = fold_rescale(input.coordinates[j][i], info.extents_f[j]);
-        }
-
-        p.strength[0] = input.strengths[2 * i];
-        p.strength[1] = input.strengths[2 * i + 1];
-
-        // Note: extraneous fold-rescale here.
-        p.bin = static_cast<uint32_t>(compute_bin_index_single(p.coords, info, fold_rescale));
+template <typename T, std::size_t Dim>
+void compute_bins_and_pack(
+    nu_point_collection<Dim, const T> input, FoldRescaleRange range, IntBinInfo<T, Dim> const &info,
+    PointBin<T, Dim> *output) {
+    if (range == FoldRescaleRange::Pi) {
+        compute_bins_and_pack_impl(output, input, FoldRescalePi<T>{}, info);
+    } else {
+        compute_bins_and_pack_impl(output, input, FoldRescaleIdentity<T>{}, info);
     }
 }
 
@@ -85,14 +138,14 @@ struct SortPackedTimers {
 template <typename T, std::size_t Dim, typename FoldRescale>
 void sort_packed(
     nu_point_collection<Dim, const T> points, nu_point_collection<Dim, T> output,
-    IntBinInfo<T, Dim> const &info, SortPackedTimers &timers) {
+    IntGridBinInfo<T, Dim> const &info, SortPackedTimers &timers) {
 
     auto packed = finufft::allocate_aligned_array<PointBin<T, Dim>>(points.num_points, 64);
 
     // Compute bins
     {
         finufft::ScopedTimerGuard guard(timers.pack);
-        compute_bins_and_pack(packed.get(), points, FoldRescalePi<T>{}, info);
+        compute_bins_and_pack(points, FoldRescaleRange::Pi, info, packed.get());
     }
 
     {
@@ -144,7 +197,7 @@ template <typename T, std::size_t Dim> void bench_sort_packed(benchmark::State &
         padding[i].offset = 4;
     }
 
-    IntBinInfo<T, Dim> info(num_points, extents, grid_size, padding);
+    IntGridBinInfo<T, Dim> info(extents, grid_size, padding);
 
     finufft::TimerRoot timer_root("benchmark");
     auto timer = timer_root.make_timer("sort_packed");

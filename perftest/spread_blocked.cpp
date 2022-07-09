@@ -17,6 +17,7 @@
 #include "../src/spreading.h"
 #include "../src/tracing.h"
 
+#include "../src/kernels/reference/spread_bin_sort_int.h"
 #include "../src/kernels/reference/spread_bin_sort_reference.h"
 #include "../src/kernels/reference/spread_processor_reference.h"
 
@@ -28,63 +29,11 @@
 
 namespace {
 
-/** Structure representing bin information for integer-sized bins
- * based on target-sized grids.
- *
- * For performance reasons, it is crucial to solve the spread subproblem
- * on a subgrid of size bounded by the size of the L1 cache. We derive
- * the size of the bins from the size of the grid, minus any padding
- * required by the subproblem functor.
- *
- */
-template <typename T, std::size_t Dim> struct BinInfo {
-    BinInfo(
-        std::size_t num_points, tcb::span<const std::size_t, Dim> extents,
-        tcb::span<const std::size_t, Dim> grid_sizes,
-        tcb::span<const finufft::spreading::KernelWriteSpec<T>, Dim> padding)
-        : grid_sizes(grid_sizes), extents(extents), padding(padding),
-          bin_key_shift(finufft::bit_width(num_points)) {
-
-        for (std::size_t i = 0; i < Dim; ++i) {
-            if (grid_sizes[i] < padding[i].grid_left + padding[i].grid_right) {
-                throw std::runtime_error("Grid size is too small for padding");
-            }
-
-            bin_sizes[i] = grid_sizes[i] - padding[i].grid_left - padding[i].grid_right;
-            global_offset[i] = int64_t(std::ceil(-padding[i].offset));
-            num_bins[i] = (extents[i] + bin_sizes[i] - 1) / bin_sizes[i];
-        }
-
-        bin_stride[0] = 1;
-        for (std::size_t i = 1; i < Dim; ++i) {
-            bin_stride[i] = bin_stride[i - 1] * num_bins[i - 1];
-        }
-    }
-
-    tcb::span<const std::size_t, Dim>
-        grid_sizes; ///< The size of the subproblem grid in each dimension
-    tcb::span<const std::size_t, Dim> extents; ///< The size of the overall grid in each dimension
-    tcb::span<const finufft::spreading::KernelWriteSpec<T>, Dim>
-        padding; ///< The padding required by the subproblem functor
-    std::array<int64_t, Dim>
-        global_offset; ///< Computed global offset introduced by the subfunctor padding
-    std::array<std::size_t, Dim> bin_sizes; ///< The computed size of the bins in each dimension
-    std::array<std::size_t, Dim>
-        bin_stride;            ///< The computed stride of the bin index in each dimension
-    std::size_t bin_key_shift; ///< The computed shift for the bin key.
-    std::array<std::size_t, Dim> num_bins; ///< The number of bins in each dimension
-
-    std::size_t num_bins_total() const {
-        std::size_t total = 1;
-        for (std::size_t i = 0; i < Dim; ++i) {
-            total *= num_bins[i];
-        }
-        return total;
-    }
-};
+using finufft::spreading::reference::IntBinInfo;
 
 template <typename T>
-std::vector<finufft::spreading::grid_specification<1>> make_bin_grids(BinInfo<T, 1> const &info) {
+std::vector<finufft::spreading::grid_specification<1>>
+make_bin_grids(IntBinInfo<T, 1> const &info) {
     std::vector<finufft::spreading::grid_specification<1>> grids(info.num_bins_total());
 
     for (std::size_t i = 0; i < info.num_bins[0]; ++i) {
@@ -96,7 +45,8 @@ std::vector<finufft::spreading::grid_specification<1>> make_bin_grids(BinInfo<T,
 }
 
 template <typename T>
-std::vector<finufft::spreading::grid_specification<2>> make_bin_grids(BinInfo<T, 2> const &info) {
+std::vector<finufft::spreading::grid_specification<2>>
+make_bin_grids(IntBinInfo<T, 2> const &info) {
     std::vector<finufft::spreading::grid_specification<2>> grids(info.num_bins_total());
 
     std::size_t idx = 0;
@@ -122,37 +72,28 @@ std::vector<finufft::spreading::grid_specification<2>> make_bin_grids(BinInfo<T,
 template <typename T, std::size_t Dim, typename FoldRescale>
 void compute_bin_index_impl(
     std::size_t *index, std::size_t num_points, tcb::span<T const *const, Dim> coordinates,
-    BinInfo<T, Dim> const &info, FoldRescale &&fold_rescale) {
+    IntBinInfo<T, Dim> const &info, FoldRescale &&fold_rescale) {
 
     std::array<T, Dim> extents_f;
     std::copy(info.extents.begin(), info.extents.end(), extents_f.begin());
 
     for (std::size_t i = 0; i < num_points; ++i) {
-        std::size_t bin_index = 0;
+        std::array<T, Dim> coords;
         for (std::size_t j = 0; j < Dim; ++j) {
-            auto coord = fold_rescale(coordinates[j][i], extents_f[j]);
-            auto coord_grid_left = std::ceil(coord - info.padding[j].offset);
-            std::size_t coord_grid = std::size_t(coord_grid_left - info.global_offset[j]);
-
-            // Compute the bin index
-            std::size_t bin_index_j = coord_grid / info.bin_sizes[j];
-
-            bin_index += bin_index_j * info.bin_stride[j];
+            coords[j] = coordinates[j][i];
         }
 
+        auto bin_index =
+            finufft::spreading::reference::compute_bin_index_single(coords, info, fold_rescale);
         index[i] = (bin_index << info.bin_key_shift) + i;
     }
 }
 
-template <typename T, std::size_t Dim>
-std::vector<finufft::spreading::grid_specification<Dim>> make_bin_grid(
-    finufft::spreading::reference::BinInfo<T, Dim> const &info,
-    tcb::span<const finufft::spreading::KernelWriteSpec<T>, Dim> const &kernel_padding) {}
 
 template <typename T, std::size_t Dim>
 std::vector<std::size_t> preprocess_points(
     int64_t *sort_idx, finufft::spreading::nu_point_collection<Dim, const T> const &input,
-    BinInfo<T, Dim> const &info) {
+    IntBinInfo<T, Dim> const &info) {
 
     auto fold_rescale = finufft::spreading::FoldRescalePi<T>{};
 
@@ -273,7 +214,7 @@ std::size_t check_grid_boundaries(
     std::size_t *sort_idx, tcb::span<const std::size_t> block_boundaries,
     tcb::span<const finufft::spreading::grid_specification<Dim>> grids,
     finufft::spreading::nu_point_collection<Dim, const T> points, FoldRescale &&fold_rescale,
-    BinInfo<T, Dim> const &info) {
+    IntBinInfo<T, Dim> const &info) {
 
     for (std::size_t dim = 0; dim < Dim; ++dim) {
         auto const &coordinates = points.coordinates[dim];
@@ -312,8 +253,7 @@ void apply_permutation(
         }
 
         // Copy back in sorted order
-        std::memcpy(
-            points.coordinates[dim], coord_buffer.get(), points.num_points * sizeof(T));
+        std::memcpy(points.coordinates[dim], coord_buffer.get(), points.num_points * sizeof(T));
     }
 
     // Fill sort index with identity permutation
@@ -348,7 +288,7 @@ void benchmark_spread_2d(benchmark::State &state, bool resolve_indirect_sort) {
     std::array<std::size_t, 2> grid_size = {block_x, block_y};
     auto functor_padding = config.spread_subproblem.target_padding();
 
-    BinInfo<float, 2> info(points.num_points, sizes, grid_size, functor_padding);
+    IntBinInfo<float, 2> info(points.num_points, sizes, grid_size, functor_padding);
 
     auto bin_boundaries = preprocess_points<float, 2>(sort_idx.get(), points, info);
 
@@ -366,7 +306,7 @@ void benchmark_spread_2d(benchmark::State &state, bool resolve_indirect_sort) {
     }
 
     if (resolve_indirect_sort) {
-        apply_permutation<float, 2>(points, reinterpret_cast<std::size_t*>(sort_idx.get()));
+        apply_permutation<float, 2>(points, reinterpret_cast<std::size_t *>(sort_idx.get()));
     }
 
     finufft::TimerRoot timer_root("bench");
@@ -405,20 +345,18 @@ void benchmark_spread_2d(benchmark::State &state, bool resolve_indirect_sort) {
     }
 }
 
-void bm_spread_2d_indirect(benchmark::State &state) {
-    benchmark_spread_2d(state, false);
-}
+void bm_spread_2d_indirect(benchmark::State &state) { benchmark_spread_2d(state, false); }
 
-void bm_spread_2d_direct(benchmark::State &state) {
-    benchmark_spread_2d(state, true);
-}
+void bm_spread_2d_direct(benchmark::State &state) { benchmark_spread_2d(state, true); }
 
 } // namespace
 
 BENCHMARK(bm_spread_2d_indirect)
-    ->Range(1 << 9, 1 << 11)->RangeMultiplier(2)
+    ->Range(1 << 9, 1 << 11)
+    ->RangeMultiplier(2)
     ->Unit(benchmark::kMillisecond);
 
 BENCHMARK(bm_spread_2d_direct)
-    ->Range(1 << 9, 1 << 11)->RangeMultiplier(2)
+    ->Range(1 << 9, 1 << 11)
+    ->RangeMultiplier(2)
     ->Unit(benchmark::kMillisecond);

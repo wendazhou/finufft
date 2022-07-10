@@ -44,7 +44,7 @@ struct SortPackedTimers {
  */
 template <typename T, std::size_t Dim, typename FoldRescale>
 void sort_packed(
-    nu_point_collection<Dim, const T> points, nu_point_collection<Dim, T> output,
+    nu_point_collection<Dim, const T> const& points, nu_point_collection<Dim, T> const& output,
     uint32_t *bin_index, IntGridBinInfo<T, Dim> const &info, SortPackedTimers &timers) {
 
     auto packed = finufft::allocate_aligned_array<PointBin<T, Dim>>(points.num_points, 64);

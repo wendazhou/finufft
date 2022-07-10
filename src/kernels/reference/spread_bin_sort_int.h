@@ -13,6 +13,8 @@
 #include "../../bit.h"
 #include "../../spreading.h"
 
+#include "../sorting.h"
+
 #include "gather_fold_reference.h"
 
 #include <tcb/span.hpp>
@@ -21,50 +23,9 @@ namespace finufft {
 namespace spreading {
 namespace reference {
 
-/** Basic information about a binned grid.
- *
- * This structure is used to hold commonly needed information
- * about a basic integer binned grid.
- *
- * An integer binned is defined as a rectangular grid, divided
- * into equally sized rectangular bins of integer length.
- *
- * For a point at (real) coordinates `(x, y, z)`, the bin containing
- * that point is defined as the bin containing the integer coordinate
- * `(ceil(x - o_x) + g_x, ceil(y - o_y) + g_y, ceil(z - o_z) + g_z)`,
- * where o_x etc. denote the offset to apply, and g_x = ceil(-o_x).
- *
- */
-template <typename T, std::size_t Dim> struct IntBinInfo {
-    std::array<std::size_t, Dim> size;             ///< Size of the underlying target grid
-    std::array<std::size_t, Dim> bin_size;         ///< Size of each bin
-    std::array<std::size_t, Dim> bin_index_stride; ///< Stride used to compute global bin index
-    std::array<std::size_t, Dim> num_bins;         ///< Number of bins in each dimension
-    std::array<T, Dim> offset;                     ///< Offset to use when computing bin index
-    std::array<int64_t, Dim> global_offset;        ///< Offset to use when computing bin index
+using finufft::spreading::IntBinInfo;
+using finufft::spreading::PointBin;
 
-    IntBinInfo(
-        tcb::span<const std::size_t, Dim> size, tcb::span<const std::size_t, Dim> bin_size,
-        tcb::span<const T, Dim> offset) {
-        std::copy(size.begin(), size.end(), this->size.begin());
-        std::copy(bin_size.begin(), bin_size.end(), this->bin_size.begin());
-        std::copy(offset.begin(), offset.end(), this->offset.begin());
-
-        for (std::size_t d = 0; d < Dim; ++d) {
-            num_bins[d] = (size[d] + bin_size[d] - 1) / bin_size[d];
-            global_offset[d] = std::ceil(-offset[d]);
-        }
-
-        bin_index_stride[0] = 1;
-        for (std::size_t d = 1; d < Dim; ++d) {
-            bin_index_stride[d] = bin_index_stride[d - 1] * num_bins[d - 1];
-        }
-    }
-
-    std::size_t num_bins_total() const {
-        return std::accumulate(num_bins.begin(), num_bins.end(), 1, std::multiplies<std::size_t>());
-    }
-};
 
 template <typename T, std::size_t Dim>
 std::array<std::size_t, Dim> compute_bin_size_from_grid_and_padding(
@@ -123,25 +84,6 @@ template <typename T, std::size_t Dim> struct IntGridBinInfo : IntBinInfo<T, Dim
     std::array<std::size_t, Dim> grid_size;      ///< Desired size for subproblem grid
     std::array<KernelWriteSpec<T>, Dim> padding; ///< The padding required by the subproblem functor
 };
-
-/** Structure representing a packed bin, coordinate and strength triple.
- *
- * When sorting, it is more efficient to move all related information concerning
- * a given point jointly, rather than computing a permutation and applying it,
- * due to the fact that advanced parallel sorters such as IPS4o attempt to
- * break up the sorting in contiguous chunks.
- *
- */
-template <typename T, std::size_t Dim> struct PointBin {
-    uint32_t bin;
-    std::array<T, Dim> coordinates;
-    std::array<T, 2> strength;
-};
-
-template <typename T, std::size_t Dim>
-bool operator<(const PointBin<T, Dim> &lhs, const PointBin<T, Dim> &rhs) {
-    return lhs.bin < rhs.bin;
-}
 
 /** Fold-rescale each point, compute corresponding bin, and write packed output.
  * 

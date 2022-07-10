@@ -87,8 +87,8 @@ struct ComputeBinAndPackSingle<float, Dim, FoldRescale> {
         _mm512_store_epi32(bins, bin);
 
         // Write out individual points
-        for (std::size_t j = 0; j < Partial ? limit : 16; ++j) {
-            auto &p = output[i * 16 + j];
+        for (std::size_t j = 0; j < (Partial ? limit : 16); ++j) {
+            auto &p = output[i + j];
 
             p.bin = bins[j];
             for (std::size_t dim = 0; dim < Dim; ++dim) {
@@ -115,7 +115,10 @@ void compute_bins_and_pack_impl(
     for (; i + 16 < input.num_points; i += 16) {
         loop(i, 16, input, output, std::false_type{});
     }
-    loop(i, input.num_points - i, input, output, std::true_type{});
+
+    if (i < input.num_points) {
+        loop(i, input.num_points - i, input, output, std::true_type{});
+    }
 }
 
 template <typename T, std::size_t Dim>

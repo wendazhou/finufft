@@ -1,3 +1,11 @@
+/** Benchmark to investigate the performance of spread subproblem as a function of grid size.
+ * 
+ * In the subproblem evaluation, the size of the grid under consideration is of crucial importance
+ * due to the fact that we require repeated reads and writes to it.
+ * This sequence of benchmark explores the performance of the subproblem as a function of that grid size.
+ * 
+ */
+
 #include "../src/kernels/avx512/spread_avx512.h"
 #include "spread_subproblem_perf.h"
 

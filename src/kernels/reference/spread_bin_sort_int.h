@@ -134,7 +134,7 @@ template <typename T, std::size_t Dim> struct IntGridBinInfo : IntBinInfo<T, Dim
  */
 template <typename T, std::size_t Dim> struct PointBin {
     uint32_t bin;
-    std::array<T, Dim> coords;
+    std::array<T, Dim> coordinates;
     std::array<T, 2> strength;
 };
 

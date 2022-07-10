@@ -122,6 +122,7 @@ function(set_finufft_options target)
     endif()
 
     target_link_libraries(${target} PUBLIC hwy hwy_contrib)
+    target_link_libraries(${target} PRIVATE libdivide)
 endfunction()
 
 find_package(TBB REQUIRED)
@@ -189,7 +190,8 @@ add_finufft_kernel(finufft_avx512
         src/kernels/avx512/spread_1d_avx512_impl.cpp
         src/kernels/avx512/spread_2d_avx512_impl.cpp
         src/kernels/avx512/spread_3d_avx512_impl.cpp
-    FLAGS -mavx512f -mavx512vl -mavx512dq)
+        src/kernels/avx512/spread_bin_sort_int_impl.cpp
+    FLAGS -mavx512f -mavx512vl -mavx512dq -mbmi -mbmi2)
 add_finufft_kernel(finufft_avx2 SOURCES src/kernels/avx2/gather_fold_avx2.cpp FLAGS -mavx -mavx2 -mfma)
 add_finufft_kernel(finufft_hwy
     SOURCES

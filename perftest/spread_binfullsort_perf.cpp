@@ -72,7 +72,7 @@ template <typename T, std::size_t Dim, typename FoldRescale> struct ComputeAndPa
             auto coord = fold_rescale(input.coordinates[j][i], extents_f[j]);
 
             // Pack basic data
-            p.coords[j] = coord;
+            p.coordinates[j] = coord;
             p.strength[0] = input.strengths[2 * i];
             p.strength[1] = input.strengths[2 * i + 1];
 
@@ -160,7 +160,7 @@ void sort_packed(
             auto const &p = packed[i];
 
             for (std::size_t j = 0; j < Dim; ++j) {
-                output.coordinates[j][i] = p.coords[j];
+                output.coordinates[j][i] = p.coordinates[j];
             }
 
             output.strengths[2 * i] = p.strength[0];

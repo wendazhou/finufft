@@ -144,6 +144,8 @@ bool operator<(const PointBin<T, Dim> &lhs, const PointBin<T, Dim> &rhs) {
 }
 
 /** Fold-rescale each point, compute corresponding bin, and write packed output.
+ * 
+ * Some implementations may require arrays to be aligned.
  *
  * @param input The input points, with coordinates and strengths
  * @param range The range of the input point, will determine the type of rescaling applied
@@ -156,6 +158,24 @@ template <typename T, std::size_t Dim>
 void compute_bins_and_pack(
     nu_point_collection<Dim, const T> input, FoldRescaleRange range, IntBinInfo<T, Dim> const &info,
     PointBin<T, Dim> *output);
+
+/** Unpacks packed point data into the given point collection.
+ * 
+ * Some implementations may require arrays to be aligned.
+ *
+ * This function is used to unpack points after sorting.
+ * The bin index of each point is additionally recorded to a separate
+ * array for subsequent processing if needed.
+ *
+ * @param input An array of packed point data, with length `output.num_points`
+ * @param output The point collection to which the points will be written
+ * @param[out] bin_index An array of length `output.num_points` to which the bin index of each point
+ * will be written.
+ *
+ */
+template <typename T, std::size_t Dim>
+void unpack_bins_to_points(
+    PointBin<T, Dim> const *input, nu_point_collection<Dim, T> const &output, uint32_t *bin_index);
 
 /** Functor for computing bin index.
  *

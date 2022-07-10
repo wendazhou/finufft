@@ -111,13 +111,16 @@ void compute_bins_and_pack_impl(
     ComputeBinAndPackSingle<T, Dim, FoldRescale> loop(
         info, std::forward<FoldRescale>(fold_rescale));
 
-    std::size_t i = 0;
-    for (; i + 16 < input.num_points; i += 16) {
-        loop(i, 16, input, output, std::false_type{});
+    // Main loop, vectorized by 16x
+#pragma omp parallel for firstprivate(loop)
+    for (std::size_t i = 0; i < input.num_points / 16; ++i) {
+        loop(i * 16, 16, input, output, std::false_type{});
     }
 
-    if (i < input.num_points) {
-        loop(i, input.num_points - i, input, output, std::true_type{});
+    // Masked tail elements
+    std::size_t next_index = (input.num_points / 16) * 16;
+    if (next_index < input.num_points) {
+        loop(next_index, input.num_points - next_index, input, output, std::true_type{});
     }
 }
 

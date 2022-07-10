@@ -11,8 +11,8 @@
 #include <cstdint>
 
 #include <ips4o/ips4o.hpp>
-#include <libdivide.h>
 
+#include "../src/kernels/avx512/spread_bin_sort_int.h"
 #include "../src/kernels/reference/gather_fold_reference.h"
 #include "../src/kernels/reference/spread_bin_sort_int.h"
 
@@ -45,14 +45,15 @@ struct SortPackedTimers {
 template <typename T, std::size_t Dim, typename FoldRescale>
 void sort_packed(
     nu_point_collection<Dim, const T> points, nu_point_collection<Dim, T> output,
-    IntGridBinInfo<T, Dim> const &info, SortPackedTimers &timers) {
+    uint32_t *bin_index, IntGridBinInfo<T, Dim> const &info, SortPackedTimers &timers) {
 
     auto packed = finufft::allocate_aligned_array<PointBin<T, Dim>>(points.num_points, 64);
 
     // Compute bins
     {
         finufft::ScopedTimerGuard guard(timers.pack);
-        compute_bins_and_pack(points, FoldRescaleRange::Pi, info, packed.get());
+        finufft::spreading::avx512::compute_bins_and_pack(
+            points, FoldRescaleRange::Pi, info, packed.get());
     }
 
     {
@@ -63,16 +64,7 @@ void sort_packed(
     // Unpack to output.
     {
         finufft::ScopedTimerGuard guard(timers.unpack);
-        for (std::size_t i = 0; i < points.num_points; ++i) {
-            auto const &p = packed[i];
-
-            for (std::size_t j = 0; j < Dim; ++j) {
-                output.coordinates[j][i] = p.coordinates[j];
-            }
-
-            output.strengths[2 * i] = p.strength[0];
-            output.strengths[2 * i + 1] = p.strength[1];
-        }
+        unpack_bins_to_points(packed.get(), output, bin_index);
     }
 }
 
@@ -81,6 +73,7 @@ template <typename T, std::size_t Dim> void bench_sort_packed(benchmark::State &
 
     auto points = make_random_point_collection<Dim, T>(num_points, 1, {-3 * M_PI, 3 * M_PI});
     auto output = finufft::spreading::SpreaderMemoryInput<Dim, T>(num_points);
+    auto output_bin_index = finufft::allocate_aligned_array<uint32_t>(num_points, 64);
 
     std::array<std::size_t, Dim> extents;
     extents.fill(1024);
@@ -111,7 +104,11 @@ template <typename T, std::size_t Dim> void bench_sort_packed(benchmark::State &
     SortPackedTimers timers(timer);
 
     for (auto _ : state) {
-        sort_packed<T, Dim, FoldRescalePi<T>>(points, output, info, timers);
+        sort_packed<T, Dim, FoldRescalePi<T>>(points, output, output_bin_index.get(), info, timers);
+        benchmark::DoNotOptimize(output.coordinates[0][0]);
+        benchmark::DoNotOptimize(output_bin_index[0]);
+        benchmark::DoNotOptimize(points.coordinates[0][0]);
+        benchmark::ClobberMemory();
     }
 
     state.SetItemsProcessed(state.iterations() * num_points);

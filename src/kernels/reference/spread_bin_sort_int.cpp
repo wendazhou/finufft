@@ -62,6 +62,7 @@ void compute_bins_and_pack_impl(
 
     ComputeAndPackSingle<T, Dim, FoldRescale> compute_and_pack(info, fold_rescale);
 
+#pragma omp parallel for
     for (std::size_t i = 0; i < input.num_points; ++i) {
         points_with_bin[i] = compute_and_pack(input, i);
     }
@@ -85,6 +86,40 @@ void compute_bins_and_pack(
         FoldRescaleRange range,                                                                    \
         IntBinInfo<T, Dim> const &info,                                                            \
         PointBin<T, Dim> *output);
+
+INSTANTIATE(float, 1)
+INSTANTIATE(float, 2)
+INSTANTIATE(float, 3)
+
+INSTANTIATE(double, 1)
+INSTANTIATE(double, 2)
+INSTANTIATE(double, 3)
+
+#undef INSTANTIATE
+
+template <typename T, std::size_t Dim>
+void unpack_bins_to_points(
+    PointBin<T, Dim> const *input, nu_point_collection<Dim, T> const &output, uint32_t *bin_index) {
+
+#pragma omp parallel for
+    for (std::size_t i = 0; i < output.num_points; ++i) {
+        auto const &p = input[i];
+
+        for (std::size_t j = 0; j < Dim; ++j) {
+            output.coordinates[j][i] = p.coordinates[j];
+        }
+
+        output.strengths[2 * i] = p.strength[0];
+        output.strengths[2 * i + 1] = p.strength[1];
+        bin_index[i] = p.bin;
+    }
+}
+
+#define INSTANTIATE(T, Dim)                                                                        \
+    template void unpack_bins_to_points<T, Dim>(                                                   \
+        PointBin<T, Dim> const *input,                                                             \
+        nu_point_collection<Dim, T> const &output,                                                 \
+        uint32_t *bin_index);
 
 INSTANTIATE(float, 1)
 INSTANTIATE(float, 2)

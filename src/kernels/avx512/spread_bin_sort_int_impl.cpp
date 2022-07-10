@@ -18,7 +18,7 @@ template <typename T, std::size_t Dim, typename FoldRescale> struct ComputeBinAn
  * This implementation processes the inner loop of the bin index computation.
  * It assumes that the integer coordinate of the point, as well as the bin index,
  * will fit in 32 bit integers.
- * 
+ *
  * Note that although the implementation of the fold / rescale and bin computation
  * is batched using vector instructions, the packing of the data is not due its
  * irregular nature.
@@ -111,7 +111,6 @@ void compute_bins_and_pack_impl(
     ComputeBinAndPackSingle<T, Dim, FoldRescale> loop(
         info, std::forward<FoldRescale>(fold_rescale));
 
-
     std::size_t i = 0;
     for (; i + 16 < input.num_points; i += 16) {
         loop(i, 16, input, output, std::false_type{});
@@ -132,8 +131,7 @@ void compute_bins_and_pack(
 }
 
 #define INSTANTIATE(T, Dim)                                                                        \
-    template <>                                                                                    \
-    void compute_bins_and_pack(                                                                    \
+    template void compute_bins_and_pack<T, Dim>(                                                   \
         nu_point_collection<Dim, const T> const &input,                                            \
         FoldRescaleRange range,                                                                    \
         IntBinInfo<T, Dim> const &info,                                                            \
@@ -142,6 +140,8 @@ void compute_bins_and_pack(
 INSTANTIATE(float, 1)
 INSTANTIATE(float, 2)
 INSTANTIATE(float, 3)
+
+#undef INSTANTIATE
 
 } // namespace avx512
 } // namespace spreading

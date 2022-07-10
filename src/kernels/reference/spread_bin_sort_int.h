@@ -143,6 +143,20 @@ bool operator<(const PointBin<T, Dim> &lhs, const PointBin<T, Dim> &rhs) {
     return lhs.bin < rhs.bin;
 }
 
+/** Fold-rescale each point, compute corresponding bin, and write packed output.
+ *
+ * @param input The input points, with coordinates and strengths
+ * @param range The range of the input point, will determine the type of rescaling applied
+ * @param info Bin / grid configuration
+ * @param[out] output An array of size input.num_points to which the packed point / bin info will be
+ * written.
+ *
+ */
+template <typename T, std::size_t Dim>
+void compute_bins_and_pack(
+    nu_point_collection<Dim, const T> input, FoldRescaleRange range, IntBinInfo<T, Dim> const &info,
+    PointBin<T, Dim> *output);
+
 /** Functor for computing bin index.
  *
  */

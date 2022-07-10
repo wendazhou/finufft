@@ -33,4 +33,7 @@ add_benchmark(transform_type1_large transform_type1_large.cpp)
 add_benchmark(transform_type1_xlarge transform_type1_xlarge.cpp)
 
 add_benchmark(spread_binfullsort_perf spread_binfullsort_perf.cpp)
-target_link_libraries(spread_binfullsort_perf PRIVATE ips4o libdivide)
+target_link_libraries(spread_binfullsort_perf PRIVATE ips4o)
+
+add_benchmark(spread_full_2d spread_full_2d.cpp)
+target_link_libraries(spread_full_2d PRIVATE ips4o)

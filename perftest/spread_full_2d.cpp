@@ -61,10 +61,13 @@ struct SpreadTimers {
     SortPackedTimers sort_packed_timers;
     SpreadBlockedTimers spread_blocked_timers;
 
+    finufft::Timer compute_bin_boundaries;
+    finufft::Timer make_grids;
+
     SpreadTimers(finufft::Timer &timer)
-        : sort_packed(timer.make_timer("sp")),
-          spread_blocked(timer.make_timer("sb")), sort_packed_timers(sort_packed),
-          spread_blocked_timers(spread_blocked) {}
+        : sort_packed(timer.make_timer("sp")), spread_blocked(timer.make_timer("sb")),
+          sort_packed_timers(sort_packed), spread_blocked_timers(spread_blocked),
+          compute_bin_boundaries(timer.make_timer("cbb")), make_grids(timer.make_timer("mg")) {}
 };
 
 /** Sorts points by bin index in packed format.
@@ -101,7 +104,7 @@ void spread_blocked(
     std::size_t const *point_block_boundaries, std::array<std::size_t, 2> const &sizes,
     float *output, SpreadSubproblemFunctor<float, 2> const &spread_subproblem,
     SynchronizedAccumulateFactory<float, 2> const &accumulate_factory,
-    SpreadBlockedTimers &timers) {
+    SpreadBlockedTimers &timers_ref) {
 
     typedef float T;
     const std::size_t Dim = 2;
@@ -116,63 +119,68 @@ void spread_blocked(
             std::max(max_num_points, point_block_boundaries[i + 1] - point_block_boundaries[i]);
     }
 
-    auto subgrid_output = finufft::allocate_aligned_array<float>(2 * max_grid_size, 64);
-    auto local_points = finufft::spreading::SpreaderMemoryInput<2, float>(max_num_points);
     auto const &padding_info = spread_subproblem.target_padding();
-
     auto const &accumulate_subgrid = accumulate_factory(output, sizes);
 
-    for (std::size_t i = 0; i < num_blocks; ++i) {
-        // Set number of points for subproblem
-        auto block_num_points = point_block_boundaries[i + 1] - point_block_boundaries[i];
-        local_points.num_points = block_num_points;
+#pragma omp parallel
+    {
+        auto subgrid_output = finufft::allocate_aligned_array<float>(2 * max_grid_size, 64);
+        auto local_points = finufft::spreading::SpreaderMemoryInput<2, float>(max_num_points);
+        SpreadBlockedTimers timers(timers_ref);
 
-        auto &grid = grids[i];
+#pragma omp for
+        for (std::size_t i = 0; i < num_blocks; ++i) {
+            // Set number of points for subproblem
+            auto block_num_points = point_block_boundaries[i + 1] - point_block_boundaries[i];
+            local_points.num_points = block_num_points;
 
-        // Zero local memory
-        std::memset(subgrid_output.get(), 0, 2 * grid.num_elements() * sizeof(float));
+            auto &grid = grids[i];
 
-        // Gather local points
-        {
-            finufft::ScopedTimerGuard guard(timers.gather);
+            // Zero local memory
+            std::memset(subgrid_output.get(), 0, 2 * grid.num_elements() * sizeof(float));
 
-            // Copy points to local buffer
-            std::memcpy(
-                local_points.strengths,
-                input.strengths + point_block_boundaries[i],
-                block_num_points * sizeof(float) * 2);
-            for (std::size_t dim = 0; dim < Dim; ++dim) {
+            // Gather local points
+            {
+                finufft::ScopedTimerGuard guard(timers.gather);
+
+                // Copy points to local buffer
                 std::memcpy(
-                    local_points.coordinates[dim],
-                    input.coordinates[dim] + point_block_boundaries[i],
-                    block_num_points * sizeof(float));
+                    local_points.strengths,
+                    input.strengths + point_block_boundaries[i],
+                    block_num_points * sizeof(float) * 2);
+                for (std::size_t dim = 0; dim < Dim; ++dim) {
+                    std::memcpy(
+                        local_points.coordinates[dim],
+                        input.coordinates[dim] + point_block_boundaries[i],
+                        block_num_points * sizeof(float));
+                }
+
+                auto num_points_padded = finufft::spreading::round_to_next_multiple(
+                    block_num_points, spread_subproblem.num_points_multiple());
+
+                // Pad the input points to the required multiple, using a pad coordinate derived
+                // from the subgrid. The pad coordinate is given by the leftmost valid coordinate in
+                // the subgrid.
+                std::array<T, Dim> pad_coordinate;
+                for (std::size_t i = 0; i < Dim; ++i) {
+                    pad_coordinate[i] =
+                        padding_info[i].min_valid_value(grid.offsets[i], grid.extents[i]);
+                }
+                finufft::spreading::pad_nu_point_collection(
+                    local_points, num_points_padded, pad_coordinate);
             }
 
-            auto num_points_padded = finufft::spreading::round_to_next_multiple(
-                block_num_points, spread_subproblem.num_points_multiple());
-
-            // Pad the input points to the required multiple, using a pad coordinate derived from
-            // the subgrid. The pad coordinate is given by the leftmost valid coordinate in the
-            // subgrid.
-            std::array<T, Dim> pad_coordinate;
-            for (std::size_t i = 0; i < Dim; ++i) {
-                pad_coordinate[i] =
-                    padding_info[i].min_valid_value(grid.offsets[i], grid.extents[i]);
+            // Spread to local subgrid
+            {
+                finufft::ScopedTimerGuard guard(timers.subproblem);
+                spread_subproblem(local_points, grid, subgrid_output.get());
             }
-            finufft::spreading::pad_nu_point_collection(
-                local_points, num_points_padded, pad_coordinate);
-        }
 
-        // Spread to local subgrid
-        {
-            finufft::ScopedTimerGuard guard(timers.subproblem);
-            spread_subproblem(local_points, grid, subgrid_output.get());
-        }
-
-        // Accumulate to main grid
-        {
-            finufft::ScopedTimerGuard guard(timers.accumulate);
-            accumulate_subgrid(subgrid_output.get(), grid);
+            // Accumulate to main grid
+            {
+                finufft::ScopedTimerGuard guard(timers.accumulate);
+                accumulate_subgrid(subgrid_output.get(), grid);
+            }
         }
     }
 }
@@ -239,33 +247,49 @@ void spread(
 
     reference::IntGridBinInfo<T, Dim> info(size, grid_size, spread_subproblem.target_padding());
 
-    sort_packed<T, Dim>(points, points_sorted, bin_idx.get(), info, timer.sort_packed_timers);
+    {
+        finufft::ScopedTimerGuard guard(timer.sort_packed);
+        sort_packed<T, Dim>(points, points_sorted, bin_idx.get(), info, timer.sort_packed_timers);
+    }
 
     // Compute bin boundaries
     auto bin_boundaries =
         finufft::allocate_aligned_array<std::size_t>(info.num_bins_total() + 1, 64);
-    std::memset(bin_boundaries.get(), 0, sizeof(std::size_t) * (info.num_bins_total() + 1));
-    for (std::size_t i = 0; i < points.num_points; ++i) {
-        bin_boundaries[bin_idx[i] + 1] += 1;
+
+    {
+        finufft::ScopedTimerGuard guard(timer.compute_bin_boundaries);
+
+        // Note: can we make this faster / fuse into unpack step?
+        // Currently ~8% of total time!!
+        std::memset(bin_boundaries.get(), 0, sizeof(std::size_t) * (info.num_bins_total() + 1));
+        for (std::size_t i = 0; i < points.num_points; ++i) {
+            bin_boundaries[bin_idx[i] + 1] += 1;
+        }
+
+        std::partial_sum(
+            bin_boundaries.get(),
+            bin_boundaries.get() + info.num_bins_total() + 1,
+            bin_boundaries.get());
     }
-    std::partial_sum(
-        bin_boundaries.get(),
-        bin_boundaries.get() + info.num_bins_total() + 1,
-        bin_boundaries.get());
 
     // Spread points
+    timer.make_grids.start();
     auto const &grids = make_bin_grids(info);
+    timer.make_grids.end();
 
-    spread_blocked(
-        points_sorted,
-        info.num_bins_total(),
-        grids,
-        bin_boundaries.get(),
-        size,
-        output,
-        spread_subproblem,
-        get_reference_block_locking_accumulator<T, Dim>(),
-        timer.spread_blocked_timers);
+    {
+        finufft::ScopedTimerGuard guard(timer.spread_blocked);
+        spread_blocked(
+            points_sorted,
+            info.num_bins_total(),
+            grids,
+            bin_boundaries.get(),
+            size,
+            output,
+            spread_subproblem,
+            get_reference_block_locking_accumulator<T, Dim>(),
+            timer.spread_blocked_timers);
+    }
 }
 
 template void spread<float, 2>(
@@ -274,6 +298,8 @@ template void spread<float, 2>(
 
 void bm_spread_2d(benchmark::State &state) {
     std::size_t target_size = state.range(0);
+    std::size_t kernel_width= state.range(1);
+
     auto num_points = target_size * target_size;
 
     finufft::TimerRoot root("bench_full_spread");
@@ -281,7 +307,7 @@ void bm_spread_2d(benchmark::State &state) {
     SpreadTimers timers(timer);
 
     auto points = make_random_point_collection<2, float>(num_points, 0, {-3 * M_PI, 3 * M_PI});
-    auto kernel_spec = specification_from_width(8, 2);
+    auto kernel_spec = specification_from_width(kernel_width, 2);
     auto output = finufft::allocate_aligned_array<float>(2 * target_size * target_size, 64);
 
     for (auto _ : state) {
@@ -315,8 +341,6 @@ void bm_spread_2d(benchmark::State &state) {
 } // namespace
 
 BENCHMARK(bm_spread_2d)
-    ->Arg(1 << 10)
-    ->Arg(1 << 11)
-    ->Arg(1 << 12)
+    ->ArgsProduct({{1 << 10, 1 << 11, 1 << 12}, {4, 6, 8}})
     ->UseRealTime()
     ->Unit(benchmark::kMillisecond);

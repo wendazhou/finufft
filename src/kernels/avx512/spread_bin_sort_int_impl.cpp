@@ -335,7 +335,7 @@ struct ComputeBinAndPackSingle<float, Dim, FoldRescale> {
             __m512 x;
 
             if (Partial) {
-                __mmask16 load_mask = _bzhi_u32(-1, limit);
+                __mmask16 load_mask = (1 << limit) - 1;
                 x = _mm512_maskz_load_ps(load_mask, input.coordinates[j] + i);
             } else {
                 x = _mm512_load_ps(input.coordinates[j] + i);

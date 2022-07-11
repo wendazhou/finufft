@@ -41,23 +41,36 @@ void test_compute_bins_and_pack(std::size_t num_points, Fn &&fn) {
         points, fs::FoldRescaleRange::Pi, info, packed_actual.get());
 
     for (std::size_t i = 0; i < points.num_points; ++i) {
-        ASSERT_EQ(packed_expected[i].bin, packed_actual[i].bin);
-        ASSERT_FLOAT_EQ(packed_expected[i].coordinates[0], packed_actual[i].coordinates[0]);
-        ASSERT_EQ(packed_expected[i].strength[0], packed_actual[i].strength[0]);
-        ASSERT_EQ(packed_expected[i].strength[1], packed_actual[i].strength[1]);
+        ASSERT_EQ(packed_expected[i].bin, packed_actual[i].bin) << "i = " << i;
+        ASSERT_FLOAT_EQ(packed_expected[i].coordinates[0], packed_actual[i].coordinates[0]) << "i = " << i;
+        ASSERT_EQ(packed_expected[i].strength[0], packed_actual[i].strength[0]) << "i = " << i;
+        ASSERT_EQ(packed_expected[i].strength[1], packed_actual[i].strength[1]) << "i = " << i;
+    }
+}
+
+template <typename T, std::size_t Dim, typename Fn>
+void test_compute_bins_and_pack(Fn &&fn) {
+    std::vector<std::size_t> num_points_list = {1, 2, 3};
+    for (std::size_t i = 0; i < 32; ++i) {
+        num_points_list.push_back(200 + i);
+    }
+
+    for (auto num_points : num_points_list) {
+        SCOPED_TRACE("num_points = " + std::to_string(num_points));
+        test_compute_bins_and_pack<T, Dim>(num_points, fn);
     }
 }
 
 } // namespace
 
 TEST(TestBinSortInt, Avx512_1D) {
-    test_compute_bins_and_pack<float, 1>(200, &fs::avx512::compute_bins_and_pack<float, 1>);
+    test_compute_bins_and_pack<float, 1>(&fs::avx512::compute_bins_and_pack<float, 1>);
 }
 
 TEST(TestBinSortInt, Avx512_2D) {
-    test_compute_bins_and_pack<float, 2>(200, &fs::avx512::compute_bins_and_pack<float, 2>);
+    test_compute_bins_and_pack<float, 2>(&fs::avx512::compute_bins_and_pack<float, 2>);
 }
 
 TEST(TestBinSortInt, Avx512_3D) {
-    test_compute_bins_and_pack<float, 3>(200, &fs::avx512::compute_bins_and_pack<float, 3>);
+    test_compute_bins_and_pack<float, 3>(&fs::avx512::compute_bins_and_pack<float, 3>);
 }

@@ -61,13 +61,9 @@ struct SpreadTimers {
     SortPackedTimers sort_packed_timers;
     SpreadBlockedTimers spread_blocked_timers;
 
-    finufft::Timer compute_bin_boundaries;
-    finufft::Timer make_grids;
-
     SpreadTimers(finufft::Timer &timer)
         : sort_packed(timer.make_timer("sp")), spread_blocked(timer.make_timer("sb")),
-          sort_packed_timers(sort_packed), spread_blocked_timers(spread_blocked),
-          compute_bin_boundaries(timer.make_timer("cbb")), make_grids(timer.make_timer("mg")) {}
+          sort_packed_timers(sort_packed), spread_blocked_timers(spread_blocked) {}
 };
 
 /** Sorts points by bin index in packed format.
@@ -76,7 +72,7 @@ struct SpreadTimers {
 template <typename T, std::size_t Dim>
 void sort_packed(
     nu_point_collection<Dim, const T> const &points, nu_point_collection<Dim, T> const &output,
-    uint32_t *bin_index, IntBinInfo<T, Dim> const &info, SortPackedTimers &timers) {
+    std::size_t *bin_counts, IntBinInfo<T, Dim> const &info, SortPackedTimers &timers) {
 
     auto packed = finufft::allocate_aligned_array<PointBin<T, Dim>>(points.num_points, 64);
 
@@ -94,7 +90,7 @@ void sort_packed(
     // Unpack to output.
     {
         finufft::ScopedTimerGuard guard(timers.unpack);
-        reference::unpack_bins_to_points(packed.get(), output, bin_index);
+        reference::unpack_sorted_bins_to_points(packed.get(), output, bin_counts);
     }
 }
 
@@ -240,36 +236,26 @@ void spread(
 
     SpreaderMemoryInput<Dim, T> points_sorted(points.num_points);
     auto packed = finufft::allocate_aligned_array<PointBin<T, Dim>>(points.num_points, 64);
-    auto bin_idx = finufft::allocate_aligned_array<uint32_t>(points.num_points, 64);
 
     auto spread_subproblem = get_subproblem_polynomial_avx512_functor<T, Dim>(kernel_spec);
     auto grid_size = get_grid_size<T, Dim>();
 
     reference::IntGridBinInfo<T, Dim> info(size, grid_size, spread_subproblem.target_padding());
 
+    auto bin_counts = finufft::allocate_aligned_array<size_t>(info.num_bins_total() + 1, 64);
+    std::memset(bin_counts.get(), 0, (info.num_bins_total() + 1) * sizeof(size_t));
+
     {
         finufft::ScopedTimerGuard guard(timer.sort_packed);
-        sort_packed<T, Dim>(points, points_sorted, bin_idx.get(), info, timer.sort_packed_timers);
+        sort_packed<T, Dim>(points, points_sorted, bin_counts.get() + 1, info, timer.sort_packed_timers);
     }
 
     // Compute bin boundaries
-    auto bin_boundaries =
-        finufft::allocate_aligned_array<std::size_t>(info.num_bins_total() + 1, 64);
-
     {
-        finufft::ScopedTimerGuard guard(timer.compute_bin_boundaries);
-
-        // Note: can we make this faster / fuse into unpack step?
-        // Currently ~8% of total time!!
-        std::memset(bin_boundaries.get(), 0, sizeof(std::size_t) * (info.num_bins_total() + 1));
-        for (std::size_t i = 0; i < points.num_points; ++i) {
-            bin_boundaries[bin_idx[i] + 1] += 1;
-        }
-
         std::partial_sum(
-            bin_boundaries.get(),
-            bin_boundaries.get() + info.num_bins_total() + 1,
-            bin_boundaries.get());
+            bin_counts.get(),
+            bin_counts.get() + info.num_bins_total() + 1,
+            bin_counts.get());
     }
 
     // Spread points
@@ -281,7 +267,7 @@ void spread(
             points_sorted,
             info.num_bins_total(),
             grids,
-            bin_boundaries.get(),
+            bin_counts.get(),
             size,
             output,
             spread_subproblem,
@@ -310,8 +296,6 @@ void bm_spread_2d(benchmark::State &state) {
 
     for (auto _ : state) {
         spread<float, 2>(points, kernel_spec, {target_size, target_size}, output.get(), timers);
-        benchmark::DoNotOptimize(points.coordinates[0]);
-        benchmark::DoNotOptimize(points.coordinates[1]);
         benchmark::DoNotOptimize(output[0]);
         benchmark::ClobberMemory();
     }

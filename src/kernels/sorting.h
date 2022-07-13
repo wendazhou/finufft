@@ -48,8 +48,8 @@ template <typename T, std::size_t Dim> struct IntBinInfo {
         std::copy(offset.begin(), offset.end(), this->offset.begin());
 
         for (std::size_t d = 0; d < Dim; ++d) {
-            num_bins[d] = (size[d] + bin_size[d] - 1) / bin_size[d];
             global_offset[d] = std::ceil(-offset[d]);
+            num_bins[d] = (size[d] - global_offset[d] + bin_size[d] - 1) / bin_size[d];
         }
 
         bin_index_stride[0] = 1;

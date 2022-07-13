@@ -26,7 +26,6 @@ namespace reference {
 using finufft::spreading::IntBinInfo;
 using finufft::spreading::PointBin;
 
-
 template <typename T, std::size_t Dim>
 std::array<std::size_t, Dim> compute_bin_size_from_grid_and_padding(
     tcb::span<const std::size_t, Dim> grid_size, tcb::span<const KernelWriteSpec<T>, Dim> padding) {
@@ -86,7 +85,7 @@ template <typename T, std::size_t Dim> struct IntGridBinInfo : IntBinInfo<T, Dim
 };
 
 /** Fold-rescale each point, compute corresponding bin, and write packed output.
- * 
+ *
  * Some implementations may require arrays to be aligned.
  *
  * @param input The input points, with coordinates and strengths
@@ -102,7 +101,7 @@ void compute_bins_and_pack(
     PointBin<T, Dim> *output);
 
 /** Unpacks packed point data into the given point collection.
- * 
+ *
  * Some implementations may require arrays to be aligned.
  *
  * This function is used to unpack points after sorting.
@@ -118,6 +117,25 @@ void compute_bins_and_pack(
 template <typename T, std::size_t Dim>
 void unpack_bins_to_points(
     PointBin<T, Dim> const *input, nu_point_collection<Dim, T> const &output, uint32_t *bin_index);
+
+/** Unpacks sorted packed ponit data into the given point collection.
+ *
+ * This function is used to unpack points after sorting.
+ * Unlike `unpack_bins_to_points`, this function requires the `input`
+ * to be sorted according to the bin value, or it may not give correct results.
+ * It additionally counts the number of points in each bin.
+ *
+ * @param input An array of packed point data, with length `output.num_points`
+ * @param output The point collection to which the points will be written
+ * @param[out] bin_count An array of length the number of bins to which the number of points in each
+ * bin will be written. Note that if a bin is empty, no entry will be written to the array for that
+ * bin.
+ *
+ */
+template <typename T, std::size_t Dim>
+void unpack_sorted_bins_to_points(
+    PointBin<T, Dim> const *input, nu_point_collection<Dim, T> const &output,
+    std::size_t *bin_count);
 
 /** Functor for computing bin index.
  *

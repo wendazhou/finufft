@@ -55,5 +55,5 @@ void bm_pack_avx512(benchmark::State &state) {
 
 } // namespace
 
-BENCHMARK(bm_pack_reference)->RangeMultiplier(4)->Range(1 << 10, 1 << 20)->Unit(benchmark::kMicrosecond);
-BENCHMARK(bm_pack_avx512)->RangeMultiplier(4)->Range(1 << 10, 1 << 20)->Unit(benchmark::kMicrosecond);
+BENCHMARK(bm_pack_reference)->RangeMultiplier(4)->Range(1 << 10, 1 << 24)->Unit(benchmark::kMicrosecond);
+BENCHMARK(bm_pack_avx512)->RangeMultiplier(4)->Range(1 << 10, 1 << 24)->Unit(benchmark::kMicrosecond);

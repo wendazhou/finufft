@@ -115,11 +115,54 @@ void unpack_bins_to_points(
     }
 }
 
+template <typename T, std::size_t Dim>
+void unpack_sorted_bins_to_points(
+    PointBin<T, Dim> const *input, nu_point_collection<Dim, T> const &output,
+    std::size_t *bin_count) {
+#pragma omp parallel
+    {
+        std::size_t i = omp_get_thread_num() * output.num_points / omp_get_num_threads();
+        std::size_t final = (omp_get_thread_num() + 1) * output.num_points / omp_get_num_threads();
+
+        // Adjust initial to be the first point in the thread's bin
+        if (i > 0) {
+            while ((input[i].bin == input[i - 1].bin) && i < final) {
+                i++;
+            }
+        }
+
+        while (i < final) {
+            auto current_bin = input[i].bin;
+            std::size_t current_bin_count = 0;
+
+            while ((i < output.num_points) && (input[i].bin == current_bin)) {
+                auto const &p = input[i];
+
+                for (std::size_t j = 0; j < Dim; ++j) {
+                    output.coordinates[j][i] = p.coordinates[j];
+                }
+
+                output.strengths[2 * i] = p.strength[0];
+                output.strengths[2 * i + 1] = p.strength[1];
+
+                ++current_bin_count;
+                ++i;
+            }
+
+            bin_count[current_bin] = current_bin_count;
+        }
+    }
+}
+
 #define INSTANTIATE(T, Dim)                                                                        \
     template void unpack_bins_to_points<T, Dim>(                                                   \
         PointBin<T, Dim> const *input,                                                             \
         nu_point_collection<Dim, T> const &output,                                                 \
-        uint32_t *bin_index);
+        uint32_t *bin_index);                                                                      \
+    template void unpack_sorted_bins_to_points(                                                    \
+        PointBin<T, Dim> const *input,                                                             \
+        nu_point_collection<Dim, T> const &output,                                                 \
+        std::size_t *bin_count);
 
 INSTANTIATE(float, 1)
 INSTANTIATE(float, 2)

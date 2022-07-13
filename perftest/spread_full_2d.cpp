@@ -273,9 +273,7 @@ void spread(
     }
 
     // Spread points
-    timer.make_grids.start();
     auto const &grids = make_bin_grids(info);
-    timer.make_grids.end();
 
     {
         finufft::ScopedTimerGuard guard(timer.spread_blocked);
@@ -298,7 +296,7 @@ template void spread<float, 2>(
 
 void bm_spread_2d(benchmark::State &state) {
     std::size_t target_size = state.range(0);
-    std::size_t kernel_width= state.range(1);
+    std::size_t kernel_width = state.range(1);
 
     auto num_points = target_size * target_size;
 

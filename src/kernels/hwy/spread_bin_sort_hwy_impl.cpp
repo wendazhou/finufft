@@ -24,7 +24,7 @@
 #include "../../bit.h"
 #include "../reference/spread_bin_sort_reference.h"
 
-#include <hwy/contrib/sort/vqsort.h>
+#include <ips4o/ips4o.hpp>
 
 #undef HWY_TARGET_INCLUDE
 #define HWY_TARGET_INCLUDE "spread_bin_sort_hwy_impl.cpp"
@@ -259,7 +259,7 @@ inline void quicksort_and_fixup(
     // Step 2: Sort the bins
     {
         ScopedTimerGuard guard(timers.quicksort_sort);
-        hwy::Sorter{}(index, num, hwy::SortAscending{});
+        ips4o::parallel::sort(index, index + num);
     }
 
     // Step 3: fixup the index by masking out the index.

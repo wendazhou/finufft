@@ -23,7 +23,11 @@ std::string Timer::name() const {
     return root_->names_[index_];
 }
 
-TimerRoot::TimerRoot(std::string name) : root_name_(name) {}
+TimerRoot::TimerRoot(std::string name) : root_name_(name) {
+#ifdef FINUFFT_ENABLE_ITT
+    itt_domain_ = __itt_domain_create(name.c_str());
+#endif
+}
 
 void TimerRoot::record(std::size_t idx, Timer::duration duration) noexcept {
     std::lock_guard<std::mutex> lock(mutex_);
@@ -31,9 +35,23 @@ void TimerRoot::record(std::size_t idx, Timer::duration duration) noexcept {
 }
 
 Timer TimerRoot::make_timer_unsafe(std::string name) {
+    // Create ITT name before moving string.
+#ifdef FINUFFT_ENABLE_ITT
+    auto itt_name = __itt_string_handle_create(name.c_str());
+    itt_names_.push_back(itt_name);
+#endif
+
     names_.push_back(std::move(name));
     durations_.push_back(Timer::duration{});
-    return Timer(this, names_.size() - 1);
+
+    return Timer(
+        this,
+        names_.size() - 1
+#ifdef FINUFFT_ENABLE_ITT
+        ,
+        itt_name
+#endif
+    );
 }
 
 Timer TimerRoot::make_timer(std::string name) {

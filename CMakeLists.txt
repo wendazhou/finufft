@@ -38,6 +38,13 @@ set (BUILD_TESTING OFF)
 FetchContent_MakeAvailable(highway)
 set (BUILD_TESTING ON)
 
+FetchContent_Declare(
+    ittapi
+    GIT_REPOSITORY https://github.com/intel/ittapi.git
+    GIT_TAG 5b3410bb6874acf3383c1968534433411bc1df5e)
+set(ITT_API_IPT_SUPPORT ON CACHE BOOL "" FORCE)
+FetchContent_MakeAvailable(ittapi)
+
 set(FINUFFT_ARCH_FLAGS "-march=native" CACHE STRING "Compiler flags for specifying target architecture.")
 set(FINUFFT_FFTW_SUFFIX "OpenMP" CACHE STRING "Suffix for FFTW libraries (e.g. OpenMP, Threads etc.)")
 set(FINUFFT_BUILD_EXAMPLES "OFF" CACHE BOOL "Whether to build the FINUFFT examples")
@@ -121,8 +128,8 @@ function(set_finufft_options target)
         endif()
     endif()
 
-    target_link_libraries(${target} PUBLIC hwy hwy_contrib)
-    target_link_libraries(${target} PRIVATE libdivide)
+    target_link_libraries(${target} PUBLIC hwy ittnotify)
+    target_link_libraries(${target} PRIVATE libdivide ips4o)
 endfunction()
 
 find_package(TBB REQUIRED)

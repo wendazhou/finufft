@@ -6,6 +6,12 @@
 #include <tuple>
 #include <vector>
 
+#include "config.h"
+
+#ifdef FINUFFT_ENABLE_ITT
+#include <ittnotify.h>
+#endif
+
 namespace finufft {
 
 class Timer;
@@ -30,8 +36,24 @@ class Timer {
     TimerRoot *root_;
     time_point start_;
     std::size_t index_;
+#ifdef FINUFFT_ENABLE_ITT
+    __itt_string_handle *name_;
+#endif
 
-    Timer(TimerRoot *root, std::size_t index) : root_(root), start_(), index_(index) {}
+    Timer(
+        TimerRoot *root, std::size_t index
+#ifdef FINUFFT_ENABLE_ITT
+        ,
+        __itt_string_handle *name
+#endif
+        )
+        : root_(root), start_(), index_(index)
+#ifdef FINUFFT_ENABLE_ITT
+          ,
+          name_(name)
+#endif
+    {
+    }
 
   public:
     Timer() : root_(nullptr), start_(), index_(0) {}
@@ -41,7 +63,7 @@ class Timer {
     /** Start the timer.
      *
      */
-    void start() noexcept { start_ = clock_t::now(); }
+    void start() noexcept;
 
     /** Stop the timer, and return the time elapsed since start.
      *
@@ -111,6 +133,10 @@ class TimerRoot {
     std::string root_name_;
     std::vector<std::string> names_;
     std::vector<Timer::duration> durations_;
+#ifdef FINUFFT_ENABLE_ITT
+    __itt_domain *itt_domain_;
+    std::vector<__itt_string_handle *> itt_names_;
+#endif
 
   private:
     void record(std::size_t idx, Timer::duration duration) noexcept;
@@ -146,10 +172,20 @@ class TimerRoot {
     std::vector<std::tuple<std::string, Timer::duration>> report(std::string const &prefix);
 };
 
+inline void Timer::start() noexcept {
+    start_ = clock_t::now();
+#ifdef FINUFFT_ENABLE_ITT
+    if (root_) {
+        __itt_task_begin(root_->itt_domain_, __itt_null, __itt_null, name_);
+    }
+#endif
+}
+
 inline Timer::duration Timer::end() noexcept {
     auto end = clock_t::now();
     auto duration = end - start_;
     if (root_) {
+        __itt_task_end(root_->itt_domain_);
         root_->record(index_, duration);
     }
     return duration;

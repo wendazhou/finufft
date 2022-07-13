@@ -358,7 +358,7 @@ struct ComputeBinAndPackSingle<float, Dim, FoldRescale> {
         __m512 s1 = _mm512_load_ps(input.strengths + 2 * i);
         __m512 s2 = _mm512_load_ps(input.strengths + 2 * i + 16);
 
-        write_points(output + i, bin, coordinates, s1, s2, limit, partial);
+        write_points(output, bin, coordinates, s1, s2, limit, partial);
     }
 };
 
@@ -378,7 +378,7 @@ void compute_bins_and_pack_impl(
     {
 #pragma omp for
         for (std::size_t i = 0; i < input.num_points / 16; ++i) {
-            loop(i * 16, 16, input, output, std::false_type{});
+            loop(i * 16, 16, input, output + i * 16, std::false_type{});
         }
 
         // Use a fence to force serialization of non-temporal stores which we may use in the loop.
@@ -388,7 +388,12 @@ void compute_bins_and_pack_impl(
     // Masked tail elements
     std::size_t next_index = (input.num_points / 16) * 16;
     if (next_index < input.num_points) {
-        loop(next_index, input.num_points - next_index, input, output, std::true_type{});
+        loop(
+            next_index,
+            input.num_points - next_index,
+            input,
+            output + next_index,
+            std::true_type{});
     }
 }
 

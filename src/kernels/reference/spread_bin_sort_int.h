@@ -11,7 +11,7 @@
  */
 
 #include "../../bit.h"
-#include "../../spreading.h"
+#include "../spreading.h"
 
 #include "../sorting.h"
 

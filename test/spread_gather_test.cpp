@@ -1,4 +1,4 @@
-#include "../src/spreading.h"
+#include "../src/kernels/spreading.h"
 
 #include "../src/kernels/avx2/gather_fold_avx2.h"
 #include "../src/kernels/avx512/gather_fold_avx512.h"

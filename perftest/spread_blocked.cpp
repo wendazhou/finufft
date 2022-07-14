@@ -14,7 +14,7 @@
 
 #include <finufft_spread_opts.h>
 
-#include "../src/spreading.h"
+#include "../src/kernels/spreading.h"
 #include "../src/tracing.h"
 
 #include "../src/kernels/reference/spread_bin_sort_int.h"

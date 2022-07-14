@@ -12,7 +12,7 @@
 
 #include <benchmark/benchmark.h>
 
-#include "../src/spreading.h"
+#include "../src/kernels/spreading.h"
 
 #include <tcb/span.hpp>
 

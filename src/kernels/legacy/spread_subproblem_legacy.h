@@ -3,7 +3,7 @@
 #include <finufft/defs.h>
 #include <finufft_spread_opts.h>
 
-#include "../../spreading.h"
+#include "../spreading.h"
 
 /** @file This file contains implementation for spreading subproblem which
  * delegate to the current implementation.

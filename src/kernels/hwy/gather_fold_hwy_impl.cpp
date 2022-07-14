@@ -8,7 +8,7 @@
  *
  */
 
-#include "../../spreading.h"
+#include "../spreading.h"
 
 #undef HWY_TARGET_INCLUDE
 #define HWY_TARGET_INCLUDE "gather_fold_hwy_impl.cpp"

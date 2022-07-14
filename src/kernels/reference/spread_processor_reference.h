@@ -12,7 +12,7 @@
 #include <omp.h>
 #endif
 
-#include "../../spreading.h"
+#include "../spreading.h"
 
 namespace finufft {
 namespace spreading {

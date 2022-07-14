@@ -15,7 +15,7 @@
 #include "../src/kernels/avx512/spread_avx512.h"
 #include "../src/kernels/legacy/spread_subproblem_legacy.h"
 #include "../src/kernels/reference/spread_subproblem_reference.h"
-#include "../src/spreading.h"
+#include "../src/kernels/spreading.h"
 
 #include "../src/kernels/dispatch.h"
 #include "../test/spread_test_utils.h"

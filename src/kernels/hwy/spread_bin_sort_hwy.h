@@ -1,6 +1,6 @@
 #pragma once
 
-#include "../../spreading.h"
+#include "../spreading.h"
 #include "../../tracing.h"
 
 namespace finufft {

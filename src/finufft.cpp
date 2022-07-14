@@ -17,7 +17,7 @@
 #include <vector>
 #include "../contrib/legendre_rule_fast.h"
 
-#include "spreading.h"
+#include "kernels/spreading.h"
 
 using namespace std;
 using namespace finufft;

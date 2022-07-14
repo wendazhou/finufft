@@ -14,7 +14,7 @@
 #include <cstddef>
 #include <immintrin.h>
 
-#include "../../spreading.h"
+#include "../spreading.h"
 #include "../reference/spread_subproblem_reference.h"
 
 namespace finufft {

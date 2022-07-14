@@ -4,7 +4,7 @@
 #include <tuple>
 
 #include <tcb/span.hpp>
-#include "spreading.h"
+#include "kernels/spreading.h"
 
 namespace finufft {
 namespace detail {

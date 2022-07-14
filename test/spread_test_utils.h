@@ -1,6 +1,6 @@
 #pragma once
 
-#include "../src/spreading.h"
+#include "../src/kernels/spreading.h"
 
 #include <iterator>
 #include <random>

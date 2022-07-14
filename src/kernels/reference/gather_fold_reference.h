@@ -7,7 +7,7 @@
 #include <cmath>
 #undef _USE_MATH_DEFINES
 
-#include "../../spreading.h"
+#include "../spreading.h"
 
 namespace finufft {
 namespace spreading {

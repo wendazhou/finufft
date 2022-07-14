@@ -6,7 +6,7 @@
 #include <stdexcept>
 
 #include "../../bit.h"
-#include "../../spreading.h"
+#include "../spreading.h"
 
 #include "gather_fold_reference.h"
 

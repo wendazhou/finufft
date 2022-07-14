@@ -17,11 +17,11 @@
 #include <algorithm>
 #include <array>
 #include <cstddef>
+#include <cstdint>
 #include <cstdlib>
 #include <functional>
 #include <limits>
 #include <memory>
-#include <mutex>
 #include <numeric>
 #include <type_traits>
 #include <utility>
@@ -35,7 +35,7 @@
 #include <cmath>
 #undef _USE_MATH_DEFINES
 
-#include "memory.h"
+#include "../memory.h"
 
 namespace finufft {
 namespace spreading {

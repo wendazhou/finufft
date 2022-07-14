@@ -9,7 +9,7 @@
 #include <function2/function2.h>
 #include <tcb/span.hpp>
 
-#include "../spreading.h"
+#include "spreading.h"
 #include "../tracing.h"
 
 /** Definitions for common interfaces to the sorting problem.

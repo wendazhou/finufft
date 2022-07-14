@@ -6,7 +6,7 @@
 #include <mutex>
 
 #include "../../mutex_array.h"
-#include "../../spreading.h"
+#include "../spreading.h"
 
 #include <tcb/span.hpp>
 

@@ -5,7 +5,7 @@
 #include "../src/kernels/hwy/spread_bin_sort_hwy.h"
 #include "../src/kernels/legacy/spread_bin_sort_legacy.h"
 #include "../src/kernels/reference/spread_bin_sort_reference.h"
-#include "../src/spreading.h"
+#include "../src/kernels/spreading.h"
 
 #include "../test/spread_test_utils.h"
 

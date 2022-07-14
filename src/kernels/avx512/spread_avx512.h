@@ -2,7 +2,7 @@
 
 #include <stdexcept>
 
-#include "../../spreading.h"
+#include "../spreading.h"
 
 struct finufft_spread_opts;
 

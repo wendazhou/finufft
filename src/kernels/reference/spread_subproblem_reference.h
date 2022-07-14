@@ -15,7 +15,7 @@
 #include <stdexcept>
 
 #include "../../precomputed_poly_kernel_data.h"
-#include "../../spreading.h"
+#include "../spreading.h"
 #include <tcb/span.hpp>
 
 namespace finufft {

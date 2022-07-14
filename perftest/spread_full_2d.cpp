@@ -33,16 +33,11 @@ using namespace finufft::spreading;
 
 namespace {
 
-struct SpreadTimers {
-    finufft::Timer sort_packed;
-    finufft::Timer spread_blocked;
-
+struct SpreadTimers : reference::SpreadTimers {
     SortPackedTimers sort_packed_timers;
-    reference::SpreadBlockedTimers spread_blocked_timers;
 
     SpreadTimers(finufft::Timer &timer)
-        : sort_packed(timer.make_timer("sp")), spread_blocked(timer.make_timer("sb")),
-          sort_packed_timers(sort_packed), spread_blocked_timers(spread_blocked) {}
+        : reference::SpreadTimers(timer), sort_packed_timers(sort_packed) {}
 };
 
 /** Compute grid size from cache size.
@@ -68,71 +63,6 @@ template <typename T, std::size_t Dim> std::array<std::size_t, Dim> get_grid_siz
     return grid_size;
 }
 
-/** Compute grid sp
- *
- */
-template <typename T>
-std::vector<finufft::spreading::grid_specification<2>>
-make_bin_grids(IntGridBinInfo<T, 2> const &info) {
-    std::vector<grid_specification<2>> grids(info.num_bins_total());
-
-    std::size_t idx = 0;
-
-    for (std::size_t j = 0; j < info.num_bins[1]; ++j) {
-        for (std::size_t i = 0; i < info.num_bins[0]; ++i) {
-            grids[idx].extents[0] = info.grid_size[0];
-            grids[idx].extents[1] = info.grid_size[1];
-
-            grids[idx].offsets[0] = info.global_offset[0] + i * info.bin_size[0];
-            grids[idx].offsets[1] = info.global_offset[1] + j * info.bin_size[1];
-
-            idx += 1;
-        }
-    }
-
-    return grids;
-}
-
-template <typename T, std::size_t Dim>
-void spread(
-    nu_point_collection<Dim, const T> const &points, kernel_specification const &kernel_spec,
-    std::array<std::size_t, Dim> const &size, T *output, SpreadTimers &timer) {
-
-    SpreaderMemoryInput<Dim, T> points_sorted(points.num_points);
-    auto packed = finufft::allocate_aligned_array<PointBin<T, Dim>>(points.num_points, 64);
-
-    auto spread_subproblem = get_subproblem_polynomial_avx512_functor<T, Dim>(kernel_spec);
-    auto grid_size = get_grid_size<T, Dim>();
-
-    IntGridBinInfo<T, Dim> info(size, grid_size, spread_subproblem.target_padding());
-
-    auto bin_counts = finufft::allocate_aligned_array<size_t>(info.num_bins_total() + 1, 64);
-    std::memset(bin_counts.get(), 0, (info.num_bins_total() + 1) * sizeof(size_t));
-
-    {
-        finufft::ScopedTimerGuard guard(timer.sort_packed);
-        auto sort_packed = avx512::get_sort_functor<T, Dim>(&timer.sort_packed_timers);
-        sort_packed(points, FoldRescaleRange::Pi, points_sorted, bin_counts.get() + 1, info);
-    }
-
-    // Compute bin boundaries
-    {
-        std::partial_sum(
-            bin_counts.get(), bin_counts.get() + info.num_bins_total() + 1, bin_counts.get());
-    }
-
-    // Spread points
-    auto spread_blocked = reference::make_omp_spread_blocked(
-        std::move(spread_subproblem),
-        get_reference_block_locking_accumulator<T, Dim>(),
-        timer.spread_blocked_timers);
-
-    {
-        finufft::ScopedTimerGuard guard(timer.spread_blocked);
-        spread_blocked(points_sorted, info, bin_counts.get(), output);
-    }
-}
-
 
 void bm_spread_2d(benchmark::State &state) {
     std::size_t target_size = state.range(0);
@@ -148,8 +78,16 @@ void bm_spread_2d(benchmark::State &state) {
     auto kernel_spec = specification_from_width(kernel_width, 2);
     auto output = finufft::allocate_aligned_array<float>(2 * target_size * target_size, 64);
 
+    auto spread_functor = reference::make_packed_sort_spread_blocked<float, 2>(
+        avx512::get_sort_functor<float, 2>(&timers.sort_packed_timers),
+        get_subproblem_polynomial_avx512_functor<float, 2>(kernel_spec),
+        get_reference_block_locking_accumulator<float, 2>(),
+        std::array<std::size_t, 2>{target_size, target_size},
+        get_grid_size<float, 2>(),
+        timers);
+
     for (auto _ : state) {
-        spread<float, 2>(points, kernel_spec, {target_size, target_size}, output.get(), timers);
+        spread_functor(points, output.get());
         benchmark::DoNotOptimize(output[0]);
         benchmark::ClobberMemory();
     }

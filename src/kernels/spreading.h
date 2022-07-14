@@ -30,6 +30,7 @@
 #include <omp.h>
 
 #include <function2/function2.h>
+#include <tcb/span.hpp>
 
 #define _USE_MATH_DEFINES
 #include <cmath>
@@ -341,21 +342,38 @@ using BinSortFunctor = fu2::unique_function<void(
 template <typename T, std::size_t Dim> struct IntGridBinInfo;
 
 /** This function represents an implementation of a blocked spreading strategy.
- * 
+ *
  * A blocked spreading strategy operates by taking a set of non-uniform points,
  * ordered such that each block is contiguous within the points, and then spreading
  * them onto the target buffer. The parameters are expected as follows:
- * 
+ *
  * - nu_point_collection<Dim, const T> const& input: the collection of non-uniform points to process
  * - IntBinInfo<T, Dim> const& info: a description of the block arrangement for the target buffer
  * - std::size_t const* block_boundaries: an array of size `info.num_bins_total() + 1` describing
  *      the offset into the `input` collection corresponding to each block.
  * - T* output: the target buffer to write the data to.
- * 
+ *
  */
 template <typename T, std::size_t Dim>
 using SpreadBlockedFunctor = fu2::unique_function<void(
-    nu_point_collection<Dim, const T> const &, IntGridBinInfo<T, Dim> const &, std::size_t const *, T *) const>;
+    nu_point_collection<Dim, const T> const &, IntGridBinInfo<T, Dim> const &, std::size_t const *,
+    T *) const>;
+
+/** This function represents a global implementation to spread points.
+ * 
+ * Note that parameters such as the range of the input points, or the size
+ * of the target buffer are not provided to the function, as these are
+ * expected to be bound at functor creation time. This enables implementations
+ * to provide specialized implementations depending on these parameters.
+ *
+ * The parameters of the function are expected as follows:
+ * - nu_point_collection<Dim, const T> const& input: the collection of non-uniform points to process
+ * - T* output: the target buffer to write the data to.
+ *
+ */
+template <typename T, std::size_t Dim>
+using SpreadFunctor = fu2::unique_function<void(
+    nu_point_collection<Dim, const T> const &, T*) const>;
 
 /** This structure represents the output information of the spreading operation.
  *

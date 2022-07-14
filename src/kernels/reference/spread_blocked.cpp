@@ -12,7 +12,7 @@ namespace reference {
 namespace {
 
 template <typename T>
-std::vector<grid_specification<1>> make_bin_grids(IntGridBinInfo<T, 1> const& info) {
+std::vector<grid_specification<1>> make_bin_grids(IntGridBinInfo<T, 1> const &info) {
     std::vector<grid_specification<1>> grids(info.num_bins_total());
 
     for (std::size_t i = 0; i < info.num_bins[0]; ++i) {
@@ -45,10 +45,10 @@ std::vector<grid_specification<2>> make_bin_grids(IntGridBinInfo<T, 2> const &in
 }
 
 /** Main implementation of blocked spreading, with parallelization through OpenMP.
- * 
+ *
  * This function assembles a subproblem functor and an accumulate functor to spread
  * the given set of non-uniform points. The parallelization is performed per block.
- * 
+ *
  */
 template <typename T, std::size_t Dim> struct OmpSpreadBlockedImplementation {
     SpreadSubproblemFunctor<T, Dim> spread_subproblem_;
@@ -68,8 +68,7 @@ template <typename T, std::size_t Dim> struct OmpSpreadBlockedImplementation {
 
         // Determine amount of memory to allocate
         for (std::size_t i = 0; i < num_blocks; ++i) {
-            max_num_points =
-                std::max(max_num_points, bin_boundaries[i + 1] - bin_boundaries[i]);
+            max_num_points = std::max(max_num_points, bin_boundaries[i + 1] - bin_boundaries[i]);
         }
 
         auto const &padding_info = spread_subproblem_.target_padding();
@@ -152,11 +151,83 @@ SpreadBlockedFunctor<T, Dim> make_omp_spread_blocked(
         std::move(spread_subproblem), std::move(accumulate_factory), timers_ref};
 }
 
+namespace {
+
+template <typename T, std::size_t Dim> struct PackedSortBlockedSpreadFunctorImplementation {
+    SortPointsFunctor<T, Dim> sort_points_;
+    OmpSpreadBlockedImplementation<T, Dim> spread_blocked_;
+    IntGridBinInfo<T, Dim> info_;
+    finufft::Timer sort_timer_;
+    finufft::Timer spread_timer_;
+
+    PackedSortBlockedSpreadFunctorImplementation(
+        SortPointsFunctor<T, Dim> &&sort_points,
+        SpreadSubproblemFunctor<T, Dim> &&spread_subproblem,
+        SynchronizedAccumulateFactory<T, Dim> &&accumulate_factory,
+        tcb::span<const std::size_t, Dim> target_size, tcb::span<const std::size_t, Dim> grid_size,
+        SpreadTimers const &timers)
+        : sort_points_(std::move(sort_points)),
+          spread_blocked_(
+              std::move(spread_subproblem), std::move(accumulate_factory),
+              timers.spread_blocked_timers),
+          info_(target_size, grid_size, spread_blocked_.spread_subproblem_.target_padding()),
+          sort_timer_(timers.sort_packed), spread_timer_(timers.spread_blocked) {}
+
+    void operator()(nu_point_collection<Dim, const T> points, T *output) const {
+        SpreaderMemoryInput<Dim, T> points_sorted(points.num_points);
+        auto bin_counts = finufft::allocate_aligned_array<size_t>(info_.num_bins_total() + 1, 64);
+        std::memset(bin_counts.get(), 0, (info_.num_bins_total() + 1) * sizeof(size_t));
+
+        {
+            finufft::Timer sort_timer(sort_timer_);
+            finufft::ScopedTimerGuard guard(sort_timer);
+            sort_points_(points, FoldRescaleRange::Pi, points_sorted, bin_counts.get() + 1, info_);
+        }
+
+        // Compute bin boundaries
+        {
+            std::partial_sum(
+                bin_counts.get(), bin_counts.get() + info_.num_bins_total() + 1, bin_counts.get());
+        }
+
+        {
+            finufft::Timer spread_timer(spread_timer_);
+            finufft::ScopedTimerGuard guard(spread_timer);
+            spread_blocked_(points_sorted, info_, bin_counts.get(), output);
+        }
+    }
+};
+
+} // namespace
+
+template <typename T, std::size_t Dim>
+SpreadFunctor<T, Dim> make_packed_sort_spread_blocked(
+    SortPointsFunctor<T, Dim> &&sort_points, SpreadSubproblemFunctor<T, Dim> &&spread_subproblem,
+    SynchronizedAccumulateFactory<T, Dim> &&accumulate, tcb::span<const std::size_t, Dim> target_size,
+    tcb::span<const std::size_t, Dim> grid_size, SpreadTimers const &timers) {
+    return PackedSortBlockedSpreadFunctorImplementation<T, Dim>(
+        std::move(sort_points),
+        std::move(spread_subproblem),
+        std::move(accumulate),
+        target_size,
+        grid_size,
+        timers);
+}
+
 #define INSTANTIATE(T, Dim)                                                                        \
     template SpreadBlockedFunctor<T, Dim> make_omp_spread_blocked(                                 \
         SpreadSubproblemFunctor<T, Dim> &&spread_subproblem,                                       \
         SynchronizedAccumulateFactory<T, Dim> &&accumulate_factory,                                \
-        SpreadBlockedTimers const &timers_ref);
+        SpreadBlockedTimers const &timers_ref);                                                    \
+    template SpreadFunctor<T, Dim> make_packed_sort_spread_blocked(                                \
+        SortPointsFunctor<T, Dim> &&sort_points,                                                   \
+        SpreadSubproblemFunctor<T, Dim> &&spread_subproblem,                                       \
+        SynchronizedAccumulateFactory<T, Dim> &&accumulate,                                        \
+        tcb::span<const std::size_t, Dim>                                                                \
+            target_size,                                                                           \
+        tcb::span<const std::size_t, Dim>                                                                \
+            grid_size,                                                                             \
+        SpreadTimers const &timers);
 
 INSTANTIATE(float, 1)
 INSTANTIATE(float, 2)

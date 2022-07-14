@@ -32,18 +32,6 @@ using namespace finufft::spreading;
 
 namespace {
 
-struct SortPackedTimers {
-    finufft::Timer pack;
-    finufft::Timer sort;
-    finufft::Timer unpack;
-
-    SortPackedTimers(finufft::Timer &timer)
-        : pack(timer.make_timer("pack")), sort(timer.make_timer("sort")),
-          unpack(timer.make_timer("unpack")) {}
-    SortPackedTimers(SortPackedTimers const &) = default;
-    SortPackedTimers(SortPackedTimers &&) = default;
-};
-
 struct SpreadBlockedTimers {
     SpreadBlockedTimers(finufft::Timer &timer)
         : gather(timer.make_timer("gather")), subproblem(timer.make_timer("subproblem")),
@@ -65,34 +53,6 @@ struct SpreadTimers {
         : sort_packed(timer.make_timer("sp")), spread_blocked(timer.make_timer("sb")),
           sort_packed_timers(sort_packed), spread_blocked_timers(spread_blocked) {}
 };
-
-/** Sorts points by bin index in packed format.
- *
- */
-template <typename T, std::size_t Dim>
-void sort_packed(
-    nu_point_collection<Dim, const T> const &points, nu_point_collection<Dim, T> const &output,
-    std::size_t *bin_counts, IntBinInfo<T, Dim> const &info, SortPackedTimers &timers) {
-
-    auto packed = finufft::allocate_aligned_array<PointBin<T, Dim>>(points.num_points, 64);
-
-    // Compute bins
-    {
-        finufft::ScopedTimerGuard guard(timers.pack);
-        avx512::compute_bins_and_pack(points, FoldRescaleRange::Pi, info, packed.get());
-    }
-
-    {
-        finufft::ScopedTimerGuard guard(timers.sort);
-        ips4o::parallel::sort(packed.get(), packed.get() + points.num_points);
-    }
-
-    // Unpack to output.
-    {
-        finufft::ScopedTimerGuard guard(timers.unpack);
-        reference::unpack_sorted_bins_to_points(packed.get(), output, bin_counts);
-    }
-}
 
 void spread_blocked(
     finufft::spreading::nu_point_collection<2, const float> const &input, std::size_t num_blocks,
@@ -247,15 +207,14 @@ void spread(
 
     {
         finufft::ScopedTimerGuard guard(timer.sort_packed);
-        sort_packed<T, Dim>(points, points_sorted, bin_counts.get() + 1, info, timer.sort_packed_timers);
+        auto sort_packed = avx512::get_sort_functor<T, Dim>(&timer.sort_packed_timers);
+        sort_packed(points, FoldRescaleRange::Pi, points_sorted, bin_counts.get() + 1, info);
     }
 
     // Compute bin boundaries
     {
         std::partial_sum(
-            bin_counts.get(),
-            bin_counts.get() + info.num_bins_total() + 1,
-            bin_counts.get());
+            bin_counts.get(), bin_counts.get() + info.num_bins_total() + 1, bin_counts.get());
     }
 
     // Spread points

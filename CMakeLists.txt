@@ -22,7 +22,8 @@ set(BENCHMARK_ENABLE_TESTING OFF)
 set(BENCHMARK_ENABLE_INSTALL OFF)
 FetchContent_Declare(
     benchmark
-    URL https://github.com/google/benchmark/archive/refs/tags/v1.6.1.tar.gz
+    GIT_REPOSITORY https://github.com/google/benchmark.git
+    GIT_TAG 1531ee0d634d8563da6a3f36ea2597c95d1c2d46
 )
 
 

@@ -337,6 +337,26 @@ using BinSortFunctor = fu2::unique_function<void(
     int64_t *, std::size_t, std::array<T const *, Dim> const &, std::array<T, Dim> const &,
     std::array<T, Dim> const &, FoldRescaleRange) const>;
 
+// Forward declaration from sorting.h for bin structure
+template <typename T, std::size_t Dim> struct IntGridBinInfo;
+
+/** This function represents an implementation of a blocked spreading strategy.
+ * 
+ * A blocked spreading strategy operates by taking a set of non-uniform points,
+ * ordered such that each block is contiguous within the points, and then spreading
+ * them onto the target buffer. The parameters are expected as follows:
+ * 
+ * - nu_point_collection<Dim, const T> const& input: the collection of non-uniform points to process
+ * - IntBinInfo<T, Dim> const& info: a description of the block arrangement for the target buffer
+ * - std::size_t const* block_boundaries: an array of size `info.num_bins_total() + 1` describing
+ *      the offset into the `input` collection corresponding to each block.
+ * - T* output: the target buffer to write the data to.
+ * 
+ */
+template <typename T, std::size_t Dim>
+using SpreadBlockedFunctor = fu2::unique_function<void(
+    nu_point_collection<Dim, const T> const &, IntGridBinInfo<T, Dim> const &, std::size_t const *, T *) const>;
+
 /** This structure represents the output information of the spreading operation.
  *
  * It specifies a set of non-uniform points, by their coordinates and their

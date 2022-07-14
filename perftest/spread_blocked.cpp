@@ -29,7 +29,7 @@
 
 namespace {
 
-using finufft::spreading::reference::IntGridBinInfo;
+using finufft::spreading::IntGridBinInfo;
 
 template <typename T>
 std::vector<finufft::spreading::grid_specification<1>>

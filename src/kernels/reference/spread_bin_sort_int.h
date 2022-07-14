@@ -26,64 +26,6 @@ namespace reference {
 using finufft::spreading::IntBinInfo;
 using finufft::spreading::PointBin;
 
-template <typename T, std::size_t Dim>
-std::array<std::size_t, Dim> compute_bin_size_from_grid_and_padding(
-    tcb::span<const std::size_t, Dim> grid_size, tcb::span<const KernelWriteSpec<T>, Dim> padding) {
-    std::array<std::size_t, Dim> bin_size;
-
-    for (std::size_t i = 0; i < Dim; ++i) {
-        if (grid_size[i] < padding[i].grid_left + padding[i].grid_right) {
-            throw std::runtime_error("Grid size is too small for padding");
-        }
-
-        bin_size[i] = grid_size[i] - padding[i].grid_left - padding[i].grid_right;
-    }
-
-    return bin_size;
-}
-
-template <typename T, std::size_t Dim>
-std::array<T, Dim> get_offsets_from_padding(tcb::span<const KernelWriteSpec<T>, Dim> padding) {
-    std::array<T, Dim> offset;
-    for (std::size_t i = 0; i < Dim; ++i) {
-        offset[i] = padding[i].offset;
-    }
-    return offset;
-}
-
-/** Structure representing bin information for integer-sized bins
- * based on target-sized grids.
- *
- * For performance reasons, it is crucial to solve the spread subproblem
- * on a subgrid of size bounded by the size of the L1 cache. We derive
- * the size of the bins from the size of the grid, minus any padding
- * required by the subproblem functor.
- *
- */
-template <typename T, std::size_t Dim> struct IntGridBinInfo : IntBinInfo<T, Dim> {
-
-    /** Initialize the bin information from the given specification.
-     *
-     * @param extents The size of the uniform buffer
-     * @param grid_sizes The base size of the subproblem grid
-     * @param padding The padding required by the subproblem functor
-     *
-     */
-    IntGridBinInfo(
-        tcb::span<const std::size_t, Dim> extents, tcb::span<const std::size_t, Dim> grid_size,
-        tcb::span<const finufft::spreading::KernelWriteSpec<T>, Dim> padding)
-        : IntBinInfo<T, Dim>(
-              extents, compute_bin_size_from_grid_and_padding(grid_size, padding),
-              get_offsets_from_padding(padding)) {
-
-        std::copy(grid_size.begin(), grid_size.end(), this->grid_size.begin());
-        std::copy(padding.begin(), padding.end(), this->padding.begin());
-    }
-
-    std::array<std::size_t, Dim> grid_size;      ///< Desired size for subproblem grid
-    std::array<KernelWriteSpec<T>, Dim> padding; ///< The padding required by the subproblem functor
-};
-
 /** Fold-rescale each point, compute corresponding bin, and write packed output.
  *
  * Some implementations may require arrays to be aligned.

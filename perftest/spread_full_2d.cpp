@@ -22,6 +22,7 @@
 #include "../src/kernels/avx512/spread_bin_sort_int.h"
 #include "../src/kernels/reference/gather_fold_reference.h"
 #include "../src/kernels/reference/spread_bin_sort_int.h"
+#include "../src/kernels/reference/spread_blocked.h"
 #include "../src/kernels/reference/synchronized_accumulate_reference.h"
 
 #include "../src/tracing.h"
@@ -32,114 +33,17 @@ using namespace finufft::spreading;
 
 namespace {
 
-struct SpreadBlockedTimers {
-    SpreadBlockedTimers(finufft::Timer &timer)
-        : gather(timer.make_timer("gather")), subproblem(timer.make_timer("subproblem")),
-          accumulate(timer.make_timer("accumulate")) {}
-
-    finufft::Timer gather;
-    finufft::Timer subproblem;
-    finufft::Timer accumulate;
-};
-
 struct SpreadTimers {
     finufft::Timer sort_packed;
     finufft::Timer spread_blocked;
 
     SortPackedTimers sort_packed_timers;
-    SpreadBlockedTimers spread_blocked_timers;
+    reference::SpreadBlockedTimers spread_blocked_timers;
 
     SpreadTimers(finufft::Timer &timer)
         : sort_packed(timer.make_timer("sp")), spread_blocked(timer.make_timer("sb")),
           sort_packed_timers(sort_packed), spread_blocked_timers(spread_blocked) {}
 };
-
-void spread_blocked(
-    finufft::spreading::nu_point_collection<2, const float> const &input, std::size_t num_blocks,
-    tcb::span<const finufft::spreading::grid_specification<2>> grids,
-    std::size_t const *point_block_boundaries, std::array<std::size_t, 2> const &sizes,
-    float *output, SpreadSubproblemFunctor<float, 2> const &spread_subproblem,
-    SynchronizedAccumulateFactory<float, 2> const &accumulate_factory,
-    SpreadBlockedTimers &timers_ref) {
-
-    typedef float T;
-    const std::size_t Dim = 2;
-
-    std::size_t max_grid_size = 0;
-    std::size_t max_num_points = 0;
-
-    // Determine amount of memory to allocate
-    for (std::size_t i = 0; i < num_blocks; ++i) {
-        max_grid_size = std::max(max_grid_size, std::size_t(grids[i].num_elements()));
-        max_num_points =
-            std::max(max_num_points, point_block_boundaries[i + 1] - point_block_boundaries[i]);
-    }
-
-    auto const &padding_info = spread_subproblem.target_padding();
-    auto const &accumulate_subgrid = accumulate_factory(output, sizes);
-
-#pragma omp parallel
-    {
-        auto subgrid_output = finufft::allocate_aligned_array<float>(2 * max_grid_size, 64);
-        auto local_points = finufft::spreading::SpreaderMemoryInput<2, float>(max_num_points);
-        SpreadBlockedTimers timers(timers_ref);
-
-#pragma omp for
-        for (std::size_t i = 0; i < num_blocks; ++i) {
-            // Set number of points for subproblem
-            auto block_num_points = point_block_boundaries[i + 1] - point_block_boundaries[i];
-            local_points.num_points = block_num_points;
-
-            auto &grid = grids[i];
-
-            // Zero local memory
-            std::memset(subgrid_output.get(), 0, 2 * grid.num_elements() * sizeof(float));
-
-            // Gather local points
-            {
-                finufft::ScopedTimerGuard guard(timers.gather);
-
-                // Copy points to local buffer
-                std::memcpy(
-                    local_points.strengths,
-                    input.strengths + point_block_boundaries[i],
-                    block_num_points * sizeof(float) * 2);
-                for (std::size_t dim = 0; dim < Dim; ++dim) {
-                    std::memcpy(
-                        local_points.coordinates[dim],
-                        input.coordinates[dim] + point_block_boundaries[i],
-                        block_num_points * sizeof(float));
-                }
-
-                auto num_points_padded = finufft::spreading::round_to_next_multiple(
-                    block_num_points, spread_subproblem.num_points_multiple());
-
-                // Pad the input points to the required multiple, using a pad coordinate derived
-                // from the subgrid. The pad coordinate is given by the leftmost valid coordinate in
-                // the subgrid.
-                std::array<T, Dim> pad_coordinate;
-                for (std::size_t i = 0; i < Dim; ++i) {
-                    pad_coordinate[i] =
-                        padding_info[i].min_valid_value(grid.offsets[i], grid.extents[i]);
-                }
-                finufft::spreading::pad_nu_point_collection(
-                    local_points, num_points_padded, pad_coordinate);
-            }
-
-            // Spread to local subgrid
-            {
-                finufft::ScopedTimerGuard guard(timers.subproblem);
-                spread_subproblem(local_points, grid, subgrid_output.get());
-            }
-
-            // Accumulate to main grid
-            {
-                finufft::ScopedTimerGuard guard(timers.accumulate);
-                accumulate_subgrid(subgrid_output.get(), grid);
-            }
-        }
-    }
-}
 
 /** Compute grid size from cache size.
  *
@@ -169,8 +73,8 @@ template <typename T, std::size_t Dim> std::array<std::size_t, Dim> get_grid_siz
  */
 template <typename T>
 std::vector<finufft::spreading::grid_specification<2>>
-make_bin_grids(reference::IntGridBinInfo<T, 2> const &info) {
-    std::vector<finufft::spreading::grid_specification<2>> grids(info.num_bins_total());
+make_bin_grids(IntGridBinInfo<T, 2> const &info) {
+    std::vector<grid_specification<2>> grids(info.num_bins_total());
 
     std::size_t idx = 0;
 
@@ -200,7 +104,7 @@ void spread(
     auto spread_subproblem = get_subproblem_polynomial_avx512_functor<T, Dim>(kernel_spec);
     auto grid_size = get_grid_size<T, Dim>();
 
-    reference::IntGridBinInfo<T, Dim> info(size, grid_size, spread_subproblem.target_padding());
+    IntGridBinInfo<T, Dim> info(size, grid_size, spread_subproblem.target_padding());
 
     auto bin_counts = finufft::allocate_aligned_array<size_t>(info.num_bins_total() + 1, 64);
     std::memset(bin_counts.get(), 0, (info.num_bins_total() + 1) * sizeof(size_t));
@@ -218,26 +122,17 @@ void spread(
     }
 
     // Spread points
-    auto const &grids = make_bin_grids(info);
+    auto spread_blocked = reference::make_omp_spread_blocked(
+        std::move(spread_subproblem),
+        get_reference_block_locking_accumulator<T, Dim>(),
+        timer.spread_blocked_timers);
 
     {
         finufft::ScopedTimerGuard guard(timer.spread_blocked);
-        spread_blocked(
-            points_sorted,
-            info.num_bins_total(),
-            grids,
-            bin_counts.get(),
-            size,
-            output,
-            spread_subproblem,
-            get_reference_block_locking_accumulator<T, Dim>(),
-            timer.spread_blocked_timers);
+        spread_blocked(points_sorted, info, bin_counts.get(), output);
     }
 }
 
-template void spread<float, 2>(
-    nu_point_collection<2, const float> const &, kernel_specification const &,
-    std::array<std::size_t, 2> const &, float *, SpreadTimers &);
 
 void bm_spread_2d(benchmark::State &state) {
     std::size_t target_size = state.range(0);

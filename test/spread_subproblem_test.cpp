@@ -165,9 +165,6 @@ template <typename T, std::size_t Dim, typename Fn>
 void evaluate_subproblem_implementation_with_points(int width, int num_points, Fn &&factory) {
     auto result = evaluate_subproblem_implementation<Dim, T>(factory, num_points, 0, width);
 
-    // Note: check correct error level computation for the test
-    // Currently more lax in higher dimension due to (potentially bad?)
-    // AVX512 implementation in 2D.
     auto error_level = compute_max_relative_threshold(
         std::pow(10, -width + 1),
         result.output_reference.get(),

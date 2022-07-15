@@ -63,6 +63,18 @@ template <typename T, std::size_t Dim> std::array<std::size_t, Dim> get_grid_siz
     return grid_size;
 }
 
+template <typename T, std::size_t Dim>
+SpreadFunctor<T, Dim> make_avx512_spread_functor(
+    kernel_specification const &kernel_spec, std::size_t target_size, SpreadTimers const &timers) {
+    return reference::make_packed_sort_spread_blocked<T, Dim>(
+        avx512::get_sort_functor<T, Dim>(timers.sort_packed_timers),
+        get_subproblem_polynomial_avx512_functor<T, Dim>(kernel_spec),
+        get_reference_block_locking_accumulator<T, Dim>(),
+        FoldRescaleRange::Pi,
+        std::array<std::size_t, Dim>{target_size, target_size},
+        get_grid_size<T, Dim>(),
+        timers);
+}
 
 void bm_spread_2d(benchmark::State &state) {
     std::size_t target_size = state.range(0);
@@ -78,14 +90,7 @@ void bm_spread_2d(benchmark::State &state) {
     auto kernel_spec = specification_from_width(kernel_width, 2);
     auto output = finufft::allocate_aligned_array<float>(2 * target_size * target_size, 64);
 
-    auto spread_functor = reference::make_packed_sort_spread_blocked<float, 2>(
-        avx512::get_sort_functor<float, 2>(&timers.sort_packed_timers),
-        get_subproblem_polynomial_avx512_functor<float, 2>(kernel_spec),
-        get_reference_block_locking_accumulator<float, 2>(),
-        FoldRescaleRange::Pi,
-        std::array<std::size_t, 2>{target_size, target_size},
-        get_grid_size<float, 2>(),
-        timers);
+    auto spread_functor = make_avx512_spread_functor<float, 2>(kernel_spec, target_size, timers);
 
     for (auto _ : state) {
         spread_functor(points, output.get());

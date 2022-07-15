@@ -1,5 +1,7 @@
 #include "spread_legacy.h"
 
+#include <cstring>
+
 #include "../reference/gather_fold_reference.h"
 #include "spread_bin_sort_legacy.h"
 #include "spread_subproblem_legacy.h"
@@ -48,6 +50,8 @@ namespace legacy {
 finufft_spread_opts
 construct_opts_from_kernel(const kernel_specification &kernel, std::size_t dim) {
     finufft_spread_opts opts;
+
+    std::memset(&opts, 0, sizeof(opts));
 
     opts.nspread = kernel.width;
     opts.kerevalmeth = 1;

@@ -109,22 +109,22 @@ template <typename T, std::size_t Dim, typename FoldRescale> struct ComputeBinIn
 };
 
 /** Create a point sorting functor backed by a ips4o parallel packed sort.
- * 
+ *
  * @param pack The packing functor to use to pack the points
  * @param unpack The unpacking functor to use to unpack the points
  * @param timers If not null, the record timining information using the given timer
- * 
+ *
  */
 template <typename T, std::size_t Dim>
 SortPointsFunctor<T, Dim> make_ips4o_sort_functor(
-    ComputeAndPackBinsFunctor<T, Dim>&& pack, UnpackBinsFunctor<T, Dim>&& unpack,
-    SortPackedTimers const *timers = nullptr);
+    ComputeAndPackBinsFunctor<T, Dim> &&pack, UnpackBinsFunctor<T, Dim> &&unpack,
+    SortPackedTimers const &timers = {});
 
 /** Get the reference sort functor.
- * 
+ *
  */
 template <typename T, std::size_t Dim>
-SortPointsFunctor<T, Dim> get_sort_functor(SortPackedTimers const *timers = nullptr);
+SortPointsFunctor<T, Dim> get_sort_functor(SortPackedTimers const &timers = {});
 
 } // namespace reference
 } // namespace spreading

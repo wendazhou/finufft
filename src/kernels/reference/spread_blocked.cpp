@@ -44,6 +44,31 @@ std::vector<grid_specification<2>> make_bin_grids(IntGridBinInfo<T, 2> const &in
     return grids;
 }
 
+template <typename T>
+std::vector<grid_specification<3>> make_bin_grids(IntGridBinInfo<T, 3> const &info) {
+    std::vector<grid_specification<3>> grids(info.num_bins_total());
+
+    std::size_t idx = 0;
+
+    for (std::size_t k = 0; k < info.num_bins[2]; ++k) {
+        for (std::size_t j = 0; j < info.num_bins[1]; ++j) {
+            for (std::size_t i = 0; i < info.num_bins[0]; ++i) {
+                grids[idx].extents[0] = info.grid_size[0];
+                grids[idx].extents[1] = info.grid_size[1];
+                grids[idx].extents[2] = info.grid_size[2];
+
+                grids[idx].offsets[0] = info.global_offset[0] + i * info.bin_size[0];
+                grids[idx].offsets[1] = info.global_offset[1] + j * info.bin_size[1];
+                grids[idx].offsets[2] = info.global_offset[2] + k * info.bin_size[2];
+
+                idx += 1;
+            }
+        }
+    }
+
+    return grids;
+}
+
 /** Main implementation of blocked spreading, with parallelization through OpenMP.
  *
  * This function assembles a subproblem functor and an accumulate functor to spread
@@ -235,9 +260,11 @@ SpreadFunctor<T, Dim> make_packed_sort_spread_blocked(
 
 INSTANTIATE(float, 1)
 INSTANTIATE(float, 2)
+INSTANTIATE(float, 3)
 
 INSTANTIATE(double, 1)
 INSTANTIATE(double, 2)
+INSTANTIATE(double, 3)
 
 } // namespace reference
 } // namespace spreading

@@ -3,6 +3,7 @@
 #include <stdexcept>
 
 #include "../spreading.h"
+#include "../../tracing.h"
 
 struct finufft_spread_opts;
 
@@ -87,6 +88,20 @@ get_subproblem_polynomial_avx512_functor<double, 3>(kernel_specification const &
  */
 template<typename T, std::size_t Dim>
 SpreadFunctorConfiguration<T, Dim> get_spread_configuration_avx512(finufft_spread_opts const&);
+
+/** Create a spread functor based on a packed sort and blocked spread strategy.
+ * 
+ * This spread functor is based on a packed sorting strategy, into blocks
+ * whose size is computed based on the L1 cache size of the CPU.
+ * 
+ */
+template<typename T, std::size_t Dim>
+SpreadFunctor<T, Dim> make_avx512_blocked_spread_functor(
+    kernel_specification const& kernel,
+    tcb::span<const std::size_t, Dim> target_size,
+    FoldRescaleRange input_range,
+    finufft::Timer const& timer = {});
+
 
 } // namespace spreading
 } // namespace finufft

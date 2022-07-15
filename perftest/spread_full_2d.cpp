@@ -34,42 +34,6 @@ using namespace finufft::spreading;
 namespace {
 
 
-/** Compute grid size from cache size.
- *
- * Note, the current arrangement is only reasonable for 1D and 2D problems.
- * For 3D problems - better to target baseline size on L2 cache instead of L1.
- *
- */
-template <typename T, std::size_t Dim> std::array<std::size_t, Dim> get_grid_size() {
-    std::array<std::size_t, Dim> grid_size;
-
-    std::size_t cache_size = 1 << 15;         // 32 kiB cache (L1D cache size)
-    std::size_t element_size = sizeof(T) * 2; // 2x real numbers per point
-
-    // Baseline size
-    grid_size[0] = (1 << 15) / element_size;
-
-    for (std::size_t i = 1; i < Dim; ++i) {
-        grid_size[i] = 32;
-        grid_size[0] /= 32;
-    }
-
-    return grid_size;
-}
-
-template <typename T, std::size_t Dim>
-SpreadFunctor<T, Dim> make_avx512_spread_functor(
-    kernel_specification const &kernel_spec, std::size_t target_size, finufft::Timer const &timer) {
-    return reference::make_packed_sort_spread_blocked<T, Dim>(
-        avx512::get_sort_functor<T, Dim>(timer.make_timer("sp")),
-        get_subproblem_polynomial_avx512_functor<T, Dim>(kernel_spec),
-        get_reference_block_locking_accumulator<T, Dim>(),
-        FoldRescaleRange::Pi,
-        std::array<std::size_t, Dim>{target_size, target_size},
-        get_grid_size<T, Dim>(),
-        timer);
-}
-
 void bm_spread_2d(benchmark::State &state) {
     std::size_t target_size = state.range(0);
     std::size_t kernel_width = state.range(1);
@@ -83,7 +47,8 @@ void bm_spread_2d(benchmark::State &state) {
     auto kernel_spec = specification_from_width(kernel_width, 2);
     auto output = finufft::allocate_aligned_array<float>(2 * target_size * target_size, 64);
 
-    auto spread_functor = make_avx512_spread_functor<float, 2>(kernel_spec, target_size, timer);
+    auto spread_functor = make_avx512_blocked_spread_functor<float, 2>(
+        kernel_spec, std::array<std::size_t, 2>{target_size, target_size}, FoldRescaleRange::Pi, timer);
 
     for (auto _ : state) {
         spread_functor(points, output.get());

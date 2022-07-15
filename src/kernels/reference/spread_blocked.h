@@ -52,7 +52,9 @@ SpreadBlockedFunctor<T, Dim> make_omp_spread_blocked(
 template <typename T, std::size_t Dim>
 SpreadFunctor<T, Dim> make_packed_sort_spread_blocked(
     SortPointsFunctor<T, Dim> &&sort_points, SpreadSubproblemFunctor<T, Dim> &&spread_subproblem,
-    SynchronizedAccumulateFactory<T, Dim> &&accumulate, tcb::span<const std::size_t, Dim> target_size,
+    SynchronizedAccumulateFactory<T, Dim> &&accumulate,
+    FoldRescaleRange range,
+    tcb::span<const std::size_t, Dim> target_size,
     tcb::span<const std::size_t, Dim> grid_size, SpreadTimers const &timers = {});
 
 } // namespace reference

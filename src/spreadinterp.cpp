@@ -264,7 +264,7 @@ int indexSort(BIGINT* sort_indices, BIGINT N1, BIGINT N2, BIGINT N3, BIGINT M,
   BIGINT N=N1*N2*N3;            // U grid (periodic box) sizes
   
   // heuristic binning box size for U grid... affects performance:
-  double bin_size_x = 32, bin_size_y = 16, bin_size_z = 16;
+  double bin_size_x = 16, bin_size_y = 4, bin_size_z = 4;
   // put in heuristics based on cache sizes (only useful for single-thread) ?
 
   int better_to_sort = !(ndims==1 && (opts.spread_direction==2 || (M > 1000*N1))); // 1D small-N or dir=2 case: don't sort
@@ -395,7 +395,7 @@ int spreadSortedOriginal(BIGINT* sort_indices,BIGINT N1, BIGINT N2, BIGINT N3,
     for (int p=0;p<=nb;++p)
       brk[p] = (BIGINT)(0.5 + M*p/(double)nb);
     
-// #pragma omp parallel for num_threads(nthr) schedule(dynamic,1)  // each is big
+#pragma omp parallel for num_threads(nthr) schedule(dynamic,1)  // each is big
       for (int isub=0; isub<nb; isub++) {   // Main loop through the subproblems
         BIGINT M0 = brk[isub+1]-brk[isub];  // # NU pts in this subproblem
         // copy the location and data vectors for the nonuniform points
@@ -442,7 +442,7 @@ int spreadSortedOriginal(BIGINT* sort_indices,BIGINT N1, BIGINT N2, BIGINT N3,
           if (nthr > opts.atomic_threshold)   // see above for debug reporting
             add_wrapped_subgrid_thread_safe(offset1,offset2,offset3,size1,size2,size3,N1,N2,N3,data_uniform,du0);   // R Blackwell's atomic version
           else {
-// #pragma omp critical
+#pragma omp critical
             add_wrapped_subgrid(offset1,offset2,offset3,size1,size2,size3,N1,N2,N3,data_uniform,du0);
           }
         }

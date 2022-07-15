@@ -3,6 +3,7 @@
 #include "../spreading.h"
 #include <finufft_spread_opts.h>
 
+#include <tcb/span.hpp>
 
 namespace finufft {
 namespace spreading {
@@ -11,17 +12,29 @@ namespace spreading {
  *
  */
 template <typename T, std::size_t Dim>
-SpreadFunctorConfiguration<T, Dim>
-get_spread_configuration_legacy(finufft_spread_opts const &opts);
+SpreadFunctorConfiguration<T, Dim> get_spread_configuration_legacy(finufft_spread_opts const &opts);
 
-extern template SpreadFunctorConfiguration<float, 1> get_spread_configuration_legacy<float, 1>(finufft_spread_opts const &);
-extern template SpreadFunctorConfiguration<float, 2> get_spread_configuration_legacy<float, 2>(finufft_spread_opts const &);
-extern template SpreadFunctorConfiguration<float, 3> get_spread_configuration_legacy<float, 3>(finufft_spread_opts const &);
+namespace legacy {
 
-extern template SpreadFunctorConfiguration<double, 1> get_spread_configuration_legacy<double, 1>(finufft_spread_opts const &);
-extern template SpreadFunctorConfiguration<double, 2> get_spread_configuration_legacy<double, 2>(finufft_spread_opts const &);
-extern template SpreadFunctorConfiguration<double, 3> get_spread_configuration_legacy<double, 3>(finufft_spread_opts const &);
+/** Spread functor which calls into the current implementation of bin-sorting
+ * and spreading. This is mostly implemented for testing purposes.
+ * 
+ */
+template <typename T, std::size_t Dim>
+SpreadFunctor<T, Dim> make_spread_functor(
+    kernel_specification const &kernel_spec, FoldRescaleRange input_range, tcb::span<const std::size_t, Dim> size);
 
+/** Construct legacy options from kernel specification.
+ *
+ * In order to call reference implementation, we construct a legacy options struct
+ * from the bare kernel specification. Note that the reverse engineering is not unique,
+ * and depends on the specific implementation of setup_spreader.
+ *
+ */
+finufft_spread_opts
+construct_opts_from_kernel(const kernel_specification &kernel, std::size_t dim = 0);
+
+} // namespace legacy
 
 } // namespace spreading
 } // namespace finufft

@@ -82,6 +82,7 @@ void bm_spread_2d(benchmark::State &state) {
         avx512::get_sort_functor<float, 2>(&timers.sort_packed_timers),
         get_subproblem_polynomial_avx512_functor<float, 2>(kernel_spec),
         get_reference_block_locking_accumulator<float, 2>(),
+        FoldRescaleRange::Pi,
         std::array<std::size_t, 2>{target_size, target_size},
         get_grid_size<float, 2>(),
         timers);

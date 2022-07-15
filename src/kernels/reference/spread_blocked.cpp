@@ -159,11 +159,12 @@ template <typename T, std::size_t Dim> struct PackedSortBlockedSpreadFunctorImpl
     IntGridBinInfo<T, Dim> info_;
     finufft::Timer sort_timer_;
     finufft::Timer spread_timer_;
+    FoldRescaleRange input_range_;
 
     PackedSortBlockedSpreadFunctorImplementation(
         SortPointsFunctor<T, Dim> &&sort_points,
         SpreadSubproblemFunctor<T, Dim> &&spread_subproblem,
-        SynchronizedAccumulateFactory<T, Dim> &&accumulate_factory,
+        SynchronizedAccumulateFactory<T, Dim> &&accumulate_factory, FoldRescaleRange input_range,
         tcb::span<const std::size_t, Dim> target_size, tcb::span<const std::size_t, Dim> grid_size,
         SpreadTimers const &timers)
         : sort_points_(std::move(sort_points)),
@@ -171,7 +172,8 @@ template <typename T, std::size_t Dim> struct PackedSortBlockedSpreadFunctorImpl
               std::move(spread_subproblem), std::move(accumulate_factory),
               timers.spread_blocked_timers),
           info_(target_size, grid_size, spread_blocked_.spread_subproblem_.target_padding()),
-          sort_timer_(timers.sort_packed), spread_timer_(timers.spread_blocked) {}
+          sort_timer_(timers.sort_packed), spread_timer_(timers.spread_blocked),
+          input_range_(input_range) {}
 
     void operator()(nu_point_collection<Dim, const T> points, T *output) const {
         SpreaderMemoryInput<Dim, T> points_sorted(points.num_points);
@@ -181,7 +183,7 @@ template <typename T, std::size_t Dim> struct PackedSortBlockedSpreadFunctorImpl
         {
             finufft::Timer sort_timer(sort_timer_);
             finufft::ScopedTimerGuard guard(sort_timer);
-            sort_points_(points, FoldRescaleRange::Pi, points_sorted, bin_counts.get() + 1, info_);
+            sort_points_(points, input_range_, points_sorted, bin_counts.get() + 1, info_);
         }
 
         // Compute bin boundaries
@@ -203,12 +205,14 @@ template <typename T, std::size_t Dim> struct PackedSortBlockedSpreadFunctorImpl
 template <typename T, std::size_t Dim>
 SpreadFunctor<T, Dim> make_packed_sort_spread_blocked(
     SortPointsFunctor<T, Dim> &&sort_points, SpreadSubproblemFunctor<T, Dim> &&spread_subproblem,
-    SynchronizedAccumulateFactory<T, Dim> &&accumulate, tcb::span<const std::size_t, Dim> target_size,
-    tcb::span<const std::size_t, Dim> grid_size, SpreadTimers const &timers) {
+    SynchronizedAccumulateFactory<T, Dim> &&accumulate, FoldRescaleRange input_range,
+    tcb::span<const std::size_t, Dim> target_size, tcb::span<const std::size_t, Dim> grid_size,
+    SpreadTimers const &timers) {
     return PackedSortBlockedSpreadFunctorImplementation<T, Dim>(
         std::move(sort_points),
         std::move(spread_subproblem),
         std::move(accumulate),
+        input_range,
         target_size,
         grid_size,
         timers);
@@ -223,9 +227,10 @@ SpreadFunctor<T, Dim> make_packed_sort_spread_blocked(
         SortPointsFunctor<T, Dim> &&sort_points,                                                   \
         SpreadSubproblemFunctor<T, Dim> &&spread_subproblem,                                       \
         SynchronizedAccumulateFactory<T, Dim> &&accumulate,                                        \
-        tcb::span<const std::size_t, Dim>                                                                \
+        FoldRescaleRange input_range,                                                              \
+        tcb::span<const std::size_t, Dim>                                                          \
             target_size,                                                                           \
-        tcb::span<const std::size_t, Dim>                                                                \
+        tcb::span<const std::size_t, Dim>                                                          \
             grid_size,                                                                             \
         SpreadTimers const &timers);
 

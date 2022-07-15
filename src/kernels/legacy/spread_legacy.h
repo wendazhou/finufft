@@ -1,6 +1,8 @@
 #pragma once
 
+#include "../../tracing.h"
 #include "../spreading.h"
+
 #include <finufft_spread_opts.h>
 
 #include <tcb/span.hpp>
@@ -18,11 +20,12 @@ namespace legacy {
 
 /** Spread functor which calls into the current implementation of bin-sorting
  * and spreading. This is mostly implemented for testing purposes.
- * 
+ *
  */
 template <typename T, std::size_t Dim>
 SpreadFunctor<T, Dim> make_spread_functor(
-    kernel_specification const &kernel_spec, FoldRescaleRange input_range, tcb::span<const std::size_t, Dim> size);
+    kernel_specification const &kernel_spec, FoldRescaleRange input_range,
+    tcb::span<const std::size_t, Dim> size, finufft::Timer const &timer = {});
 
 /** Construct legacy options from kernel specification.
  *

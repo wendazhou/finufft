@@ -67,7 +67,7 @@ Timer TimerRoot::make_subtimer(std::string const &name, std::size_t parent_idx) 
 }
 
 std::vector<std::tuple<std::string, Timer::duration>>
-TimerRoot::report(std::string const &prefix = "") {
+TimerRoot::report(std::string const &prefix = "") const {
     std::vector<std::tuple<std::string, Timer::duration>> result;
 
     // Compute size of prefix to filter out

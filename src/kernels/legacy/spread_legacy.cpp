@@ -100,11 +100,14 @@ template <typename T, std::size_t Dim> struct LegacySpreadFunctorImplementation 
     std::array<T, Dim> bin_size_;
     FoldRescaleRange input_range_;
     kernel_specification kernel_;
+    finufft::Timer sort_timer_;
+    finufft::Timer spread_timer_;
 
     LegacySpreadFunctorImplementation(
         kernel_specification const &kernel, FoldRescaleRange input_range,
-        tcb::span<const std::size_t, Dim> size)
-        : input_range_(input_range), kernel_(kernel) {
+        tcb::span<const std::size_t, Dim> size, finufft::Timer const &timer)
+        : input_range_(input_range), kernel_(kernel), sort_timer_(timer.make_timer("sort")),
+          spread_timer_(timer.make_timer("spread")) {
         std::copy(size.begin(), size.end(), size_.begin());
         std::copy(size.begin(), size.end(), size_f_.begin());
         bin_size_.fill(4);
@@ -115,28 +118,40 @@ template <typename T, std::size_t Dim> struct LegacySpreadFunctorImplementation 
         auto sort_idx = finufft::allocate_aligned_array<int64_t>(points.num_points, 64);
 
         // Bin-sort points
-        bin_sort_singlethread_legacy<T, Dim>(
-            sort_idx.get(),
-            points.num_points,
-            points.coordinates,
-            size_f_,
-            bin_size_,
-            input_range_);
+        {
+            finufft::Timer timer(sort_timer_);
+            finufft::ScopedTimerGuard guard(timer);
+            bin_sort_multithread_legacy<T, Dim>(
+                sort_idx.get(),
+                points.num_points,
+                points.coordinates,
+                size_f_,
+                bin_size_,
+                input_range_);
+        }
 
         // Spread points
-        finufft::spreadinterp::spreadSortedOriginal(
-            sort_idx.get(),
-            size_[0],
-            Dim > 1 ? size_[1] : 1,
-            Dim > 2 ? size_[2] : 1,
-            output,
-            points.num_points,
-            const_cast<T*>(points.coordinates[0]),
-            Dim > 1 ? const_cast<T*>(points.coordinates[1]) : nullptr,
-            Dim > 2 ? const_cast<T*>(points.coordinates[2]) : nullptr,
-            const_cast<T*>(points.strengths),
-            construct_opts_from_kernel(kernel_, Dim),
-            1);
+        {
+            finufft::Timer timer(spread_timer_);
+            finufft::ScopedTimerGuard guard(timer);
+
+            auto opts = construct_opts_from_kernel(kernel_, Dim);
+            opts.pirange = input_range_ == FoldRescaleRange::Pi;
+
+            finufft::spreadinterp::spreadSortedOriginal(
+                sort_idx.get(),
+                size_[0],
+                Dim > 1 ? size_[1] : 1,
+                Dim > 2 ? size_[2] : 1,
+                output,
+                points.num_points,
+                const_cast<T *>(points.coordinates[0]),
+                Dim > 1 ? const_cast<T *>(points.coordinates[1]) : nullptr,
+                Dim > 2 ? const_cast<T *>(points.coordinates[2]) : nullptr,
+                const_cast<T *>(points.strengths),
+                opts,
+                1);
+        }
     }
 };
 
@@ -145,8 +160,8 @@ template <typename T, std::size_t Dim> struct LegacySpreadFunctorImplementation 
 template <typename T, std::size_t Dim>
 SpreadFunctor<T, Dim> make_spread_functor(
     kernel_specification const &kernel_spec, FoldRescaleRange input_range,
-    tcb::span<const std::size_t, Dim> size) {
-    return LegacySpreadFunctorImplementation<T, Dim>(kernel_spec, input_range, size);
+    tcb::span<const std::size_t, Dim> size, finufft::Timer const &timer) {
+    return LegacySpreadFunctorImplementation<T, Dim>(kernel_spec, input_range, size, timer);
 }
 
 #define INSTANTIATE(T, Dim)                                                                        \
@@ -154,7 +169,8 @@ SpreadFunctor<T, Dim> make_spread_functor(
         kernel_specification const &kernel_spec,                                                   \
         FoldRescaleRange input_range,                                                              \
         tcb::span<const std::size_t, Dim>                                                          \
-            size);
+            size,                                                                                  \
+        finufft::Timer const &timer);
 
 INSTANTIATE(float, 1)
 INSTANTIATE(float, 2)

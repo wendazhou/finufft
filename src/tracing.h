@@ -169,7 +169,7 @@ class TimerRoot {
      *     Note that for conciseness, the prefix is not included in the returned names.
      *
      */
-    std::vector<std::tuple<std::string, Timer::duration>> report(std::string const &prefix);
+    std::vector<std::tuple<std::string, Timer::duration>> report(std::string const &prefix) const;
 };
 
 inline void Timer::start() noexcept {

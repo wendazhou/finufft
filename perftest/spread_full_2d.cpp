@@ -20,6 +20,7 @@
 
 #include "../src/kernels/avx512/spread_avx512.h"
 #include "../src/kernels/avx512/spread_bin_sort_int.h"
+#include "../src/kernels/legacy/spread_legacy.h"
 #include "../src/kernels/reference/gather_fold_reference.h"
 #include "../src/kernels/reference/spread_bin_sort_int.h"
 #include "../src/kernels/reference/spread_blocked.h"
@@ -33,33 +34,9 @@ using namespace finufft::spreading;
 
 namespace {
 
-
-void bm_spread_2d(benchmark::State &state) {
-    std::size_t target_size = state.range(0);
-    std::size_t kernel_width = state.range(1);
-
-    auto num_points = target_size * target_size;
-
-    finufft::TimerRoot root("bench_full_spread");
-    auto timer = root.make_timer("full_spread");
-
-    auto points = make_random_point_collection<2, float>(num_points, 0, {-3 * M_PI, 3 * M_PI});
-    auto kernel_spec = specification_from_width(kernel_width, 2);
-    auto output = finufft::allocate_aligned_array<float>(2 * target_size * target_size, 64);
-
-    auto spread_functor = make_avx512_blocked_spread_functor<float, 2>(
-        kernel_spec, std::array<std::size_t, 2>{target_size, target_size}, FoldRescaleRange::Pi, timer);
-
-    for (auto _ : state) {
-        spread_functor(points, output.get());
-        benchmark::DoNotOptimize(output[0]);
-        benchmark::ClobberMemory();
-    }
-
-    state.SetItemsProcessed(state.iterations() * num_points);
-
+void report_timers(benchmark::State &state, finufft::TimerRoot const &timer_root) {
     // Report additional subtimings
-    auto results = root.report("full_spread");
+    auto results = timer_root.report("full_spread");
     for (auto &name_and_time : results) {
         auto name = std::get<0>(name_and_time);
 
@@ -76,9 +53,71 @@ void bm_spread_2d(benchmark::State &state) {
     }
 }
 
+void bm_spread_2d(
+    benchmark::State &state, SpreadFunctor<float, 2> const &spread_functor,
+    finufft::TimerRoot const &timer_root) {
+    std::size_t target_size = state.range(0);
+    auto num_points = target_size * target_size;
+
+    auto points = make_random_point_collection<2, float>(num_points, 0, {-3 * M_PI, 3 * M_PI});
+    auto output = finufft::allocate_aligned_array<float>(2 * target_size * target_size, 64);
+
+    for (auto _ : state) {
+        spread_functor(points, output.get());
+        benchmark::DoNotOptimize(output[0]);
+        benchmark::ClobberMemory();
+    }
+
+    state.SetItemsProcessed(state.iterations() * num_points);
+
+    // Report additional subtimings
+    report_timers(state, timer_root);
+}
+
+void bm_avx512(benchmark::State &state) {
+    std::size_t target_size = state.range(0);
+    std::size_t kernel_width = state.range(1);
+
+    auto kernel_spec = specification_from_width(kernel_width, 2);
+
+    finufft::TimerRoot root("bench_full_spread");
+    auto timer = root.make_timer("full_spread");
+
+    auto spread_functor = make_avx512_blocked_spread_functor<float, 2>(
+        kernel_spec,
+        std::array<std::size_t, 2>{target_size, target_size},
+        FoldRescaleRange::Pi,
+        timer);
+
+    bm_spread_2d(state, spread_functor, root);
+}
+
+void bm_legacy(benchmark::State &state) {
+    std::size_t target_size = state.range(0);
+    std::size_t kernel_width = state.range(1);
+
+    auto kernel_spec = specification_from_width(kernel_width, 2);
+
+    finufft::TimerRoot root("bench_full_spread");
+    auto timer = root.make_timer("full_spread");
+
+    auto spread_functor = legacy::make_spread_functor<float, 2>(
+        kernel_spec,
+        FoldRescaleRange::Pi,
+        std::array<std::size_t, 2>{target_size, target_size},
+        timer);
+
+    bm_spread_2d(state, spread_functor, root);
+}
+
 } // namespace
 
-BENCHMARK(bm_spread_2d)
+BENCHMARK(bm_avx512)
+    ->ArgsProduct({{1 << 10, 1 << 11, 1 << 12}, {4, 6, 8}})
+    ->UseRealTime()
+    ->Unit(benchmark::kMillisecond);
+
+BENCHMARK(bm_legacy)
     ->ArgsProduct({{1 << 10, 1 << 11, 1 << 12}, {4, 6, 8}})
     ->UseRealTime()
     ->Unit(benchmark::kMillisecond);

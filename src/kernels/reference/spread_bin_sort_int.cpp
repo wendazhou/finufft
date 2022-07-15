@@ -195,14 +195,14 @@ template <typename T, std::size_t Dim> struct Ips4oSortFunctor {
 template <typename T, std::size_t Dim>
 SortPointsFunctor<T, Dim> make_ips4o_sort_functor(
     ComputeAndPackBinsFunctor<T, Dim> &&pack, UnpackBinsFunctor<T, Dim> &&unpack,
-    SortPackedTimers const &timers) {
-    return Ips4oSortFunctor<T, Dim>{std::move(pack), std::move(unpack), timers};
+    finufft::Timer const &timer) {
+    return Ips4oSortFunctor<T, Dim>{std::move(pack), std::move(unpack), SortPackedTimers(timer)};
 }
 
 template <typename T, std::size_t Dim>
-SortPointsFunctor<T, Dim> get_sort_functor(SortPackedTimers const &timers) {
+SortPointsFunctor<T, Dim> get_sort_functor(finufft::Timer const &timer) {
     return make_ips4o_sort_functor<T, Dim>(
-        &compute_bins_and_pack<T, Dim>, &unpack_sorted_bins_to_points<T, Dim>, timers);
+        &compute_bins_and_pack<T, Dim>, &unpack_sorted_bins_to_points<T, Dim>, timer);
 }
 
 #define INSTANTIATE(T, Dim)                                                                        \
@@ -217,8 +217,8 @@ SortPointsFunctor<T, Dim> get_sort_functor(SortPackedTimers const &timers) {
     template SortPointsFunctor<T, Dim> make_ips4o_sort_functor(                                    \
         ComputeAndPackBinsFunctor<T, Dim> &&pack,                                                  \
         UnpackBinsFunctor<T, Dim> &&unpack,                                                        \
-        SortPackedTimers const &timers);                                                           \
-    template SortPointsFunctor<T, Dim> get_sort_functor(SortPackedTimers const &timers);
+        finufft::Timer const &timer);                                                           \
+    template SortPointsFunctor<T, Dim> get_sort_functor(finufft::Timer const &timer);
 
 INSTANTIATE(float, 1)
 INSTANTIATE(float, 2)

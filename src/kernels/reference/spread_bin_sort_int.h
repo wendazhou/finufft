@@ -118,13 +118,13 @@ template <typename T, std::size_t Dim, typename FoldRescale> struct ComputeBinIn
 template <typename T, std::size_t Dim>
 SortPointsFunctor<T, Dim> make_ips4o_sort_functor(
     ComputeAndPackBinsFunctor<T, Dim> &&pack, UnpackBinsFunctor<T, Dim> &&unpack,
-    SortPackedTimers const &timers = {});
+    finufft::Timer const &timer);
 
 /** Get the reference sort functor.
  *
  */
 template <typename T, std::size_t Dim>
-SortPointsFunctor<T, Dim> get_sort_functor(SortPackedTimers const &timers = {});
+SortPointsFunctor<T, Dim> get_sort_functor(finufft::Timer const &timer = {});
 
 } // namespace reference
 } // namespace spreading

@@ -410,9 +410,9 @@ void compute_bins_and_pack(
 }
 
 template <typename T, std::size_t Dim>
-SortPointsFunctor<T, Dim> get_sort_functor(SortPackedTimers const& timers) {
+SortPointsFunctor<T, Dim> get_sort_functor(finufft::Timer const& timer) {
     return reference::make_ips4o_sort_functor<T, Dim>(
-        &compute_bins_and_pack<T, Dim>, &reference::unpack_sorted_bins_to_points<T, Dim>, timers);
+        &compute_bins_and_pack<T, Dim>, &reference::unpack_sorted_bins_to_points<T, Dim>, timer);
 }
 
 #define INSTANTIATE(T, Dim)                                                                        \
@@ -421,7 +421,7 @@ SortPointsFunctor<T, Dim> get_sort_functor(SortPackedTimers const& timers) {
         FoldRescaleRange range,                                                                    \
         IntBinInfo<T, Dim> const &info,                                                            \
         PointBin<T, Dim> *output);                                                                 \
-    template SortPointsFunctor<T, Dim> get_sort_functor(SortPackedTimers const &timers);
+    template SortPointsFunctor<T, Dim> get_sort_functor(finufft::Timer const &timer);
 
 INSTANTIATE(float, 1)
 INSTANTIATE(float, 2)

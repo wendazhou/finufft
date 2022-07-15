@@ -26,7 +26,7 @@ void compute_bins_and_pack(
     IntBinInfo<T, Dim> const &info, PointBin<T, Dim> *output);
 
 template <typename T, std::size_t Dim>
-SortPointsFunctor<T, Dim> get_sort_functor(SortPackedTimers const& timers = {});
+SortPointsFunctor<T, Dim> get_sort_functor(finufft::Timer const& timer = {});
 
 } // namespace avx512
 } // namespace spreading

@@ -145,10 +145,9 @@ template <typename T, std::size_t Dim> struct OmpSpreadBlockedImplementation {
 template <typename T, std::size_t Dim>
 SpreadBlockedFunctor<T, Dim> make_omp_spread_blocked(
     SpreadSubproblemFunctor<T, Dim> &&spread_subproblem,
-    SynchronizedAccumulateFactory<T, Dim> &&accumulate_factory,
-    SpreadBlockedTimers const &timers_ref) {
+    SynchronizedAccumulateFactory<T, Dim> &&accumulate_factory, finufft::Timer const &timer) {
     return OmpSpreadBlockedImplementation<T, Dim>{
-        std::move(spread_subproblem), std::move(accumulate_factory), timers_ref};
+        std::move(spread_subproblem), std::move(accumulate_factory), SpreadBlockedTimers(timer)};
 }
 
 namespace {
@@ -207,7 +206,7 @@ SpreadFunctor<T, Dim> make_packed_sort_spread_blocked(
     SortPointsFunctor<T, Dim> &&sort_points, SpreadSubproblemFunctor<T, Dim> &&spread_subproblem,
     SynchronizedAccumulateFactory<T, Dim> &&accumulate, FoldRescaleRange input_range,
     tcb::span<const std::size_t, Dim> target_size, tcb::span<const std::size_t, Dim> grid_size,
-    SpreadTimers const &timers) {
+    finufft::Timer const &timer) {
     return PackedSortBlockedSpreadFunctorImplementation<T, Dim>(
         std::move(sort_points),
         std::move(spread_subproblem),
@@ -215,14 +214,14 @@ SpreadFunctor<T, Dim> make_packed_sort_spread_blocked(
         input_range,
         target_size,
         grid_size,
-        timers);
+        SpreadTimers(timer));
 }
 
 #define INSTANTIATE(T, Dim)                                                                        \
     template SpreadBlockedFunctor<T, Dim> make_omp_spread_blocked(                                 \
         SpreadSubproblemFunctor<T, Dim> &&spread_subproblem,                                       \
         SynchronizedAccumulateFactory<T, Dim> &&accumulate_factory,                                \
-        SpreadBlockedTimers const &timers_ref);                                                    \
+        finufft::Timer const &timers);                                                             \
     template SpreadFunctor<T, Dim> make_packed_sort_spread_blocked(                                \
         SortPointsFunctor<T, Dim> &&sort_points,                                                   \
         SpreadSubproblemFunctor<T, Dim> &&spread_subproblem,                                       \
@@ -232,7 +231,7 @@ SpreadFunctor<T, Dim> make_packed_sort_spread_blocked(
             target_size,                                                                           \
         tcb::span<const std::size_t, Dim>                                                          \
             grid_size,                                                                             \
-        SpreadTimers const &timers);
+        finufft::Timer const &timer);
 
 INSTANTIATE(float, 1)
 INSTANTIATE(float, 2)

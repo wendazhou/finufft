@@ -88,7 +88,7 @@ class Timer {
      * and its name will be prefixed with the current timer's name.
      *
      */
-    Timer make_timer(std::string const &name);
+    Timer make_timer(std::string const &name) const;
 
     std::vector<std::tuple<std::string, Timer::duration>> report();
     std::string name() const;

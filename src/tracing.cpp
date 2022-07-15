@@ -2,7 +2,7 @@
 
 namespace finufft {
 
-Timer Timer::make_timer(std::string const &name) {
+Timer Timer::make_timer(std::string const &name) const {
     if (!root_) {
         return Timer();
     }

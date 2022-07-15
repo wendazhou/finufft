@@ -33,12 +33,6 @@ using namespace finufft::spreading;
 
 namespace {
 
-struct SpreadTimers : reference::SpreadTimers {
-    SortPackedTimers sort_packed_timers;
-
-    SpreadTimers(finufft::Timer &timer)
-        : reference::SpreadTimers(timer), sort_packed_timers(sort_packed) {}
-};
 
 /** Compute grid size from cache size.
  *
@@ -65,15 +59,15 @@ template <typename T, std::size_t Dim> std::array<std::size_t, Dim> get_grid_siz
 
 template <typename T, std::size_t Dim>
 SpreadFunctor<T, Dim> make_avx512_spread_functor(
-    kernel_specification const &kernel_spec, std::size_t target_size, SpreadTimers const &timers) {
+    kernel_specification const &kernel_spec, std::size_t target_size, finufft::Timer const &timer) {
     return reference::make_packed_sort_spread_blocked<T, Dim>(
-        avx512::get_sort_functor<T, Dim>(timers.sort_packed_timers),
+        avx512::get_sort_functor<T, Dim>(timer.make_timer("sp")),
         get_subproblem_polynomial_avx512_functor<T, Dim>(kernel_spec),
         get_reference_block_locking_accumulator<T, Dim>(),
         FoldRescaleRange::Pi,
         std::array<std::size_t, Dim>{target_size, target_size},
         get_grid_size<T, Dim>(),
-        timers);
+        timer);
 }
 
 void bm_spread_2d(benchmark::State &state) {
@@ -84,13 +78,12 @@ void bm_spread_2d(benchmark::State &state) {
 
     finufft::TimerRoot root("bench_full_spread");
     auto timer = root.make_timer("full_spread");
-    SpreadTimers timers(timer);
 
     auto points = make_random_point_collection<2, float>(num_points, 0, {-3 * M_PI, 3 * M_PI});
     auto kernel_spec = specification_from_width(kernel_width, 2);
     auto output = finufft::allocate_aligned_array<float>(2 * target_size * target_size, 64);
 
-    auto spread_functor = make_avx512_spread_functor<float, 2>(kernel_spec, target_size, timers);
+    auto spread_functor = make_avx512_spread_functor<float, 2>(kernel_spec, target_size, timer);
 
     for (auto _ : state) {
         spread_functor(points, output.get());

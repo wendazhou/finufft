@@ -9,8 +9,8 @@
 #include <function2/function2.h>
 #include <tcb/span.hpp>
 
-#include "spreading.h"
 #include "../tracing.h"
+#include "spreading.h"
 
 /** Definitions for common interfaces to the sorting problem.
  *
@@ -122,7 +122,6 @@ template <typename T, std::size_t Dim> struct IntGridBinInfo : IntBinInfo<T, Dim
     std::array<KernelWriteSpec<T>, Dim> padding; ///< The padding required by the subproblem functor
 };
 
-
 /** Structure representing a packed bin, coordinate and strength triple.
  *
  * When sorting, it is more efficient to move all related information concerning
@@ -152,7 +151,7 @@ struct SortPackedTimers {
     Timer unpack; ///< Time spent unpacking the data
 
     SortPackedTimers() = default;
-    SortPackedTimers(finufft::Timer &timer)
+    SortPackedTimers(finufft::Timer const &timer)
         : pack(timer.make_timer("pack")), sort(timer.make_timer("sort")),
           unpack(timer.make_timer("unpack")) {}
     SortPackedTimers(SortPackedTimers const &) = default;
@@ -211,8 +210,8 @@ using UnpackBinsFunctor = fu2::unique_function<void(
  */
 template <typename T, std::size_t Dim>
 using SortPointsFunctor = fu2::unique_function<void(
-    nu_point_collection<Dim, const T> const &, FoldRescaleRange, nu_point_collection<Dim, T> const &,
-    std::size_t *, IntBinInfo<T, Dim> const &) const>;
+    nu_point_collection<Dim, const T> const &, FoldRescaleRange,
+    nu_point_collection<Dim, T> const &, std::size_t *, IntBinInfo<T, Dim> const &) const>;
 
 } // namespace spreading
 } // namespace finufft

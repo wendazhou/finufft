@@ -158,6 +158,17 @@ struct SortPackedTimers {
     SortPackedTimers(SortPackedTimers &&) = default;
 };
 
+// Macro to define a new functor with the given signature
+// This creates a custom type derivig from fu2::unique_function with the given signature,
+// enabling type erasure while giving a semantically meaningful name to the type-erasure class.
+// In particular, this makes it significantly easier to diagnose which templates have not been
+// instantiated in case of linker errors.
+#define F(NAME, ...)                                                                               \
+    template <typename T, std::size_t Dim> struct NAME : fu2::unique_function<__VA_ARGS__> {       \
+        using fu2::unique_function<__VA_ARGS__>::unique_function;                                  \
+        using fu2::unique_function<__VA_ARGS__>::operator=;                                        \
+    };
+
 /** Functor type for the compute-bin-pack operation
  *
  * This operation fold-rescales each point, computes the corresponding bin, and writes the packed
@@ -172,10 +183,9 @@ struct SortPackedTimers {
  * written.
  *
  */
-template <typename T, std::size_t Dim>
-using ComputeAndPackBinsFunctor = fu2::unique_function<void(
-    nu_point_collection<Dim, const T> const &, FoldRescaleRange, IntBinInfo<T, Dim> const &,
-    PointBin<T, Dim> *) const>;
+F(ComputeAndPackBinsFunctor, void(
+                                 nu_point_collection<Dim, const T> const &, FoldRescaleRange,
+                                 IntBinInfo<T, Dim> const &, PointBin<T, Dim> *) const)
 
 /** Functor type for the bin-unpack operation.
  *
@@ -189,9 +199,8 @@ using ComputeAndPackBinsFunctor = fu2::unique_function<void(
  *  will be written. Note that bins with no points will not have a value written to them.
  *
  */
-template <typename T, std::size_t Dim>
-using UnpackBinsFunctor = fu2::unique_function<void(
-    PointBin<T, Dim> const *, nu_point_collection<Dim, T> const &, std::size_t *) const>;
+F(UnpackBinsFunctor,
+  void(PointBin<T, Dim> const *, nu_point_collection<Dim, T> const &, std::size_t *) const)
 
 /** Functor for point sorting operation.
  *
@@ -208,10 +217,12 @@ using UnpackBinsFunctor = fu2::unique_function<void(
  * @param info Bin / grid configuration
  *
  */
-template <typename T, std::size_t Dim>
-using SortPointsFunctor = fu2::unique_function<void(
-    nu_point_collection<Dim, const T> const &, FoldRescaleRange,
-    nu_point_collection<Dim, T> const &, std::size_t *, IntBinInfo<T, Dim> const &) const>;
+F(SortPointsFunctor,
+  void(
+      nu_point_collection<Dim, const T> const &, FoldRescaleRange,
+      nu_point_collection<Dim, T> const &, std::size_t *, IntBinInfo<T, Dim> const &) const);
+
+#undef F
 
 } // namespace spreading
 } // namespace finufft

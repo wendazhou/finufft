@@ -10,20 +10,6 @@
 namespace finufft {
 namespace spreading {
 
-// Explicit instantiation of common functor types and dimensions.
-template SpreadSubproblemFunctor<float, 1>
-get_subproblem_polynomial_reference_functor<float, 1>(kernel_specification const &);
-template SpreadSubproblemFunctor<float, 2>
-get_subproblem_polynomial_reference_functor<float, 2>(kernel_specification const &);
-template SpreadSubproblemFunctor<float, 3>
-get_subproblem_polynomial_reference_functor<float, 3>(kernel_specification const &);
-template SpreadSubproblemFunctor<double, 1>
-get_subproblem_polynomial_reference_functor<double, 1>(kernel_specification const &);
-template SpreadSubproblemFunctor<double, 2>
-get_subproblem_polynomial_reference_functor<double, 2>(kernel_specification const &);
-template SpreadSubproblemFunctor<double, 3>
-get_subproblem_polynomial_reference_functor<double, 3>(kernel_specification const &);
-
 /** Get default configuration based on reference implementation.
  *
  */
@@ -48,19 +34,21 @@ get_spread_configuration_reference(finufft_spread_opts const &opts) {
     };
 }
 
-template SpreadFunctorConfiguration<float, 1>
-get_spread_configuration_reference<float, 1>(finufft_spread_opts const &);
-template SpreadFunctorConfiguration<float, 2>
-get_spread_configuration_reference<float, 2>(finufft_spread_opts const &);
-template SpreadFunctorConfiguration<float, 3>
-get_spread_configuration_reference<float, 3>(finufft_spread_opts const &);
+#define INSTANTIATE(T, Dim)                                                                        \
+    template SpreadFunctorConfiguration<T, Dim> get_spread_configuration_reference(                \
+        finufft_spread_opts const &opts);                                                          \
+    template SpreadSubproblemFunctor<T, Dim> get_subproblem_polynomial_reference_functor<T, Dim>(  \
+        kernel_specification const &);
 
-template SpreadFunctorConfiguration<double, 1>
-get_spread_configuration_reference<double, 1>(finufft_spread_opts const &);
-template SpreadFunctorConfiguration<double, 2>
-get_spread_configuration_reference<double, 2>(finufft_spread_opts const &);
-template SpreadFunctorConfiguration<double, 3>
-get_spread_configuration_reference<double, 3>(finufft_spread_opts const &);
+INSTANTIATE(float, 1);
+INSTANTIATE(float, 2);
+INSTANTIATE(float, 3);
+
+INSTANTIATE(double, 1);
+INSTANTIATE(double, 2);
+INSTANTIATE(double, 3);
+
+#undef INSTANTIATE
 
 } // namespace spreading
 

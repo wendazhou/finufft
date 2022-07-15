@@ -234,6 +234,17 @@ template <typename T, std::size_t Dim> class SpreadSubproblemFunctor {
     }
 };
 
+// Macro to define a new functor with the given signature
+// This creates a custom type derivig from fu2::unique_function with the given signature,
+// enabling type erasure while giving a semantically meaningful name to the type-erasure class.
+// In particular, this makes it significantly easier to diagnose which templates have not been
+// instantiated in case of linker errors.
+#define F(NAME, ...)                                                                               \
+    template <typename T, std::size_t Dim> struct NAME : fu2::unique_function<__VA_ARGS__> {       \
+        using fu2::unique_function<__VA_ARGS__>::unique_function;                                  \
+        using fu2::unique_function<__VA_ARGS__>::operator=;                                        \
+    };
+
 /** This functor represents a strategy for accumulating data into a target buffer.
  *
  * This functor implements synchronized accumulation of the data into
@@ -250,9 +261,7 @@ template <typename T, std::size_t Dim> class SpreadSubproblemFunctor {
  *      location of the input data with respect to the target buffer.
  *
  */
-template <typename T, std::size_t Dim>
-using SynchronizedAccumulateFunctor =
-    fu2::unique_function<void(T const *, grid_specification<Dim> const &) const>;
+F(SynchronizedAccumulateFunctor, void(T const *, grid_specification<Dim> const &) const)
 
 /** Factory to initialize an accumulation strategy.
  *
@@ -266,9 +275,8 @@ using SynchronizedAccumulateFunctor =
  * - std::array<std::size_t, Dim> const& size: The size of the target buffer in each dimension.
  *
  */
-template <typename T, std::size_t Dim>
-using SynchronizedAccumulateFactory = fu2::unique_function<SynchronizedAccumulateFunctor<T, Dim>(
-    T *, std::array<std::size_t, Dim> const &) const>;
+F(SynchronizedAccumulateFactory,
+  SynchronizedAccumulateFunctor<T, Dim>(T *, std::array<std::size_t, Dim> const &) const)
 
 /** Enum representing the range of the input data.
  *
@@ -287,10 +295,10 @@ enum class FoldRescaleRange { Identity, Pi };
  * - int64_t const* sort_index: indirect index to gather points
  *
  */
-template <typename T, std::size_t Dim>
-using GatherRescaleFunctor = fu2::unique_function<void(
-    nu_point_collection<Dim, T> const &, nu_point_collection<Dim, const T> const &,
-    std::array<int64_t, Dim>, int64_t const *) const>;
+F(GatherRescaleFunctor,
+  void(
+      nu_point_collection<Dim, T> const &, nu_point_collection<Dim, const T> const &,
+      std::array<int64_t, Dim>, int64_t const *) const);
 
 /** This structure groups the necessary sub-components of a spread implementation.
  *
@@ -314,10 +322,10 @@ template <typename T, std::size_t Dim> struct SpreadFunctorConfiguration {
  * - T* output: the target buffer to write the data to
  *
  */
-template <typename T, std::size_t Dim>
-using SpreadProcessor = fu2::unique_function<void(
-    SpreadFunctorConfiguration<T, Dim> const &, nu_point_collection<Dim, const T> const &,
-    int64_t const *, std::array<int64_t, Dim> const &, T *) const>;
+F(SpreadProcessor,
+  void(
+      SpreadFunctorConfiguration<T, Dim> const &, nu_point_collection<Dim, const T> const &,
+      int64_t const *, std::array<int64_t, Dim> const &, T *) const)
 
 /** This function represents a strategy to obtain an indirect sort
  * of the given points according to their bin index. The parameters
@@ -333,10 +341,10 @@ using SpreadProcessor = fu2::unique_function<void(
  * - FoldRescaleRange input_range: The range of the input data.
  *
  */
-template <typename T, std::size_t Dim>
-using BinSortFunctor = fu2::unique_function<void(
-    int64_t *, std::size_t, std::array<T const *, Dim> const &, std::array<T, Dim> const &,
-    std::array<T, Dim> const &, FoldRescaleRange) const>;
+F(BinSortFunctor,
+  void(
+      int64_t *, std::size_t, std::array<T const *, Dim> const &, std::array<T, Dim> const &,
+      std::array<T, Dim> const &, FoldRescaleRange) const)
 
 // Forward declaration from sorting.h for bin structure
 template <typename T, std::size_t Dim> struct IntGridBinInfo;
@@ -354,13 +362,12 @@ template <typename T, std::size_t Dim> struct IntGridBinInfo;
  * - T* output: the target buffer to write the data to.
  *
  */
-template <typename T, std::size_t Dim>
-using SpreadBlockedFunctor = fu2::unique_function<void(
-    nu_point_collection<Dim, const T> const &, IntGridBinInfo<T, Dim> const &, std::size_t const *,
-    T *) const>;
+F(SpreadBlockedFunctor, void(
+                            nu_point_collection<Dim, const T> const &,
+                            IntGridBinInfo<T, Dim> const &, std::size_t const *, T *) const)
 
 /** This function represents a global implementation to spread points.
- * 
+ *
  * Note that parameters such as the range of the input points, or the size
  * of the target buffer are not provided to the function, as these are
  * expected to be bound at functor creation time. This enables implementations
@@ -371,9 +378,9 @@ using SpreadBlockedFunctor = fu2::unique_function<void(
  * - T* output: the target buffer to write the data to.
  *
  */
-template <typename T, std::size_t Dim>
-using SpreadFunctor = fu2::unique_function<void(
-    nu_point_collection<Dim, const T> const &, T*) const>;
+F(SpreadFunctor, void(nu_point_collection<Dim, const T> const &, T *) const)
+
+#undef F
 
 /** This structure represents the output information of the spreading operation.
  *

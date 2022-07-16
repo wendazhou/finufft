@@ -60,5 +60,6 @@ template <typename T> struct FoldRescaleIdentity : finufft::spreading::FoldResca
 } // namespace hwy
 } // namespace spreading
 } // namespace finufft
+HWY_AFTER_NAMESPACE();
 
 #endif

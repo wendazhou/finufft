@@ -46,7 +46,7 @@
 namespace ips4o {
 namespace detail {
 
-#if defined(_REENTRANT)
+#if defined(IPS4OML_ENABLE_PARALLEL)
 
 /**
  * Recursive entry point for sequential algorithm.
@@ -88,7 +88,7 @@ void Sorter<Cfg>::sequential(const iterator begin, const Task& task,
     }
 }
 
-#endif  // _REENTRANT
+#endif  // IPS4OML_ENABLE_PARALLEL
 
 /**
  * Recursive entry point for sequential algorithm.

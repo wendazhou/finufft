@@ -1,7 +1,9 @@
 #include "spread_reference.h"
 
 #include "gather_fold_reference.h"
+#include "spread_bin_sort_int.h"
 #include "spread_bin_sort_reference.h"
+#include "spread_blocked.h"
 #include "spread_processor_reference.h"
 #include "spread_subproblem_reference.h"
 #include "synchronized_accumulate_reference.h"
@@ -128,6 +130,26 @@ SpreadFunctor<T, Dim> get_indirect_spread_functor(
         timer);
 }
 
+template <typename T, std::size_t Dim>
+SpreadFunctor<T, Dim> get_blocked_spread_functor(
+    kernel_specification const &kernel_spec, tcb::span<const std::size_t, Dim> target_size,
+    FoldRescaleRange input_range, finufft::Timer const &timer) {
+
+    // Default grid size
+    std::array<std::size_t, Dim> grid_size;
+    grid_size.fill(16);
+    grid_size[0] = 32;
+
+    return make_packed_sort_spread_blocked<T, Dim>(
+        reference::get_sort_functor<T, Dim>(timer.make_timer("sp")),
+        get_subproblem_polynomial_reference_functor<T, Dim>(kernel_spec),
+        get_reference_block_locking_accumulator<T, Dim>(),
+        input_range,
+        target_size,
+        grid_size,
+        timer);
+}
+
 } // namespace reference
 
 #define INSTANTIATE(T, Dim)                                                                        \
@@ -145,6 +167,12 @@ SpreadFunctor<T, Dim> get_indirect_spread_functor(
         FoldRescaleRange input_range,                                                              \
         finufft::Timer const &timer);                                                              \
     template SpreadFunctor<T, Dim> reference::get_indirect_spread_functor(                         \
+        kernel_specification const &kernel_spec,                                                   \
+        tcb::span<const std::size_t, Dim>                                                          \
+            target_size,                                                                           \
+        FoldRescaleRange input_range,                                                              \
+        finufft::Timer const &timer);                                                              \
+    template SpreadFunctor<T, Dim> reference::get_blocked_spread_functor(                          \
         kernel_specification const &kernel_spec,                                                   \
         tcb::span<const std::size_t, Dim>                                                          \
             target_size,                                                                           \

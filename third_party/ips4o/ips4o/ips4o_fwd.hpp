@@ -84,7 +84,7 @@ class Sorter {
 
     void sequential_rec(iterator begin, iterator end);
 
-#if defined(_REENTRANT)
+#if defined(IPS4OML_ENABLE_PARALLEL)
     void parallelSortPrimary(iterator begin, iterator end, int num_threads,
                              BufferStorage& buffer_storage,
                              std::vector<std::shared_ptr<SubThreadPool>>& tp_trash);
@@ -180,7 +180,7 @@ inline void sort(It begin, It end, Comp comp);
 template <class It>
 inline void sort(It begin, It end);
 
-#if defined(_REENTRANT)
+#if defined(IPS4OML_ENABLE_PARALLEL)
 namespace parallel {
 
 template <class It, class Comp>
@@ -190,5 +190,5 @@ template <class It>
 inline void sort(It begin, It end);
 
 }  // namespace parallel
-#endif  // _REENTRANT
+#endif  // IPS4OML_ENABLE_PARALLEL
 }  // namespace ips4o

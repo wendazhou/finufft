@@ -52,8 +52,8 @@ set(FINUFFT_BUILD_EXAMPLES "OFF" CACHE BOOL "Whether to build the FINUFFT exampl
 set(FINUFFT_BUILD_TESTS "OFF" CACHE BOOL "Whether to build the FINUFFT tests")
 set(FINUFFT_BUILD_FORTRAN "OFF" CACHE BOOL "Whether to build the FINUFFT Fortran examples")
 set(FINUFFT_BUILD_MATLAB "OFF" CACHE BOOL "Whether to build the FINUFFT Matlab interface")
-set(FINUFFT_ENABLE_SANITIZERS "ON" CACHE BOOL "Whether to enable sanitizers, only effective for Debug configuration.")
 set(FINUFFT_USE_OPENMP "ON" CACHE BOOL "Whether to use OpenMP for parallelization. If disabled, the finufft library will be single threaded. This does not affect the choice of FFTW library.")
+set(FINUFFT_SANITIZER "address" CACHE STRING "If not empty, sanitizer to use. Only in effect for Debug configuration.")
 
 if(FINUFFT_BUILD_MATLAB)
     # When building for matlab, we will fetch the OpenMP library used by matlab
@@ -95,21 +95,23 @@ set(FINUFFT_GNU_LIKE_COMPILERS AppleClang Clang GNU)
 
 # Utility function to enable ASAN on debug builds
 function(enable_asan target)
-    if(NOT FINUFFT_ENABLE_SANITIZERS)
+    if(${FINUFFT_SANITIZER} STREQUAL "")
         return()
     endif()
 
     if(CMAKE_CXX_COMPILER_ID IN_LIST FINUFFT_GNU_LIKE_COMPILERS)
         # Enable only on clang / gcc compilers.
-        target_compile_options(${target} PRIVATE $<$<CONFIG:DEBUG>:-fsanitize=address>)
-        target_link_options(${target} PRIVATE $<$<CONFIG:DEBUG>:-fsanitize=address>)
+        target_compile_options(${target} PRIVATE $<$<CONFIG:DEBUG>:-fsanitize=${FINUFFT_SANITIZER}>)
+        target_link_options(${target} PRIVATE $<$<CONFIG:DEBUG>:-fsanitize=${FINUFFT_SANITIZER}>)
     endif()
 endfunction()
+
+# Use C++20
+set(CMAKE_CXX_STANDARD 20)
 
 # Utility function to set finufft compilation options.
 function(set_finufft_options target)
     set_property(TARGET ${target} PROPERTY POSITION_INDEPENDENT_CODE ON)
-    set_property(TARGET ${target} PROPERTY CXX_STANDARD 20)
     enable_asan(${target})
 
     target_compile_options(${target} PRIVATE SHELL:$<$<CONFIG:Release,RelWithDebInfo>:${FINUFFT_ARCH_FLAGS}>)
@@ -117,7 +119,7 @@ function(set_finufft_options target)
         # Enable cx-limited-range on supported compilers
         target_compile_options(${target} PRIVATE $<$<CONFIG:Release,RelWithDebInfo>:-fcx-limited-range>)
     endif()
-
+    target_compile_options(${target} PRIVATE $<$<CONFIG:Debug>:-Og>)
     target_include_directories(${target} PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/include")
     target_include_directories(${target} PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/third_party")
     if(FINUFFT_USE_OPENMP)

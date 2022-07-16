@@ -42,7 +42,9 @@
 #include <type_traits>
 #include <utility>
 
-#if defined(_REENTRANT)
+#define IPS4OML_ENABLE_PARALLEL
+
+#if defined(IPS4OML_ENABLE_PARALLEL)
 #include "thread_pool.hpp"
 #endif
 
@@ -191,7 +193,7 @@ struct Config {
      * Returns the number of threads that should be used for the given input range.
      */
     template <class It>
-#if defined(_REENTRANT)
+#if defined(IPS4OML_ENABLE_PARALLEL)
     static constexpr int numThreadsFor(const It& begin, const It& end, int max_threads) {
         const std::ptrdiff_t blocks =
                 (end - begin) * sizeof(decltype(*begin)) / kBlockSizeInBytes;
@@ -204,7 +206,7 @@ struct Config {
 };
 
 template <class It_, class Comp_, class Cfg = Config<>
-#if defined(_REENTRANT)
+#if defined(IPS4OML_ENABLE_PARALLEL)
           , class ThreadPool_ = DefaultThreadPool
 #endif
         >
@@ -230,7 +232,7 @@ struct ExtendedConfig : public Cfg {
      */
     using less = Comp_;
 
-#if defined(_REENTRANT)
+#if defined(IPS4OML_ENABLE_PARALLEL)
 
     /**
      * Thread pool for parallel algorithm.

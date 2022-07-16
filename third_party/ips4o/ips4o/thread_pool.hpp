@@ -41,7 +41,7 @@
 #include "synchronization.hpp"
 #endif  // _OPENMP
 
-#ifdef _REENTRANT
+#ifdef IPS4OML_ENABLE_PARALLEL
 #include <algorithm>
 #include <cassert>
 #include <functional>
@@ -51,7 +51,7 @@
 #include <vector>
 
 #include "synchronization.hpp"
-#endif  // _REENTRANT
+#endif  // IPS4OML_ENABLE_PARALLEL
 
 namespace ips4o {
 
@@ -119,7 +119,7 @@ class OpenMPThreadPool {
 
 #endif  // _OPENMP
 
-#ifdef _REENTRANT
+#ifdef IPS4OML_ENABLE_PARALLEL
 
 /**
  * A thread pool using std::thread.
@@ -218,9 +218,9 @@ inline void StdThreadPool::Impl::main(const int my_id) {
     }
 }
 
-#endif  // _REENTRANT
+#endif  // IPS4OML_ENABLE_PARALLEL
 
-#if defined(_REENTRANT)
+#if defined(IPS4OML_ENABLE_PARALLEL)
 
 /**
  * A thread pool to which external threads can join.
@@ -318,11 +318,11 @@ inline void ThreadJoiningThreadPool::Impl::release_threads() {
     pool_barrier_.barrier();
 }
 
-#endif  // defined(_REENTRANT)
+#endif  // defined(IPS4OML_ENABLE_PARALLEL)
 
-#if defined(_REENTRANT) && defined(_OPENMP)
+#if defined(IPS4OML_ENABLE_PARALLEL) && defined(_OPENMP)
 using DefaultThreadPool = OpenMPThreadPool;
-#elif defined(_REENTRANT)
+#elif defined(IPS4OML_ENABLE_PARALLEL)
 using DefaultThreadPool = StdThreadPool;
 #else
 #error No Default Thread Pool Defined

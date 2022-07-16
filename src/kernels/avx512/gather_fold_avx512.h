@@ -53,6 +53,14 @@ struct GatherFoldAvx512 {
         FoldRescaleRange rescale_range) const {
         avx512::gather_fold_avx512_impl<T, Dim>(memory, input, sizes, sort_indices, rescale_range);
     }
+
+    template <typename T, std::size_t Dim>
+    void operator()(
+        nu_point_collection<Dim, T> const &memory, nu_point_collection<Dim, typename identity<T>::type> const &input,
+        std::array<int64_t, Dim> const &sizes, std::int64_t const *sort_indices,
+        FoldRescaleRange rescale_range) const {
+        avx512::gather_fold_avx512_impl<T, Dim>(memory, input, sizes, sort_indices, rescale_range);
+    }
 };
 
 /** Function object which encapsulates the AVX-512 gather and fold implementation.

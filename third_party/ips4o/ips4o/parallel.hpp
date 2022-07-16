@@ -34,7 +34,7 @@
  *****************************************************************************/
 
 #pragma once
-#if defined(_REENTRANT)
+#if defined(IPS4OML_ENABLE_PARALLEL)
 
 #include <algorithm>
 #include <atomic>
@@ -421,4 +421,4 @@ class ParallelSorter {
 };
 
 }  // namespace ips4o
-#endif  // _REENTRANT
+#endif  // IPS4OML_ENABLE_PARALLEL

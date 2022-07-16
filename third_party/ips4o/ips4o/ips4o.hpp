@@ -113,7 +113,7 @@ void sort(It begin, It end) {
     ips4o::sort<Config<>>(std::move(begin), std::move(end), std::less<>());
 }
 
-#if defined(_REENTRANT)
+#if defined(IPS4OML_ENABLE_PARALLEL)
 namespace parallel {
 
 /**
@@ -185,5 +185,5 @@ void sort(It begin, It end) {
 }
 
 }  // namespace parallel
-#endif  // _REENTRANT
+#endif  // IPS4OML_ENABLE_PARALLEL
 }  // namespace ips4o

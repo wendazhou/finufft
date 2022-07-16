@@ -237,9 +237,10 @@ template <typename T, std::size_t Dim> struct PackedSortBlockedSpreadFunctorImpl
         tcb::span<const std::size_t, Dim> target_size, tcb::span<const std::size_t, Dim> grid_size,
         SpreadTimers const &timers)
         : sort_points_(std::move(sort_points)),
-          spread_blocked_(
-              std::move(spread_subproblem), std::move(accumulate_factory),
-              timers.spread_blocked_timers),
+          spread_blocked_{
+              std::move(spread_subproblem),
+              std::move(accumulate_factory),
+              timers.spread_blocked_timers},
           info_(target_size, grid_size, spread_blocked_.spread_subproblem_.target_padding()),
           sort_timer_(timers.sort_packed), spread_timer_(timers.spread_blocked),
           input_range_(input_range) {}

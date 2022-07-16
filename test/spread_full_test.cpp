@@ -54,7 +54,7 @@ void test_spread_functor(
         std::pow(10., -kernel_spec.width + 1),
         static_cast<double>(std::numeric_limits<T>::epsilon())); // Error tolerance in kernel
     double error_level =
-        10 * tolerance * density; // Final relative error level (factor of 10 in tolerance).
+        20 * tolerance * density; // Final relative error level (factor of 10 in tolerance).
 
     for (std::size_t i = 0; i < total_size; ++i) {
         ASSERT_NEAR(
@@ -70,7 +70,7 @@ template <typename T, std::size_t Dim>
 void test_spread_functor_vary_points(
     std::size_t target_width, kernel_specification const &kernel_spec,
     SpreadFunctor<T, Dim> const &functor) {
-    for (std::size_t num_points : {std::size_t(1), std::size_t(5), std::size_t(16), std::size_t(17), target_width, target_width * target_width}) {
+    for (std::size_t num_points : {std::size_t(1), std::size_t(2), std::size_t(16), std::size_t(17), target_width, target_width * target_width}) {
         SCOPED_TRACE("num_points = " + std::to_string(num_points));
         test_spread_functor(num_points, target_width, kernel_spec, functor);
     }
@@ -116,6 +116,26 @@ TEST(TestSpreadFull, TestSpreadReferenceIndirect2D) {
     test_spread_functor_vary_points(target_width, kernel_spec, spread_functor);
 }
 
+TEST(TestSpreadFull, TestSpreadReferenceBlocked1D) {
+    auto kernel_spec = specification_from_width(8, 2);
+    std::size_t target_width = 128;
+
+    auto spread_functor = reference::get_blocked_spread_functor<float, 1>(
+        kernel_spec, std::array<std::size_t, 1>{target_width}, FoldRescaleRange::Pi);
+
+    test_spread_functor_vary_points(target_width, kernel_spec, spread_functor);
+}
+
+TEST(TestSpreadFull, TestSpreadReferenceBlocked2D) {
+    auto kernel_spec = specification_from_width(8, 2);
+    std::size_t target_width = 64;
+
+    auto spread_functor = reference::get_blocked_spread_functor<float, 2>(
+        kernel_spec, std::array<std::size_t, 2>{target_width, target_width}, FoldRescaleRange::Pi);
+
+    test_spread_functor_vary_points(target_width, kernel_spec, spread_functor);
+}
+
 TEST(TestSpreadFull, TestSpreadAvx512Blocked1D) {
     auto kernel_spec = specification_from_width(8, 2);
     std::size_t target_width = 128;
@@ -127,8 +147,8 @@ TEST(TestSpreadFull, TestSpreadAvx512Blocked1D) {
 }
 
 TEST(TestSpreadFull, TestSpreadAvx512Blocked2D) {
-    auto kernel_spec = specification_from_width(8, 2);
-    std::size_t target_width = 128;
+    auto kernel_spec = specification_from_width(5, 2);
+    std::size_t target_width = 64;
 
     auto spread_functor = avx512::get_blocked_spread_functor<float, 2>(
         kernel_spec, std::array<std::size_t, 2>{target_width, target_width}, FoldRescaleRange::Pi);

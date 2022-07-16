@@ -149,7 +149,7 @@ std::pair<std::vector<T>, std::vector<T>> run_spread_interp(double eps, ConfigTy
 
     auto config = get_configuration<T, Dim>(type, opts);
 
-    finufft::spreading::spread_with_configuration(
+    finufft::spreading::spread_with_configuration<Dim, T>(
         permutation.get(), input, sizes, output.data(), opts, config);
 
     run_spread_sorted_original<T>(permutation.get(), input, opts, sizes, output_expected.data());

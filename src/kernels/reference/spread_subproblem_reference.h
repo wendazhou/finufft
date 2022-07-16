@@ -57,10 +57,9 @@ template <typename T, std::size_t Dim> struct WriteSeparableKernelImpl;
  */
 template <typename T, std::size_t Dim>
 void write_separable_kernel(
-    T __restrict *output, tcb::span<std::size_t, Dim> strides, tcb::span<T const *, Dim> values,
+    T *__restrict output, tcb::span<std::size_t, Dim> strides, tcb::span<T const *, Dim> values,
     std::size_t width) {
-    return WriteSeparableKernelImpl<T, Dim>{}(
-        output, strides, values, width);
+    return WriteSeparableKernelImpl<T, Dim>{}(output, strides, values, width);
 }
 
 template <typename T, std::size_t Dim> struct WriteSeparableKernelImpl {
@@ -171,7 +170,7 @@ void spread_subproblem_generic_with_kernel(
             // Compute offset in subgrid
             auto x_f = x_i - x;
             auto z = 2 * x_f + (kernel_width - 1);
-            kernel(const_cast<T*>(kernel_values_view[dim]), z);
+            kernel(const_cast<T *>(kernel_values_view[dim]), z);
 
             point_total_offset += (x_i - grid.offsets[dim]) * strides[dim];
         }
@@ -189,10 +188,7 @@ void spread_subproblem_generic_with_kernel(
 
         // Write out product kernel to output array.
         write_separable_kernel<T, Dim>(
-            output + 2 * point_total_offset,
-            strides,
-            kernel_values_view,
-            kernel_width);
+            output + 2 * point_total_offset, strides, kernel_values_view, kernel_width);
     }
 }
 

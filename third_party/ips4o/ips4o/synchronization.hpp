@@ -34,7 +34,7 @@
  *****************************************************************************/
 
 #pragma once
-#if defined(_REENTRANT)
+#if defined(IPS4OML_ENABLE_PARALLEL)
 #include <condition_variable>
 #include <mutex>
 
@@ -136,4 +136,4 @@ void Sync::critical(F&& func) {
 
 }  // namespace detail
 }  // namespace ips4o
-#endif  // defined(_REENTRANT)
+#endif  // defined(IPS4OML_ENABLE_PARALLEL)

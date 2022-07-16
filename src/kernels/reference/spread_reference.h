@@ -43,6 +43,18 @@ SpreadFunctor<T, Dim> get_indirect_spread_functor(
     FoldRescaleRange input_range,
     finufft::Timer const& timer = {});
 
+
+/** Get instantiation of a a spread functor for the reference implementation, based
+ * on a packed direct sort strategy.
+ * 
+ */
+template <typename T, std::size_t Dim>
+SpreadFunctor<T, Dim> get_blocked_spread_functor(
+    kernel_specification const& kernel_spec,
+    tcb::span<const std::size_t, Dim> target_size,
+    FoldRescaleRange input_range,
+    finufft::Timer const& timer = {});
+
 }
 
 

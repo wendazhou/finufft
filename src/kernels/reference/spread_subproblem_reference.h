@@ -57,19 +57,19 @@ template <typename T, std::size_t Dim> struct WriteSeparableKernelImpl;
  */
 template <typename T, std::size_t Dim>
 void write_separable_kernel(
-    T *output, tcb::span<std::size_t, Dim> strides, tcb::span<T const *, Dim> values,
-    std::size_t width, T k_re, T k_im) {
-    return WriteSeparableKernelImpl<T, Dim>{}(output, strides, values, width, k_re, k_im);
+    T __restrict *output, tcb::span<std::size_t, Dim> strides, tcb::span<T const *, Dim> values,
+    std::size_t width) {
+    return WriteSeparableKernelImpl<T, Dim>{}(
+        output, strides, values, width);
 }
 
 template <typename T, std::size_t Dim> struct WriteSeparableKernelImpl {
     void operator()(
         T *__restrict output, tcb::span<std::size_t, Dim> strides, tcb::span<T const *, Dim> values,
-        std::size_t width, T k_re, T k_im) {
+        std::size_t width, T k = T(1)) const {
         for (std::size_t i = 0; i < width; ++i) {
             // Set-up values for the current slice in the slowest dimension
-            auto k_re_i = k_re * values[Dim - 1][i];
-            auto k_im_i = k_im * values[Dim - 1][i];
+            auto k_i = k * values[Dim - 1][i];
 
             // Dispatch to accumulate in current slice.
             WriteSeparableKernelImpl<T, Dim - 1>{}(
@@ -77,8 +77,7 @@ template <typename T, std::size_t Dim> struct WriteSeparableKernelImpl {
                 strides.template subspan<0, Dim - 1>(),
                 values.template subspan<0, Dim - 1>(),
                 width,
-                k_re_i,
-                k_im_i);
+                k_i);
         }
     }
 };
@@ -86,12 +85,21 @@ template <typename T, std::size_t Dim> struct WriteSeparableKernelImpl {
 template <typename T> struct WriteSeparableKernelImpl<T, 1> {
     void operator()(
         T *__restrict output, tcb::span<std::size_t, 1> strides, tcb::span<T const *, 1> values,
-        std::size_t width, T k_re, T k_im) {
+        std::size_t width) {
 
         // Base case of the recursion: 1-D kernel accumulation.
-        for (std::size_t i = 0; i < width; ++i) {
-            output[2 * i * strides[0]] += k_re * values[0][i];
-            output[2 * i * strides[0] + 1] += k_im * values[0][i];
+        for (std::size_t i = 0; i < 2 * width; ++i) {
+            output[i] += values[0][i];
+        }
+    }
+
+    void operator()(
+        T *__restrict output, tcb::span<std::size_t, 1> strides, tcb::span<T const *, 1> values,
+        std::size_t width, T k) {
+
+        // Base case of the recursion: 1-D kernel accumulation.
+        for (std::size_t i = 0; i < 2 * width; ++i) {
+            output[i] = std::fma(k, values[0][i], output[i]);
         }
     }
 };
@@ -131,9 +139,11 @@ void spread_subproblem_generic_with_kernel(
     std::fill_n(output, 2 * grid.num_elements(), T(0));
 
     // Allocate according to the width requested by the kernel.
+    // To allow for pre-multiplication by real and imaginary strengths,
+    // we allocate 2x the width of the kernel for the first dimension.
     auto kernel_values_stride = round_to_next_multiple(kernel.width, 8);
-    auto kernel_values = allocate_aligned_array<T>(kernel_values_stride * Dim, 64);
-    std::fill_n(kernel_values.get(), kernel_values_stride * Dim, T(0));
+    auto kernel_values = allocate_aligned_array<T>(kernel_values_stride * (Dim + 1), 64);
+    std::fill_n(kernel_values.get(), kernel_values_stride * (Dim + 1), T(0));
 
     T ns2 = static_cast<T>(0.5 * kernel_width);
 
@@ -147,7 +157,7 @@ void spread_subproblem_generic_with_kernel(
     // Pre-compute pointers into each segment containing the computed kernel values.
     std::array<T const *, Dim> kernel_values_view;
     for (std::size_t dim = 0; dim < Dim; ++dim) {
-        kernel_values_view[dim] = kernel_values.get() + kernel_values_stride * dim;
+        kernel_values_view[dim] = kernel_values.get() + kernel_values_stride * (dim + (dim > 0));
     }
 
     for (std::size_t i = 0; i < input.num_points; ++i) {
@@ -160,10 +170,21 @@ void spread_subproblem_generic_with_kernel(
             auto x_i = static_cast<int64_t>(std::ceil(x - ns2));
             // Compute offset in subgrid
             auto x_f = x_i - x;
-            auto z = 2 * x_f + kernel_width - 1;
-            kernel(kernel_values.get() + dim * kernel_values_stride, z);
+            auto z = 2 * x_f + (kernel_width - 1);
+            kernel(const_cast<T*>(kernel_values_view[dim]), z);
 
             point_total_offset += (x_i - grid.offsets[dim]) * strides[dim];
+        }
+
+        {
+            // Pre-multiply kernel values by strengths
+            // Note: pre-multiply in reverse to avoid overwriting kernel values.
+            auto ker_val_ptr = kernel_values.get();
+            for (std::size_t j = kernel_width - 1; j != std::size_t(-1); --j) {
+                auto ker_val_j = ker_val_ptr[j];
+                ker_val_ptr[2 * j] = ker_val_j * input.strengths[2 * i];
+                ker_val_ptr[2 * j + 1] = ker_val_j * input.strengths[2 * i + 1];
+            }
         }
 
         // Write out product kernel to output array.
@@ -171,9 +192,7 @@ void spread_subproblem_generic_with_kernel(
             output + 2 * point_total_offset,
             strides,
             kernel_values_view,
-            kernel_width,
-            input.strengths[2 * i],
-            input.strengths[2 * i + 1]);
+            kernel_width);
     }
 }
 
@@ -244,9 +263,11 @@ template <typename T, std::size_t Dim> struct SpreadSubproblemDirectReference {
  */
 template <typename T, std::size_t Degree> struct HornerPolynomialEvaluation {
     template <typename Arr> T operator()(T x, Arr const &coeffs) const {
-        // Note: will dispatch to efficient FMA implementation if available on most compilers.
-        // Explictly control FMA contraction using #pragma STDC FP_CONTRACT if desired.
-        return x * HornerPolynomialEvaluation<T, Degree - 1>{}(x, coeffs) + coeffs[Degree];
+        // Note: enforce FMA to ensure bit-exact compatibility with vectorized implementations.
+        // This is particularly important for fp32 arithmetic as the difference can be rather
+        // significant.
+        return std::fma(x, HornerPolynomialEvaluation<T, Degree - 1>{}(x, coeffs), coeffs[Degree]);
+        // return x * HornerPolynomialEvaluation<T, Degree - 1>{}(x, coeffs) + coeffs[Degree];
     }
 };
 

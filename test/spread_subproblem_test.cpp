@@ -4,6 +4,8 @@
  *
  */
 
+#include <cstring>
+
 #include "../src/kernels/avx512/spread_avx512.h"
 #include "../src/kernels/legacy/spread_subproblem_legacy.h"
 #include "../src/kernels/reference/spread_subproblem_reference.h"
@@ -87,6 +89,7 @@ evaluation_result<Dim, T> evaluate_subproblem_implementation(
     }
 
     // Adjust grid and number of points according to padding requirements of target.
+    std::size_t num_points_initial = num_points;
     adjust_problem_parameters(num_points, grid, fn, reference_fn);
     std::array<finufft::spreading::KernelWriteSpec<T>, Dim> padding_ref = reference_fn.target_padding();
     std::array<finufft::spreading::KernelWriteSpec<T>, Dim> padding = fn.target_padding();
@@ -104,6 +107,8 @@ evaluation_result<Dim, T> evaluate_subproblem_implementation(
     // Create subproblem input.
     // Note that input is not sorted as this is functionality, not performance test.
     auto input = make_spread_subproblem_input<T>(num_points, seed, grid, padding);
+
+    std::memset(input.strengths + 2 * num_points_initial, 0, 2 * sizeof(T) * (num_points - num_points_initial));
 
     // Allocate output arrays.
     auto output = finufft::allocate_aligned_array<T>(2 * grid.num_elements(), 64);
@@ -172,6 +177,20 @@ void evaluate_subproblem_implementation_with_points(int width, int num_points, F
 
     for (std::size_t i = 0; i < 2 * result.grid.num_elements(); ++i) {
         ASSERT_NEAR(result.output_reference[i], result.output[i], error_level)
+            << "i = " << i << "; "
+            << "width = " << width;
+    }
+}
+
+/** Note: this test uses bit-exact comparisons, and might be brittle.
+ * 
+ */
+template <typename T, std::size_t Dim, typename Fn>
+void evaluate_subproblem_implementation_bitexact(int width, int num_points, Fn&& factory) {
+    auto result = evaluate_subproblem_implementation<Dim, T>(factory, num_points, 0, width);
+
+    for (std::size_t i = 0; i < 2 * result.grid.num_elements(); ++i) {
+        ASSERT_EQ(result.output_reference[i], result.output[i])
             << "i = " << i << "; "
             << "width = " << width;
     }
@@ -297,6 +316,22 @@ TEST(SpreadSubproblem, Avx512_1D_f32) {
         });
 }
 
+TEST(SpreadSubproblem, Avx512_1D_f32_bitexact) {
+    if (finufft::get_current_capability() < finufft::DispatchCapability::AVX512) {
+        GTEST_SKIP() << "Skipping AVX512 test";
+    }
+
+    evaluate_subproblem_implementation_bitexact<float, 1>(
+        5, 1, [](finufft::spreading::kernel_specification const &k) {
+            return finufft::spreading::get_subproblem_polynomial_avx512_1d_fp32_functor(k);
+        });
+
+    evaluate_subproblem_implementation_bitexact<float, 1>(
+        5, 16, [](finufft::spreading::kernel_specification const &k) {
+            return finufft::spreading::get_subproblem_polynomial_avx512_1d_fp32_functor(k);
+        });
+}
+
 TEST(SpreadSubproblem, Avx512_1D_f32_Short) {
     if (finufft::get_current_capability() < finufft::DispatchCapability::AVX512) {
         GTEST_SKIP() << "Skipping AVX512 test";
@@ -329,6 +364,23 @@ TEST(SpreadSubproblem, Avx512_2D_f32) {
             return finufft::spreading::get_subproblem_polynomial_avx512_2d_fp32_functor(k);
         });
 }
+
+TEST(SpreadSubproblem, Avx512_2D_f32_bitexact) {
+    if (finufft::get_current_capability() < finufft::DispatchCapability::AVX512) {
+        GTEST_SKIP() << "Skipping AVX512 test";
+    }
+
+    evaluate_subproblem_implementation_bitexact<float, 2>(
+        5, 1, [](finufft::spreading::kernel_specification const &k) {
+            return finufft::spreading::get_subproblem_polynomial_avx512_2d_fp32_functor(k);
+        });
+
+    evaluate_subproblem_implementation_bitexact<float, 2>(
+        5, 16, [](finufft::spreading::kernel_specification const &k) {
+            return finufft::spreading::get_subproblem_polynomial_avx512_2d_fp32_functor(k);
+        });
+}
+
 
 TEST(SpreadSubproblem, Avx512_2D_f64) {
     if (finufft::get_current_capability() < finufft::DispatchCapability::AVX512) {

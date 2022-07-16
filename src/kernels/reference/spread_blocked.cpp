@@ -124,6 +124,8 @@ template <typename T, std::size_t Dim> struct OmpSpreadBlockedImplementation {
             // Zero out output buffer. Chunk by 2MB (page) to avoid unnecessary communication across
             // cores / NUMA nodes.
             {
+                finufft::ScopedTimerGuard guard(timers.zero);
+
                 std::size_t num_threads = omp_get_num_threads();
                 std::size_t pages_per_thread = num_pages / num_threads;
                 std::size_t remainder = num_pages % num_threads;
@@ -144,6 +146,12 @@ template <typename T, std::size_t Dim> struct OmpSpreadBlockedImplementation {
             for (std::size_t i = 0; i < num_blocks; ++i) {
                 // Set number of points for subproblem
                 auto block_num_points = bin_boundaries[i + 1] - bin_boundaries[i];
+
+                if (block_num_points == 0) {
+                    // Skip empty bins
+                    continue;
+                }
+
                 local_points.num_points = block_num_points;
 
                 auto grid = grids[i];

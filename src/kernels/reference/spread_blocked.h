@@ -15,11 +15,12 @@ struct SpreadBlockedTimers {
     SpreadBlockedTimers() = default;
     SpreadBlockedTimers(finufft::Timer const &timer)
         : gather(timer.make_timer("gather")), subproblem(timer.make_timer("subproblem")),
-          accumulate(timer.make_timer("accumulate")) {}
+          accumulate(timer.make_timer("accumulate")), zero(timer.make_timer("zero")) {}
 
     finufft::Timer gather;     ///< Timer for copying point data into local buffer.
     finufft::Timer subproblem; ///< Timer for spreading subproblem.
     finufft::Timer accumulate; ///< Timer for accumulating results into output buffer.
+    finufft::Timer zero;       ///< Timer for zeroing output buffer.
 };
 
 struct SpreadTimers {
@@ -43,8 +44,7 @@ struct SpreadTimers {
 template <typename T, std::size_t Dim>
 SpreadBlockedFunctor<T, Dim> make_omp_spread_blocked(
     SpreadSubproblemFunctor<T, Dim> &&spread_subproblem,
-    SynchronizedAccumulateFactory<T, Dim> &&accumulate_factory,
-    finufft::Timer const &timer = {});
+    SynchronizedAccumulateFactory<T, Dim> &&accumulate_factory, finufft::Timer const &timer = {});
 
 /** Implements a spread operation using a packed sort and a blocked spread.
  *
@@ -54,7 +54,7 @@ SpreadFunctor<T, Dim> make_packed_sort_spread_blocked(
     SortPointsFunctor<T, Dim> &&sort_points, SpreadSubproblemFunctor<T, Dim> &&spread_subproblem,
     SynchronizedAccumulateFactory<T, Dim> &&accumulate, FoldRescaleRange range,
     tcb::span<const std::size_t, Dim> target_size, tcb::span<const std::size_t, Dim> grid_size,
-    finufft::Timer const& timer = {});
+    finufft::Timer const &timer = {});
 
 } // namespace reference
 } // namespace spreading

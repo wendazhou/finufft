@@ -27,7 +27,7 @@ void test_spread_functor(
     auto total_size =
         std::accumulate(target_size.begin(), target_size.end(), 1, std::multiplies<std::size_t>());
 
-    auto points = make_random_point_collection<Dim, T>(num_points, 0, {-3 * M_PI, 3 * M_PI});
+    auto points = make_random_point_collection<Dim, T>(num_points, 0, {-0.5, 0.5});
 
     auto output_ref_holder = finufft::allocate_aligned_array<T>(2 * total_size, 64);
     auto output_holder = finufft::allocate_aligned_array<T>(2 * total_size, 64);
@@ -35,10 +35,10 @@ void test_spread_functor(
     auto output_ref = output_ref_holder.get();
     auto output = output_holder.get();
 
-    auto spread_legacy =
-        legacy::make_spread_functor<T, Dim>(kernel_spec, FoldRescaleRange::Pi, target_size);
+    auto spread_reference = reference::get_indirect_spread_functor<T, Dim>(
+        kernel_spec, target_size, FoldRescaleRange::Pi);
 
-    spread_legacy(points, output_ref);
+    spread_reference(points, output_ref);
     functor(points, output);
 
     // Compute error level
@@ -67,10 +67,10 @@ void test_spread_functor(
 }
 
 template <typename T, std::size_t Dim>
-void test_spread_functor_all_widths(
+void test_spread_functor_vary_points(
     std::size_t target_width, kernel_specification const &kernel_spec,
     SpreadFunctor<T, Dim> const &functor) {
-    for (std::size_t num_points : {std::size_t(1), std::size_t(2), std::size_t(16), std::size_t(17), target_width, target_width * target_width}) {
+    for (std::size_t num_points : {std::size_t(1), std::size_t(5), std::size_t(16), std::size_t(17), target_width, target_width * target_width}) {
         SCOPED_TRACE("num_points = " + std::to_string(num_points));
         test_spread_functor(num_points, target_width, kernel_spec, functor);
     }
@@ -84,7 +84,7 @@ TEST(TestSpreadFull, TestSpreadLegacy1D) {
 
     auto spread_legacy_functor = legacy::make_spread_functor<float, 1>(
         kernel_spec, FoldRescaleRange::Pi, std::array<std::size_t, 1>{target_width});
-    test_spread_functor_all_widths(target_width, kernel_spec, spread_legacy_functor);
+    test_spread_functor_vary_points(target_width, kernel_spec, spread_legacy_functor);
 }
 
 TEST(TestSpreadFull, TestSpreadLegacy2D) {
@@ -93,7 +93,7 @@ TEST(TestSpreadFull, TestSpreadLegacy2D) {
 
     auto spread_legacy_functor = legacy::make_spread_functor<float, 2>(
         kernel_spec, FoldRescaleRange::Pi, std::array<std::size_t, 2>{target_width, target_width});
-    test_spread_functor_all_widths(target_width, kernel_spec, spread_legacy_functor);
+    test_spread_functor_vary_points(target_width, kernel_spec, spread_legacy_functor);
 }
 
 TEST(TestSpreadFull, TestSpreadReferenceIndirect1D) {
@@ -103,7 +103,7 @@ TEST(TestSpreadFull, TestSpreadReferenceIndirect1D) {
     auto spread_functor = reference::get_indirect_spread_functor<float, 1>(
         kernel_spec, std::array<std::size_t, 1>{target_width}, FoldRescaleRange::Pi);
 
-    test_spread_functor_all_widths(target_width, kernel_spec, spread_functor);
+    test_spread_functor_vary_points(target_width, kernel_spec, spread_functor);
 }
 
 TEST(TestSpreadFull, TestSpreadReferenceIndirect2D) {
@@ -113,7 +113,7 @@ TEST(TestSpreadFull, TestSpreadReferenceIndirect2D) {
     auto spread_functor = reference::get_indirect_spread_functor<float, 2>(
         kernel_spec, std::array<std::size_t, 2>{target_width, target_width}, FoldRescaleRange::Pi);
 
-    test_spread_functor_all_widths(target_width, kernel_spec, spread_functor);
+    test_spread_functor_vary_points(target_width, kernel_spec, spread_functor);
 }
 
 TEST(TestSpreadFull, TestSpreadAvx512Blocked1D) {
@@ -123,7 +123,7 @@ TEST(TestSpreadFull, TestSpreadAvx512Blocked1D) {
     auto spread_functor = avx512::get_blocked_spread_functor<float, 1>(
         kernel_spec, std::array<std::size_t, 1>{target_width}, FoldRescaleRange::Pi);
 
-    test_spread_functor_all_widths(target_width, kernel_spec, spread_functor);
+    test_spread_functor_vary_points(target_width, kernel_spec, spread_functor);
 }
 
 TEST(TestSpreadFull, TestSpreadAvx512Blocked2D) {
@@ -133,5 +133,5 @@ TEST(TestSpreadFull, TestSpreadAvx512Blocked2D) {
     auto spread_functor = avx512::get_blocked_spread_functor<float, 2>(
         kernel_spec, std::array<std::size_t, 2>{target_width, target_width}, FoldRescaleRange::Pi);
 
-    test_spread_functor_all_widths(target_width, kernel_spec, spread_functor);
+    test_spread_functor_vary_points(target_width, kernel_spec, spread_functor);
 }

@@ -78,7 +78,13 @@ class Sorter<Cfg>::BucketPointers {
         inline std::pair<diff_t, diff_t> fetchSubMostSignificant(diff_t m) {
             if (kAtomic) {
                 const atomic_type atom_m = static_cast<atomic_type>(m) << kShift;
+#ifdef __x86_64__
+                // On x86-64, use sync version as it can directly emit lock cmpxchg,
+                // whereas atomic always incurs function call.
+                const auto p = __sync_fetch_and_sub(&all_, atom_m);
+#else
                 const auto p = __atomic_fetch_sub(&all_, atom_m, __ATOMIC_RELAXED);
+#endif
                 return {p & kMask, p >> kShift};
             } else {
                 const auto tmp = single_.m_;
@@ -90,7 +96,12 @@ class Sorter<Cfg>::BucketPointers {
         template <bool kAtomic>
         inline std::pair<diff_t, diff_t> fetchAddLeastSignificant(diff_t l) {
             if (kAtomic) {
+#ifdef __x86_64__
+                // See above for why we use sync version.
+                const auto p = __sync_fetch_and_add(&all_, l);
+#else
                 const auto p = __atomic_fetch_add(&all_, l, __ATOMIC_RELAXED);
+#endif
                 return {p & kMask, p >> kShift};
             } else {
                 const auto tmp = single_.l_;

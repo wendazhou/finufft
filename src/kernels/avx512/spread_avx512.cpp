@@ -62,8 +62,10 @@ template <typename T, std::size_t Dim> std::array<std::size_t, Dim> get_grid_siz
 }
 } // namespace
 
+namespace avx512 {
+
 template <typename T, std::size_t Dim>
-SpreadFunctor<T, Dim> make_avx512_blocked_spread_functor(
+SpreadFunctor<T, Dim> get_blocked_spread_functor(
     kernel_specification const &kernel, tcb::span<const std::size_t, Dim> target_size,
     FoldRescaleRange input_range, finufft::Timer const &timer) {
     return reference::make_packed_sort_spread_blocked<T, Dim>(
@@ -76,10 +78,12 @@ SpreadFunctor<T, Dim> make_avx512_blocked_spread_functor(
         timer);
 }
 
+} // namespace avx512
+
 #define INSTANTIATE(T, Dim)                                                                        \
     template SpreadFunctorConfiguration<T, Dim> get_spread_configuration_avx512(                   \
         finufft_spread_opts const &opts);                                                          \
-    template SpreadFunctor<T, Dim> make_avx512_blocked_spread_functor(                             \
+    template SpreadFunctor<T, Dim> avx512::get_blocked_spread_functor(                             \
         kernel_specification const &kernel,                                                        \
         tcb::span<const std::size_t, Dim>                                                          \
             target_size,                                                                           \

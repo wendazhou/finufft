@@ -127,7 +127,7 @@ void unpack_sorted_bins_to_points(
 
         // Adjust initial to be the first point in the thread's bin
         if (i > 0) {
-            while ((input[i].bin == input[i - 1].bin) && i < final) {
+            while ((i < final) && (input[i].bin == input[i - 1].bin)) {
                 i++;
             }
         }

@@ -88,6 +88,8 @@ get_subproblem_polynomial_avx512_functor<double, 3>(kernel_specification const &
 template <typename T, std::size_t Dim>
 SpreadFunctorConfiguration<T, Dim> get_spread_configuration_avx512(finufft_spread_opts const &);
 
+namespace avx512 {
+
 /** Create a spread functor based on a packed sort and blocked spread strategy.
  *
  * This spread functor is based on a packed sorting strategy, into blocks
@@ -95,10 +97,11 @@ SpreadFunctorConfiguration<T, Dim> get_spread_configuration_avx512(finufft_sprea
  *
  */
 template <typename T, std::size_t Dim>
-SpreadFunctor<T, Dim> make_avx512_blocked_spread_functor(
+SpreadFunctor<T, Dim> get_blocked_spread_functor(
     kernel_specification const &kernel, tcb::span<const std::size_t, Dim> target_size,
     FoldRescaleRange input_range, finufft::Timer const &timer = {});
 
+} // namespace avx512
 
 } // namespace spreading
 } // namespace finufft

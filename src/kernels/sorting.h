@@ -64,6 +64,9 @@ template <typename T, std::size_t Dim> struct IntBinInfo {
     }
 };
 
+/** Computes the bin size from the given target grid size and padding requirement.
+ *
+ */
 template <typename T, std::size_t Dim>
 std::array<std::size_t, Dim> compute_bin_size_from_grid_and_padding(
     tcb::span<const std::size_t, Dim> grid_size, tcb::span<const KernelWriteSpec<T>, Dim> padding) {
@@ -78,6 +81,26 @@ std::array<std::size_t, Dim> compute_bin_size_from_grid_and_padding(
     }
 
     return bin_size;
+}
+
+template <typename T, std::size_t Dim>
+std::array<std::size_t, Dim> reduce_grid_size(
+    tcb::span<const std::size_t, Dim> target_size, tcb::span<const std::size_t, Dim> grid_size,
+    tcb::span<const KernelWriteSpec<T>, Dim> padding) {
+
+    std::array<std::size_t, Dim> reduce_grid_size;
+    std::copy(grid_size.begin(), grid_size.end(), reduce_grid_size.begin());
+
+    std::array<std::size_t, Dim> bin_size =
+        compute_bin_size_from_grid_and_padding(grid_size, padding);
+
+    for (std::size_t d = 0; d < Dim; ++d) {
+        if (target_size[d] < bin_size[d]) {
+            reduce_grid_size[d] = target_size[d] + padding[d].grid_left + padding[d].grid_right;
+        }
+    }
+
+    return reduce_grid_size;
 }
 
 template <typename T, std::size_t Dim>
@@ -111,10 +134,13 @@ template <typename T, std::size_t Dim> struct IntGridBinInfo : IntBinInfo<T, Dim
         tcb::span<const std::size_t, Dim> extents, tcb::span<const std::size_t, Dim> grid_size,
         tcb::span<const finufft::spreading::KernelWriteSpec<T>, Dim> padding)
         : IntBinInfo<T, Dim>(
-              extents, compute_bin_size_from_grid_and_padding(grid_size, padding),
+              extents,
+              compute_bin_size_from_grid_and_padding<T, Dim>(
+                  reduce_grid_size(extents, grid_size, padding),
+                  padding),
               get_offsets_from_padding(padding)) {
 
-        std::copy(grid_size.begin(), grid_size.end(), this->grid_size.begin());
+        this->grid_size = reduce_grid_size(extents, grid_size, padding);
         std::copy(padding.begin(), padding.end(), this->padding.begin());
     }
 

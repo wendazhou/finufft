@@ -86,10 +86,20 @@ template <typename T, std::size_t Dim> struct OmpSpreadBlockedImplementation {
 
         auto grids = make_bin_grids(info);
 
-        std::size_t grid_size = std::accumulate(
-            info.grid_size.begin(), info.grid_size.end(), 1, std::multiplies<std::size_t>());
+        auto grid_size = info.grid_size;
+        {
+            auto grid_size_multiple = spread_subproblem_.extent_multiple();
+            for (std::size_t i = 0; i < Dim; ++i) {
+                grid_size[i] = round_to_next_multiple(grid_size[i], grid_size_multiple[i]);
+            }
+        }
+
+        std::size_t grid_size_total =
+            std::accumulate(grid_size.begin(), grid_size.end(), 1, std::multiplies<std::size_t>());
         std::size_t max_num_points = 0;
         std::size_t num_blocks = info.num_bins_total();
+        std::size_t target_num_points = std::accumulate(
+            info.size.begin(), info.size.end(), std::size_t(1), std::multiplies<std::size_t>());
 
         // Determine amount of memory to allocate
         for (std::size_t i = 0; i < num_blocks; ++i) {
@@ -99,12 +109,36 @@ template <typename T, std::size_t Dim> struct OmpSpreadBlockedImplementation {
         auto const &padding_info = spread_subproblem_.target_padding();
         auto const &accumulate_subgrid = accumulate_factory_(output, info.size);
 
+        // Number of pages to zero
+        std::size_t page_size = 2 * 1024 * 1024; // 2 MB "Huge pages".
+        std::size_t output_size_bytes = 2 * target_num_points * sizeof(T);
+        auto num_pages = (output_size_bytes + page_size - 1) / page_size;
+
 #pragma omp parallel
         {
             // Allocate per-thread local input and output buffer
-            auto subgrid_output = finufft::allocate_aligned_array<T>(2 * grid_size, 64);
+            auto subgrid_output = finufft::allocate_aligned_array<T>(2 * grid_size_total, 64);
             auto local_points = finufft::spreading::SpreaderMemoryInput<Dim, T>(max_num_points);
             SpreadBlockedTimers timers(timers_);
+
+            // Zero out output buffer. Chunk by 2MB (page) to avoid unnecessary communication across
+            // cores / NUMA nodes.
+            {
+                std::size_t num_threads = omp_get_num_threads();
+                std::size_t pages_per_thread = num_pages / num_threads;
+                std::size_t remainder = num_pages % num_threads;
+
+                std::size_t current_thread = omp_get_thread_num();
+                std::size_t start_page =
+                    current_thread * pages_per_thread + std::min(current_thread, remainder);
+                std::size_t num_pages = pages_per_thread + (current_thread < remainder ? 1 : 0);
+
+                std::size_t remaining_bytes = output_size_bytes - start_page * page_size;
+                remaining_bytes = std::min(remaining_bytes, num_pages * page_size);
+
+                char *out = reinterpret_cast<char *>(output);
+                std::memset(out + start_page * page_size, 0, remaining_bytes);
+            }
 
 #pragma omp for
             for (std::size_t i = 0; i < num_blocks; ++i) {
@@ -112,7 +146,10 @@ template <typename T, std::size_t Dim> struct OmpSpreadBlockedImplementation {
                 auto block_num_points = bin_boundaries[i + 1] - bin_boundaries[i];
                 local_points.num_points = block_num_points;
 
-                auto &grid = grids[i];
+                auto grid = grids[i];
+                for (std::size_t j = 0; j < Dim; ++j) {
+                    grid.extents[j] = grid_size[j];
+                }
 
                 // Zero local memory
                 std::memset(subgrid_output.get(), 0, 2 * grid.num_elements() * sizeof(float));
@@ -219,6 +256,12 @@ template <typename T, std::size_t Dim> struct PackedSortBlockedSpreadFunctorImpl
         {
             finufft::Timer spread_timer(spread_timer_);
             finufft::ScopedTimerGuard guard(spread_timer);
+
+            auto num_values_output = std::accumulate(
+                info_.size.begin(),
+                info_.size.end(),
+                std::size_t(1),
+                std::multiplies<std::size_t>{});
             spread_blocked_(points_sorted, info_, bin_counts.get(), output);
         }
     }

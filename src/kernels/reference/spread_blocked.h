@@ -43,7 +43,8 @@ struct SpreadTimers {
 template <typename T, std::size_t Dim>
 SpreadBlockedFunctor<T, Dim> make_omp_spread_blocked(
     SpreadSubproblemFunctor<T, Dim> &&spread_subproblem,
-    SynchronizedAccumulateFactory<T, Dim> &&accumulate_factory, finufft::Timer const &timer = {});
+    SynchronizedAccumulateFactory<T, Dim> &&accumulate_factory,
+    finufft::Timer const &timer = {});
 
 /** Implements a spread operation using a packed sort and a blocked spread.
  *

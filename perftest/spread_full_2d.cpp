@@ -83,7 +83,7 @@ void bm_avx512(benchmark::State &state) {
     finufft::TimerRoot root("bench_full_spread");
     auto timer = root.make_timer("full_spread");
 
-    auto spread_functor = make_avx512_blocked_spread_functor<float, 2>(
+    auto spread_functor = avx512::get_blocked_spread_functor<float, 2>(
         kernel_spec,
         std::array<std::size_t, 2>{target_size, target_size},
         FoldRescaleRange::Pi,

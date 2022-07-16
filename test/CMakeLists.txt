@@ -14,7 +14,7 @@ foreach(TEST ${TESTS})
 endforeach()
 
 add_executable(testutils testutils.cpp)
-target_link_libraries(testutils PRIVATE finufft)
+target_link_libraries(testutils PRIVATE finufft ittnotify)
 enable_asan(testutils)
 
 add_test(NAME run_testutils COMMAND testutils)

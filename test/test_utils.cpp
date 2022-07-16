@@ -1,5 +1,7 @@
 #include "test_utils.h"
 
+#include <ittnotify.h>
+
 #include <Random123/philox.h>
 #include <Random123/uniform.hpp>
 
@@ -66,6 +68,14 @@ void fill_random_uniform(double *data, std::size_t size, int32_t seed, double mi
             data[i + j] = r123::u01<double>(r[j]) * (max - min) + min;
         }
     }
+}
+
+void pause_collection() {
+    __itt_pause();
+}
+
+void resume_collection() {
+    __itt_resume();
 }
 
 } // namespace testing

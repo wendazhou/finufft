@@ -132,7 +132,7 @@ template <typename T, std::size_t Dim> struct OmpSpreadBlockedImplementation {
 
                 std::size_t current_thread = omp_get_thread_num();
                 std::size_t start_page =
-                    current_thread * pages_per_thread + std::min(current_thread, remainder);
+                    (current_thread + std::min(current_thread, remainder)) * pages_per_thread;
                 std::size_t num_pages = pages_per_thread + (current_thread < remainder ? 1 : 0);
 
                 std::size_t remaining_bytes = output_size_bytes - start_page * page_size;
@@ -140,6 +140,9 @@ template <typename T, std::size_t Dim> struct OmpSpreadBlockedImplementation {
 
                 char *out = reinterpret_cast<char *>(output);
                 std::memset(out + start_page * page_size, 0, remaining_bytes);
+
+                // Barrier to make sure all threads have zeroed out the output buffer.
+#pragma omp barrier
             }
 
 #pragma omp for
@@ -158,9 +161,6 @@ template <typename T, std::size_t Dim> struct OmpSpreadBlockedImplementation {
                 for (std::size_t j = 0; j < Dim; ++j) {
                     grid.extents[j] = grid_size[j];
                 }
-
-                // Zero local memory
-                std::memset(subgrid_output.get(), 0, 2 * grid.num_elements() * sizeof(float));
 
                 // Gather local points
                 {

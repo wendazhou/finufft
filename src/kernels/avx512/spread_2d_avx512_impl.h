@@ -184,7 +184,7 @@ template <std::size_t Degree> struct SpreadSubproblemPoly2DW8 {
         nu_point_collection<2, float const> const &input, grid_specification<2> const &grid,
         float *__restrict output) const {
 
-        std::fill(output, output + 2 * grid.num_elements(), 0.0f);
+        std::memset(output, 0, 2 * grid.num_elements() * sizeof(float));
 
         float const *coord_x = input.coordinates[0];
         float const *coord_y = input.coordinates[1];

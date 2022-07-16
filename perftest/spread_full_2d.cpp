@@ -113,11 +113,11 @@ void bm_legacy(benchmark::State &state) {
 } // namespace
 
 BENCHMARK(bm_avx512)
-    ->ArgsProduct({{1 << 10, 1 << 11, 1 << 12}, {4, 6, 8}})
+    ->ArgsProduct({{1 << 10, 1 << 11, 1 << 12, 1 << 13}, {4, 6, 8}})
     ->UseRealTime()
     ->Unit(benchmark::kMillisecond);
 
 BENCHMARK(bm_legacy)
-    ->ArgsProduct({{1 << 10, 1 << 11, 1 << 12}, {4, 6, 8}})
+    ->ArgsProduct({{1 << 10, 1 << 11, 1 << 12, 1 << 13}, {4, 6, 8}})
     ->UseRealTime()
     ->Unit(benchmark::kMillisecond);

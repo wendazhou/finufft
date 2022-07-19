@@ -90,7 +90,7 @@ void sort_point_collection(finufft::spreading::nu_point_collection<Dim, T> &poin
 
     // Sort in reverse lexicographic order
     std::sort(permutation.begin(), permutation.end(), [&points](std::size_t i, std::size_t j) {
-        for (std::size_t dim = Dim - 1; dim >= 0; --dim) {
+        for (std::size_t dim = Dim - 1; dim != -1; --dim) {
             if (points.coordinates[dim][i] != points.coordinates[dim][j]) {
                 return points.coordinates[dim][i] < points.coordinates[dim][j];
             }

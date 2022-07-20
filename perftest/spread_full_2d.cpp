@@ -125,3 +125,14 @@ BENCHMARK(bm_legacy)
     ->ArgsProduct({{1 << 10, 1 << 11, 1 << 12, 1 << 13}, {4, 6, 8}})
     ->UseRealTime()
     ->Unit(benchmark::kMillisecond);
+
+
+int main(int argc, char** argv) {
+    ::benchmark::Initialize(&argc, argv);
+    if (::benchmark::ReportUnrecognizedArguments(argc, argv)) {
+        return 1;
+    }
+
+    ::benchmark::AddCustomContext("OMP_NUM_THREADS", std::to_string(omp_get_max_threads()));
+    ::benchmark::RunSpecifiedBenchmarks();
+}

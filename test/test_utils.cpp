@@ -70,6 +70,58 @@ void fill_random_uniform(double *data, std::size_t size, int32_t seed, double mi
     }
 }
 
+void fill_random_uniform(uint32_t *data, std::size_t elements, int seed) {
+    typedef r123::Philox4x32 RNG;
+    RNG rng;
+    RNG::ctr_type c = {{}};
+    RNG::ukey_type uk = {{}};
+    uk[0] = seed;
+
+    std::size_t i = 0;
+
+    for (; i + 3 < elements; i += 4) {
+        c[0] = i;
+        auto r = rng(c, uk);
+        data[i] = r[0];
+        data[i + 1] = r[1];
+        data[i + 2] = r[2];
+        data[i + 3] = r[3];
+    }
+
+    {
+        c[0] = i;
+        auto r = rng(c, uk);
+        for (std::size_t j = 0; i < elements; ++i, ++j) {
+            data[i] = r[j];
+        }
+    }
+}
+
+void fill_random_uniform(uint64_t *data, std::size_t elements, int seed) {
+    typedef r123::Philox4x32 RNG;
+    RNG rng;
+    RNG::ctr_type c = {{}};
+    RNG::ukey_type uk = {{}};
+    uk[0] = seed;
+
+    std::size_t i = 0;
+
+    for (; i + 1 < elements; i += 2) {
+        c[0] = i;
+        auto r = rng(c, uk);
+        data[i] = ((uint64_t)r[1] << 32) + r[0];
+        data[i + 1] = ((uint64_t)r[3] << 32) + r[2];
+    }
+
+    {
+        c[0] = i;
+        auto r = rng(c, uk);
+        for (std::size_t j = 0; i < elements; ++i, ++j) {
+            data[i] = ((uint64_t)r[2 * j + 1] << 32) + r[2 * j];
+        }
+    }
+}
+
 void pause_collection() {
     __itt_pause();
 }

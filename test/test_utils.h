@@ -15,6 +15,9 @@ namespace testing {
 void fill_random_uniform(float *data, std::size_t size, int32_t seed, float min, float max);
 void fill_random_uniform(double *data, std::size_t size, int32_t seed, double min, double max);
 
+void fill_random_uniform(uint32_t* data, std::size_t size, int32_t seed);
+void fill_random_uniform(uint64_t* data, std::size_t size, int32_t seed);
+
 // Pause or resume collection using Intel's ITT API if enabled.
 void pause_collection();
 void resume_collection();

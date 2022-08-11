@@ -94,6 +94,16 @@ construct_opts_from_kernel(const kernel_specification &kernel, std::size_t dim) 
 
 namespace {
 
+/** Current implementation of spreading.
+ * 
+ * This functor implements spreading as dispatched to the current finufft implementation.
+ * It operates in two steps:
+ * - a bin-sorting step, where points are sorted into bins according to their location in
+ * the target bufer, and
+ * - a spreading step, where points are spread into the target buffer (using intermediate
+ * buffers as necessary).
+ * 
+ */
 template <typename T, std::size_t Dim> struct LegacySpreadFunctorImplementation {
     std::array<std::size_t, Dim> size_;
     std::array<T, Dim> size_f_;

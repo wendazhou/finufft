@@ -9,6 +9,57 @@ the value:
 $$ \sum_{j = 1}^N \phi(x_j - g_i), $$
 for some kernel $\phi$ to be defined later.
 
+The input to the spreading (for a fixed set of parameters) is given as a collection
+of non-uniform points in a AoS (array of structure) format, namely
+```c++
+template<typename T, size_t Dim>
+struct nu_point_collection {
+   size_t num_points;
+   std::array<T*, Dim> coordinates;
+   T* weights;
+};
+```
+
+For a fixed set of parameters (e.g. dimension, target buffer size, input range),
+the spreading operation is encapsulated as a function of type:
+```c++
+typedef void (*SpreadFunctor)(nu_point_collection<T, Dim> const& points, T* output);
+```
+with the `points` structure containing the input points to spread, and
+`output` being a (potentially uninitialized) buffer representing the output
+in contiguous column-major complex-interleaved format.
+
+During plan creation, the program will request the creation of a function
+object with the above signature by specifying the parameters of the spreading
+problem.
+```c++
+SpreadFunctor make_spread_functor(
+   kernel_specification const& kernel_spec,
+   FoldRescaleRange input_range,
+   std::array<std::size_t, Dim> output_size,
+   Timer const& timer = {})
+```
+These parameters fully specify the spreading problem in the following fashion:
+- kernel_spec: the parameters of the kernel used for spreading (in particular
+      width of the kernel and exponential parameter).
+- input_range: the range of the input data
+- output_size: the size of the target buffer in pixels
+- timer: an optional timer used to keep track of finufft internal timings.
+
+
+At the moment, we have an implementation of the spread functor which dispatches
+to the existing finufft code, and are in the process of implementing a variety
+of optimized functors depending on problem size and hardware.
+
+
+##  Design of existing implementation
+
+We describe the abstract design of the current implementation in the following section.
+We anticipate that optimized versions may deviate more substantially from the current design,
+in order to leverage better data movement.
+In particular, see the [design doc](../spreader_opt.md) for the architecture and design
+of the optimized spreader.
+
 We separate the main spreading operation into the following flow.
 ```mermaid
 flowchart TB
@@ -55,13 +106,6 @@ periodic boundary wrapping is performed.
 
 The function has the following signature:
 ```c++
-template<size_t Dim, typename T>
-struct nu_point_collection {
-   size_t num_points;
-   std::array<T*, Dim> coordinates;
-   T* weights;
-};
-
 template<size_t Dim, typename T>
 void gather_and_fold(nu_point_collection<Dim, T>& output, nu_point_collection<Dim, T>& input, int const* sort_indices);
 ```

@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <array>
+#include <cmath>
 #include <cstddef>
 #include <cstdint>
 #include <functional>
@@ -41,9 +42,16 @@ template <typename T, std::size_t Dim> struct IntBinInfo {
     std::array<T, Dim> offset;                     ///< Offset to use when computing bin index
     std::array<int64_t, Dim> global_offset;        ///< Offset to use when computing bin index
 
+    /** Construct bin information based on the given specification.
+     * 
+     * @param size Size of the underlying target grid
+     * @param bin_size Size of each bin
+     * @param offset Offset to use when computing bin index
+     * 
+     */
     IntBinInfo(
         tcb::span<const std::size_t, Dim> size, tcb::span<const std::size_t, Dim> bin_size,
-        tcb::span<const T, Dim> offset) {
+        tcb::span<const T, Dim> offset) noexcept {
         std::copy(size.begin(), size.end(), this->size.begin());
         std::copy(bin_size.begin(), bin_size.end(), this->bin_size.begin());
         std::copy(offset.begin(), offset.end(), this->offset.begin());
@@ -58,6 +66,11 @@ template <typename T, std::size_t Dim> struct IntBinInfo {
             bin_index_stride[d] = bin_index_stride[d - 1] * num_bins[d - 1];
         }
     }
+
+    IntBinInfo(
+        std::array<std::size_t, Dim> const &size, std::array<std::size_t, Dim> const &bin_size,
+        std::array<const T, Dim> const &offset) noexcept
+        : IntBinInfo(tcb::span<const std::size_t, Dim>(size), bin_size, offset) {}
 
     std::size_t num_bins_total() const {
         return std::accumulate(num_bins.begin(), num_bins.end(), 1, std::multiplies<std::size_t>());
@@ -136,8 +149,7 @@ template <typename T, std::size_t Dim> struct IntGridBinInfo : IntBinInfo<T, Dim
         : IntBinInfo<T, Dim>(
               extents,
               compute_bin_size_from_grid_and_padding<T, Dim>(
-                  reduce_grid_size(extents, grid_size, padding),
-                  padding),
+                  reduce_grid_size(extents, grid_size, padding), padding),
               get_offsets_from_padding(padding)) {
 
         this->grid_size = reduce_grid_size(extents, grid_size, padding);
@@ -147,6 +159,31 @@ template <typename T, std::size_t Dim> struct IntGridBinInfo : IntBinInfo<T, Dim
     std::array<std::size_t, Dim> grid_size;      ///< Desired size for subproblem grid
     std::array<KernelWriteSpec<T>, Dim> padding; ///< The padding required by the subproblem functor
 };
+
+/** Reference implementation of bin index computation.
+ *
+ * Note that for consistency, it is expected that all implementations compute
+ * the bin index exactly as below (including the same rounding).
+ *
+ */
+template <typename T, std::size_t Dim>
+std::size_t compute_bin_index(IntBinInfo<T, Dim> const &info, tcb::span<const T, Dim> coord) {
+    std::size_t bin_index = 0;
+
+    for (std::size_t j = 0; j < Dim; ++j) {
+        T x_c = std::ceil(coord[j] - info.offset[j]);
+        std::int64_t x_b = static_cast<int64_t>(x_c) - info.global_offset[j];
+        x_b /= info.bin_size[j];
+        bin_index += x_b * info.bin_index_stride[j];
+    }
+
+    return bin_index;
+}
+
+template <typename T, std::size_t Dim>
+std::size_t compute_bin_index(IntBinInfo<T, Dim> const &info, std::array<T, Dim> const& coord) {
+    return compute_bin_index(info, tcb::span<const T, Dim>(coord));
+}
 
 /** Structure representing a packed bin, coordinate and strength triple.
  *

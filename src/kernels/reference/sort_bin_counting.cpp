@@ -53,7 +53,10 @@ struct ComputeBinIndex {
 
         std::fill(bins.begin(), bins.end(), 0);
 
+        #pragma gcc unroll Dim
         for (std::size_t j = 0; j < Dim; ++j) {
+            #pragma gcc unroll 4
+            #pragma gcc ivdep
             for (std::size_t offset = 0; offset < (Partial ? limit : Unroll); ++offset) {
                 auto x = input.coordinates[j][i + offset];
                 x = fold_rescale(x, size_f[j]);
@@ -72,14 +75,10 @@ struct ComputeBinIndex {
     template <bool Partial>
     void operator()(
         nu_point_collection<Dim, const T> const &input, std::size_t i, std::size_t limit,
-        tcb::span<std::uint32_t, Unroll> bins, std::integral_constant<bool, Partial> partial) const {
+        tcb::span<std::uint32_t, Unroll> bins,
+        std::integral_constant<bool, Partial> partial) const {
         return (*this)(
-            input,
-            i,
-            limit,
-            bins,
-            partial,
-            [](std::size_t j, std::size_t offset, T x) {});
+            input, i, limit, bins, partial, [](std::size_t j, std::size_t offset, T x) {});
     }
 };
 
@@ -132,7 +131,7 @@ template void compute_histogram(
 template <typename T, std::size_t Dim, typename BinIndexFunctor>
 void move_points_by_histogram(
     tcb::span<std::size_t> histogram, nu_point_collection<Dim, const T> const &input,
-    nu_point_collection<Dim, T> const &output, BinIndexFunctor const& compute_bin_index) {
+    nu_point_collection<Dim, T> const &output, BinIndexFunctor const &compute_bin_index) {
 
     const std::size_t unroll = BinIndexFunctor::unroll;
 
@@ -196,13 +195,15 @@ void move_points_by_histogram(
 template <typename T, std::size_t Dim, typename BinIndexFunctor>
 void nu_point_counting_sort_direct_singlethreaded_impl(
     nu_point_collection<Dim, const T> const &input, nu_point_collection<Dim, T> const &output,
-    IntBinInfo<T, Dim> const &info, BinIndexFunctor const &compute_bin_index) {
+    std::size_t *num_points_per_bin, IntBinInfo<T, Dim> const &info,
+    BinIndexFunctor const &compute_bin_index) {
 
     auto histogram_alloc = allocate_aligned_array<std::size_t>(info.num_bins_total(), 64);
     auto histogram = tcb::span<std::size_t>(histogram_alloc.get(), info.num_bins_total());
     std::memset(histogram.data(), 0, histogram.size_bytes());
 
     compute_histogram_impl(input, histogram, compute_bin_index);
+    std::copy(histogram.begin(), histogram.end(), num_points_per_bin);
 
     std::partial_sum(histogram.begin(), histogram.end(), histogram.begin());
 
@@ -211,30 +212,34 @@ void nu_point_counting_sort_direct_singlethreaded_impl(
 
 template <typename T, std::size_t Dim>
 void nu_point_counting_sort_direct_singlethreaded(
-    nu_point_collection<Dim, const T> const &input, nu_point_collection<Dim, T> const &output,
-    IntBinInfo<T, Dim> const &info, FoldRescaleRange input_range) {
+    nu_point_collection<Dim, const T> const &input, FoldRescaleRange input_range,
+    nu_point_collection<Dim, T> const &output, std::size_t *num_points_per_bin,
+    IntBinInfo<T, Dim> const &info) {
     if (input_range == FoldRescaleRange::Identity) {
         nu_point_counting_sort_direct_singlethreaded_impl(
             input,
             output,
+            num_points_per_bin,
             info,
-            ComputeBinIndex<64 / sizeof(T), T, Dim, FoldRescaleIdentity<T>>(
+            ComputeBinIndex<4, T, Dim, FoldRescaleIdentity<T>>(
                 info, FoldRescaleIdentity<T>{}));
     } else {
         nu_point_counting_sort_direct_singlethreaded_impl(
             input,
             output,
+            num_points_per_bin,
             info,
-            ComputeBinIndex<64 / sizeof(T), T, Dim, FoldRescalePi<T>>(info, FoldRescalePi<T>{}));
+            ComputeBinIndex<4, T, Dim, FoldRescalePi<T>>(info, FoldRescalePi<T>{}));
     }
 }
 
 #define INSTANTIATE(T, Dim)                                                                        \
     template void nu_point_counting_sort_direct_singlethreaded<T, Dim>(                            \
         nu_point_collection<Dim, const T> const &input,                                            \
+        FoldRescaleRange input_range,                                                              \
         nu_point_collection<Dim, T> const &output,                                                 \
-        IntBinInfo<T, Dim> const &info,                                                            \
-        FoldRescaleRange input_range);
+        std::size_t *num_points_per_bin,                                                           \
+        IntBinInfo<T, Dim> const &info);
 
 INSTANTIATE(float, 1);
 INSTANTIATE(float, 2);

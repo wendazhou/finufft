@@ -29,8 +29,9 @@ function(add_benchmark_no_main name source)
   enable_asan(${name})
 endfunction()
 
-add_benchmark(sort_counting sort_counting.cpp)
-target_link_libraries(sort_counting PRIVATE ips4o)
+add_benchmark(sort_counting_prototype sort_counting_prototype.cpp)
+target_link_libraries(sort_counting_prototype PRIVATE ips4o)
+add_benchmark(sort_counting_small sort_counting_small.cpp)
 
 add_benchmark(spread_binsort_perf spread_binsort_perf.cpp)
 add_benchmark(spread_gather_perf spread_gather_perf.cpp)

@@ -8,9 +8,10 @@ TEST(SortBinCountingTest, SingleThreadedDirect1D) {
     auto output = finufft::spreading::SpreaderMemoryInput<1, float>(points.num_points);
 
     finufft::spreading::IntBinInfo<float, 1> info({1024}, {16}, {4});
+    auto histogram = finufft::allocate_aligned_array<std::size_t>(info.num_bins_total(), 64);
 
     finufft::spreading::reference::nu_point_counting_sort_direct_singlethreaded<float, 1>(
-        points, output, info, finufft::spreading::FoldRescaleRange::Pi);
+        points, finufft::spreading::FoldRescaleRange::Pi, output, histogram.get(), info);
 
     auto point_bin_alloc = finufft::allocate_aligned_array<std::size_t>(points.num_points, 64);
     auto point_bin = tcb::span<std::size_t>(point_bin_alloc.get(), points.num_points);
@@ -28,9 +29,10 @@ TEST(SortBinCountingTest, SingleThreadedDirect2D) {
     auto output = finufft::spreading::SpreaderMemoryInput<2, float>(points.num_points);
 
     finufft::spreading::IntBinInfo<float, 2> info({256, 256}, {32, 16}, {4, 4});
+    auto histogram = finufft::allocate_aligned_array<std::size_t>(info.num_bins_total(), 64);
 
     finufft::spreading::reference::nu_point_counting_sort_direct_singlethreaded<float, 2>(
-        points, output, info, finufft::spreading::FoldRescaleRange::Pi);
+        points, finufft::spreading::FoldRescaleRange::Pi, output, histogram.get(), info);
 
     auto point_bin_alloc = finufft::allocate_aligned_array<std::size_t>(points.num_points, 64);
     auto point_bin = tcb::span<std::size_t>(point_bin_alloc.get(), points.num_points);

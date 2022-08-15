@@ -1,3 +1,6 @@
+#include "sort_bin_counting.h"
+#include "sort_bin_counting_impl.h"
+
 #include "../../memory.h"
 #include "../sorting.h"
 #include "../spreading.h"
@@ -53,10 +56,7 @@ struct ComputeBinIndex {
 
         std::fill(bins.begin(), bins.end(), 0);
 
-        #pragma gcc unroll Dim
         for (std::size_t j = 0; j < Dim; ++j) {
-            #pragma gcc unroll 4
-            #pragma gcc ivdep
             for (std::size_t offset = 0; offset < (Partial ? limit : Unroll); ++offset) {
                 auto x = input.coordinates[j][i + offset];
                 x = fold_rescale(x, size_f[j]);
@@ -82,42 +82,18 @@ struct ComputeBinIndex {
     }
 };
 
-template <typename T, std::size_t Dim, typename BinIndexFunctor>
-void compute_histogram_impl(
-    nu_point_collection<Dim, const T> const &input, tcb::span<std::size_t> histogram,
-    BinIndexFunctor const &compute_bin_index) {
-    constexpr std::size_t unroll = BinIndexFunctor::unroll;
-    std::array<typename BinIndexFunctor::index_type, unroll> bin_index;
-
-    std::size_t i = 0;
-    for (; i < input.num_points - unroll + 1; i += unroll) {
-        compute_bin_index(input, i, unroll, bin_index, std::integral_constant<bool, false>{});
-        for (std::size_t j = 0; j < BinIndexFunctor::unroll; ++j) {
-            ++histogram[bin_index[j]];
-        }
-    }
-
-    {
-        auto remainder = input.num_points - i;
-        compute_bin_index(input, i, remainder, bin_index, std::integral_constant<bool, true>{});
-        for (std::size_t j = 0; j < remainder; ++j) {
-            ++histogram[bin_index[j]];
-        }
-    }
-}
-
 template <typename T, std::size_t Dim>
 void compute_histogram(
     nu_point_collection<Dim, const T> const &input, tcb::span<std::size_t> histogram,
     IntBinInfo<T, Dim> const &info, FoldRescaleRange input_range) {
     if (input_range == FoldRescaleRange::Identity) {
-        compute_histogram_impl(
+        finufft::spreading::reference::detail::compute_histogram_impl(
             input,
             histogram,
             ComputeBinIndex<64 / sizeof(T), T, Dim, FoldRescaleIdentity<T>>(
                 info, FoldRescaleIdentity<T>{}));
     } else {
-        compute_histogram_impl(
+        finufft::spreading::reference::detail::compute_histogram_impl(
             input,
             histogram,
             ComputeBinIndex<64 / sizeof(T), T, Dim, FoldRescalePi<T>>(info, FoldRescalePi<T>{}));
@@ -133,63 +109,7 @@ void move_points_by_histogram(
     tcb::span<std::size_t> histogram, nu_point_collection<Dim, const T> const &input,
     nu_point_collection<Dim, T> const &output, BinIndexFunctor const &compute_bin_index) {
 
-    const std::size_t unroll = BinIndexFunctor::unroll;
-
-    std::array<T, unroll * Dim> transformed_coordinates;
-    std::array<T *, Dim> transformed_coordinates_ptr;
-    for (std::size_t j = 0; j < Dim; ++j) {
-        transformed_coordinates_ptr[j] = transformed_coordinates.data() + j * unroll;
-    }
-    auto write_transformed_coordinate = [&](std::size_t j, std::size_t offset, T x) {
-        transformed_coordinates_ptr[j][offset] = x;
-    };
-
-    std::array<typename BinIndexFunctor::index_type, unroll> bin_index;
-
-    // unrolled main component
-    std::size_t i = 0;
-    for (; i < input.num_points - unroll + 1; i += unroll) {
-        compute_bin_index(
-            input,
-            i,
-            unroll,
-            bin_index,
-            std::integral_constant<bool, false>{},
-            write_transformed_coordinate);
-
-        for (std::size_t j = 0; j < unroll; ++j) {
-            auto b = bin_index[j];
-            auto output_index = --histogram[b];
-
-            for (std::size_t k = 0; k < Dim; ++k) {
-                output.coordinates[k][output_index] = transformed_coordinates_ptr[k][j];
-            }
-            output.strengths[2 * output_index] = input.strengths[2 * (i + j)];
-            output.strengths[2 * output_index + 1] = input.strengths[2 * (i + j) + 1];
-        }
-    }
-
-    // tail component
-    {
-        compute_bin_index(
-            input,
-            i,
-            input.num_points - i,
-            bin_index,
-            std::integral_constant<bool, true>{},
-            write_transformed_coordinate);
-
-        for (std::size_t j = 0; j < input.num_points - i; ++j) {
-            auto b = bin_index[j];
-            auto output_index = --histogram[b];
-
-            for (std::size_t k = 0; k < Dim; ++k) {
-                output.coordinates[k][output_index] = transformed_coordinates_ptr[k][j];
-            }
-            output.strengths[2 * output_index] = input.strengths[2 * (i + j)];
-            output.strengths[2 * output_index + 1] = input.strengths[2 * (i + j) + 1];
-        }
-    }
+    detail::move_points_by_histogram_impl(histogram, input, output, compute_bin_index);
 }
 
 template <typename T, std::size_t Dim, typename BinIndexFunctor>
@@ -202,12 +122,12 @@ void nu_point_counting_sort_direct_singlethreaded_impl(
     auto histogram = tcb::span<std::size_t>(histogram_alloc.get(), info.num_bins_total());
     std::memset(histogram.data(), 0, histogram.size_bytes());
 
-    compute_histogram_impl(input, histogram, compute_bin_index);
+    detail::compute_histogram_impl(input, histogram, compute_bin_index);
     std::copy(histogram.begin(), histogram.end(), num_points_per_bin);
 
     std::partial_sum(histogram.begin(), histogram.end(), histogram.begin());
 
-    move_points_by_histogram(histogram, input, output, compute_bin_index);
+    detail::move_points_by_histogram_impl(histogram, input, output, compute_bin_index);
 }
 
 template <typename T, std::size_t Dim>
@@ -221,7 +141,7 @@ void nu_point_counting_sort_direct_singlethreaded(
             output,
             num_points_per_bin,
             info,
-            ComputeBinIndex<4, T, Dim, FoldRescaleIdentity<T>>(
+            ComputeBinIndex<1, T, Dim, FoldRescaleIdentity<T>>(
                 info, FoldRescaleIdentity<T>{}));
     } else {
         nu_point_counting_sort_direct_singlethreaded_impl(
@@ -229,7 +149,7 @@ void nu_point_counting_sort_direct_singlethreaded(
             output,
             num_points_per_bin,
             info,
-            ComputeBinIndex<4, T, Dim, FoldRescalePi<T>>(info, FoldRescalePi<T>{}));
+            ComputeBinIndex<1, T, Dim, FoldRescalePi<T>>(info, FoldRescalePi<T>{}));
     }
 }
 

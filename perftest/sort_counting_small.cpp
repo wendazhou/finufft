@@ -1,5 +1,6 @@
 #include <benchmark/benchmark.h>
 
+#include "../src/kernels/avx512/sort_bin_counting.h"
 #include "../src/kernels/avx512/spread_bin_sort_int.h"
 #include "../src/kernels/reference/sort_bin_counting.h"
 
@@ -45,6 +46,12 @@ void bm_counting_direct(benchmark::State &state) {
         &finufft::spreading::reference::nu_point_counting_sort_direct_singlethreaded<float, 2>);
 }
 
+void bm_counting_direct_avx512(benchmark::State &state) {
+    benchmark_sort_2d_small<float>(
+        state,
+        &finufft::spreading::avx512::nu_point_counting_sort_direct_singlethreaded<float, 2>);
+}
+
 void bm_ips4o_packed(benchmark::State &state) {
     benchmark_sort_2d_small<float>(state, finufft::spreading::avx512::get_sort_functor<float, 2>());
 }
@@ -52,4 +59,5 @@ void bm_ips4o_packed(benchmark::State &state) {
 } // namespace
 
 BENCHMARK(bm_counting_direct)->Range(1 << 16, 1 << 24)->Unit(benchmark::kMillisecond);
+BENCHMARK(bm_counting_direct_avx512)->Range(1 << 16, 1 << 24)->Unit(benchmark::kMillisecond);
 BENCHMARK(bm_ips4o_packed)->Range(1 << 16, 1 << 24)->Unit(benchmark::kMillisecond);

@@ -1,46 +1,75 @@
 #include <gtest/gtest.h>
 
+#include "../src/kernels/avx512/sort_bin_counting.h"
 #include "../src/kernels/reference/sort_bin_counting.h"
+
 #include "spread_test_utils.h"
 
-TEST(SortBinCountingTest, SingleThreadedDirect1D) {
-    auto points = make_random_point_collection<1, float>(1654, 0, {-M_PI, M_PI});
-    auto output = finufft::spreading::SpreaderMemoryInput<1, float>(points.num_points);
+namespace {
 
-    finufft::spreading::IntBinInfo<float, 1> info({1024}, {16}, {4});
+template <typename T, std::size_t Dim>
+void test_sort(std::size_t num_points, finufft::spreading::SortPointsFunctor<T, Dim> const &fn) {
+    auto points = make_random_point_collection<Dim, T>(1654, 0, {-M_PI, M_PI});
+    auto output = finufft::spreading::SpreaderMemoryInput<Dim, T>(points.num_points);
+
+    std::array<std::size_t, Dim> size;
+    std::array<std::size_t, Dim> bin_size;
+
+    if (Dim == 1) {
+        size[0] = 1024;
+        bin_size[0] = 16;
+    } else if (Dim == 2) {
+        size[0] = 256;
+        size[1] = 256;
+
+        bin_size[0] = 32;
+        bin_size[1] = 16;
+    }
+    static_assert(Dim == 1 || Dim == 2, "Dim must be 1 or 2");
+
+    std::array<T, Dim> offset;
+    offset.fill(4);
+
+    finufft::spreading::IntBinInfo<T, Dim> info(size, bin_size, offset);
     auto histogram = finufft::allocate_aligned_array<std::size_t>(info.num_bins_total(), 64);
 
-    finufft::spreading::reference::nu_point_counting_sort_direct_singlethreaded<float, 1>(
-        points, finufft::spreading::FoldRescaleRange::Pi, output, histogram.get(), info);
+    fn(points, finufft::spreading::FoldRescaleRange::Pi, output, histogram.get(), info);
 
     auto point_bin_alloc = finufft::allocate_aligned_array<std::size_t>(points.num_points, 64);
     auto point_bin = tcb::span<std::size_t>(point_bin_alloc.get(), points.num_points);
 
     for (std::size_t i = 0; i < points.num_points; ++i) {
-        point_bin[i] = finufft::spreading::compute_bin_index(info, {output.coordinates[0][i]});
+        std::array<T, Dim> coordinates;
+        for (std::size_t j = 0; j < Dim; ++j) {
+            coordinates[j] = output.coordinates[j][i];
+        }
+
+        point_bin[i] = finufft::spreading::compute_bin_index(info, coordinates);
     }
 
     ASSERT_TRUE(std::is_sorted(point_bin.begin(), point_bin.end()));
 }
 
+} // namespace
 
-TEST(SortBinCountingTest, SingleThreadedDirect2D) {
-    auto points = make_random_point_collection<2, float>(1654, 0, {-M_PI, M_PI});
-    auto output = finufft::spreading::SpreaderMemoryInput<2, float>(points.num_points);
-
-    finufft::spreading::IntBinInfo<float, 2> info({256, 256}, {32, 16}, {4, 4});
-    auto histogram = finufft::allocate_aligned_array<std::size_t>(info.num_bins_total(), 64);
-
-    finufft::spreading::reference::nu_point_counting_sort_direct_singlethreaded<float, 2>(
-        points, finufft::spreading::FoldRescaleRange::Pi, output, histogram.get(), info);
-
-    auto point_bin_alloc = finufft::allocate_aligned_array<std::size_t>(points.num_points, 64);
-    auto point_bin = tcb::span<std::size_t>(point_bin_alloc.get(), points.num_points);
-
-    for (std::size_t i = 0; i < points.num_points; ++i) {
-        point_bin[i] = finufft::spreading::compute_bin_index(info, {output.coordinates[0][i], output.coordinates[1][i]});
-    }
-
-    ASSERT_TRUE(std::is_sorted(point_bin.begin(), point_bin.end()));
+TEST(SortBinCountingTest, SingleThreadedDirect1DReference) {
+    test_sort<float, 1>(
+        1654,
+        finufft::spreading::reference::nu_point_counting_sort_direct_singlethreaded<float, 1>);
 }
 
+TEST(SortBinCountingTest, SingleThreadedDirect2DReference) {
+    test_sort<float, 2>(
+        1654,
+        finufft::spreading::reference::nu_point_counting_sort_direct_singlethreaded<float, 2>);
+}
+
+TEST(SortBinCountingTest, SingleThreadedDirect1DAvx512) {
+    test_sort<float, 1>(
+        1654, finufft::spreading::avx512::nu_point_counting_sort_direct_singlethreaded<float, 1>);
+}
+
+TEST(SortBinCountingTest, SingleThreadedDirect2DAvx512) {
+    test_sort<float, 2>(
+        1654, finufft::spreading::avx512::nu_point_counting_sort_direct_singlethreaded<float, 2>);
+}

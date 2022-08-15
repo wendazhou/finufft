@@ -8,9 +8,12 @@
  *
  */
 
+#include <algorithm>
+#include <cstring>
 #include <tuple>
 #include <type_traits>
 
+#include "../../memory.h"
 #include "sort_bin_counting.h"
 
 namespace finufft {
@@ -122,7 +125,7 @@ void compute_histogram_impl(
         input, compute_bin_index, scatter_histogram, NoOpWriteTransformedCoordinate{});
 }
 
-template <typename T, std::size_t Dim, std::size_t Unroll> struct WriteTransformedCoordinate {
+template <typename T, std::size_t Dim, std::size_t Unroll> struct WriteTransformedCoordinateScalar {
     typedef std::array<std::array<T, Unroll>, Dim> value_type;
 
     void operator()(value_type &v, std::size_t d, std::size_t j, T const &t) const { v[d][j] = t; }
@@ -131,10 +134,12 @@ template <typename T, std::size_t Dim, std::size_t Unroll> struct WriteTransform
 /** Reorders points into sorted order by using the given set of partial histogram sums.
  *
  */
-template <typename T, std::size_t Dim, typename BinIndexFunctor>
+template <
+    typename T, std::size_t Dim, typename BinIndexFunctor, typename WriteTransformedCoordinate>
 void move_points_by_histogram_impl(
     tcb::span<std::size_t> histogram, nu_point_collection<Dim, const T> const &input,
-    nu_point_collection<Dim, T> const &output, BinIndexFunctor const &compute_bin_index) {
+    nu_point_collection<Dim, T> const &output, BinIndexFunctor const &compute_bin_index,
+    WriteTransformedCoordinate const &write_transformed_coordinate) {
     auto move_points = [&](nu_point_collection<Dim, const T> const &input,
                            std::size_t i,
                            std::size_t limit,
@@ -154,10 +159,28 @@ void move_points_by_histogram_impl(
     };
 
     process_bin_function<T, Dim>(
-        input,
-        compute_bin_index,
-        move_points,
-        WriteTransformedCoordinate<T, Dim, BinIndexFunctor::unroll>{});
+        input, compute_bin_index, move_points, write_transformed_coordinate);
+}
+
+template <
+    typename T, std::size_t Dim, typename BinIndexFunctor, typename WriteTransformedCoordinate>
+void nu_point_counting_sort_direct_singlethreaded_impl(
+    nu_point_collection<Dim, const T> const &input, nu_point_collection<Dim, T> const &output,
+    std::size_t *num_points_per_bin, IntBinInfo<T, Dim> const &info,
+    BinIndexFunctor const &compute_bin_index,
+    WriteTransformedCoordinate const &write_transformed_coordinate) {
+
+    auto histogram_alloc = allocate_aligned_array<std::size_t>(info.num_bins_total(), 64);
+    auto histogram = tcb::span<std::size_t>(histogram_alloc.get(), info.num_bins_total());
+    std::memset(histogram.data(), 0, histogram.size_bytes());
+
+    compute_histogram_impl(input, histogram, compute_bin_index);
+    std::copy(histogram.begin(), histogram.end(), num_points_per_bin);
+
+    std::partial_sum(histogram.begin(), histogram.end(), histogram.begin());
+
+    move_points_by_histogram_impl(
+        histogram, input, output, compute_bin_index, write_transformed_coordinate);
 }
 
 } // namespace detail

@@ -112,44 +112,31 @@ void move_points_by_histogram(
     detail::move_points_by_histogram_impl(histogram, input, output, compute_bin_index);
 }
 
-template <typename T, std::size_t Dim, typename BinIndexFunctor>
-void nu_point_counting_sort_direct_singlethreaded_impl(
-    nu_point_collection<Dim, const T> const &input, nu_point_collection<Dim, T> const &output,
-    std::size_t *num_points_per_bin, IntBinInfo<T, Dim> const &info,
-    BinIndexFunctor const &compute_bin_index) {
-
-    auto histogram_alloc = allocate_aligned_array<std::size_t>(info.num_bins_total(), 64);
-    auto histogram = tcb::span<std::size_t>(histogram_alloc.get(), info.num_bins_total());
-    std::memset(histogram.data(), 0, histogram.size_bytes());
-
-    detail::compute_histogram_impl(input, histogram, compute_bin_index);
-    std::copy(histogram.begin(), histogram.end(), num_points_per_bin);
-
-    std::partial_sum(histogram.begin(), histogram.end(), histogram.begin());
-
-    detail::move_points_by_histogram_impl(histogram, input, output, compute_bin_index);
-}
-
 template <typename T, std::size_t Dim>
 void nu_point_counting_sort_direct_singlethreaded(
     nu_point_collection<Dim, const T> const &input, FoldRescaleRange input_range,
     nu_point_collection<Dim, T> const &output, std::size_t *num_points_per_bin,
     IntBinInfo<T, Dim> const &info) {
+
+    const std::size_t unroll = 1;
+    auto write_transformed_coordinate = detail::WriteTransformedCoordinateScalar<T, Dim, unroll>{};
+
     if (input_range == FoldRescaleRange::Identity) {
-        nu_point_counting_sort_direct_singlethreaded_impl(
+        detail::nu_point_counting_sort_direct_singlethreaded_impl(
             input,
             output,
             num_points_per_bin,
             info,
-            ComputeBinIndex<1, T, Dim, FoldRescaleIdentity<T>>(
-                info, FoldRescaleIdentity<T>{}));
+            ComputeBinIndex<unroll, T, Dim, FoldRescaleIdentity<T>>(info, FoldRescaleIdentity<T>{}),
+            write_transformed_coordinate);
     } else {
-        nu_point_counting_sort_direct_singlethreaded_impl(
+        detail::nu_point_counting_sort_direct_singlethreaded_impl(
             input,
             output,
             num_points_per_bin,
             info,
-            ComputeBinIndex<1, T, Dim, FoldRescalePi<T>>(info, FoldRescalePi<T>{}));
+            ComputeBinIndex<unroll, T, Dim, FoldRescalePi<T>>(info, FoldRescalePi<T>{}),
+            write_transformed_coordinate);
     }
 }
 

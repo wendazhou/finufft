@@ -86,7 +86,7 @@ template <std::size_t Dim> struct WriteTransformedCoordinate<float, Dim> {
 
     typedef AlignedArray value_type;
 
-    void operator()(AlignedArray& arr, std::size_t j, std::size_t, __m512 x) const {
+    void operator()(AlignedArray &arr, std::size_t j, std::size_t, __m512 x) const {
         _mm512_store_ps(arr[j], x);
     }
 };
@@ -119,8 +119,42 @@ void nu_point_counting_sort_direct_singlethreaded(
     }
 }
 
+template <typename T, std::size_t Dim>
+void nu_point_counting_sort_blocked_singlethreaded(
+    nu_point_collection<Dim, const T> const &input, FoldRescaleRange input_range,
+    nu_point_collection<Dim, T> const &output, std::size_t *num_points_per_bin,
+    IntBinInfo<T, Dim> const &info) {
+
+    WriteTransformedCoordinate<T, Dim> write_transformed_coordinate;
+
+    if (input_range == FoldRescaleRange::Identity) {
+        reference::detail::nu_point_counting_sort_blocked_singlethreaded_impl(
+            input,
+            output,
+            num_points_per_bin,
+            info,
+            ComputeBinIndex<T, Dim, FoldRescaleIdentityAvx512<T>>{
+                info, FoldRescaleIdentityAvx512<T>{}},
+            write_transformed_coordinate);
+    } else {
+        reference::detail::nu_point_counting_sort_blocked_singlethreaded_impl(
+            input,
+            output,
+            num_points_per_bin,
+            info,
+            ComputeBinIndex<T, Dim, FoldRescalePiAvx512<T>>{info, FoldRescalePiAvx512<T>{}},
+            write_transformed_coordinate);
+    }
+}
+
 #define INSTANTIATE(T, Dim)                                                                        \
     template void nu_point_counting_sort_direct_singlethreaded<T, Dim>(                            \
+        nu_point_collection<Dim, const T> const &input,                                            \
+        FoldRescaleRange input_range,                                                              \
+        nu_point_collection<Dim, T> const &output,                                                 \
+        std::size_t *num_points_per_bin,                                                           \
+        IntBinInfo<T, Dim> const &info);                                                           \
+    template void nu_point_counting_sort_blocked_singlethreaded<T, Dim>(                           \
         nu_point_collection<Dim, const T> const &input,                                            \
         FoldRescaleRange input_range,                                                              \
         nu_point_collection<Dim, T> const &output,                                                 \

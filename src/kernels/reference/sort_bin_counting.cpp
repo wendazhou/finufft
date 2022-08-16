@@ -146,19 +146,52 @@ void nu_point_counting_sort_direct_singlethreaded(
  * data which is not in cache.
  *
  */
-
 template <typename T, std::size_t Dim, std::size_t BlockSize> struct MovePointsBlocked {
-    finufft::aligned_unique_array<T> buffer;
-    std::vector<std::uint32_t> block_counts;
+
+    /** The local buffer is built by taking views into the buffer array.
+     * 
+     * The buffer is separated into segments of size (2 + Dim) * BlockSize,
+     * representing the non-uniform points in the given bin.
+     * 
+     * Each block is represented in a structure of array format,
+     * with the coordinates being represented in contiguous arrays of lengeth BLockSize,
+     * followed by the strengths.
+     * 
+     * The local buffer is filled from the back towards the front of the array.
+     * To keep track of the buffer position, the `block_ptr_` member is used
+     * to track an offset from the back of the buffer.
+     * That is, `block_ptr_[i]` points one-past the next insertion point in the buffer
+     * for block `i`.
+     * Additionally, the initial value of `block_ptr_` is kept in `block_size_`.
+     * This is only relevant for the first block, which may be a partial block
+     * in order to bring the offsets into 64 byte alignment to ensure
+     * optimal copy.
+     * 
+     */
+    finufft::aligned_unique_array<T> buffer_;
+    std::vector<std::uint32_t> block_ptr_;
+    std::vector<std::uint32_t> block_size_;
+
     std::size_t bin_buffer_stride;
 
     nu_point_collection<Dim, T> const &output;
     tcb::span<std::size_t> histogram;
 
     MovePointsBlocked(tcb::span<std::size_t> histogram, nu_point_collection<Dim, T> const &output)
-        : buffer(finufft::allocate_aligned_array<T>(histogram.size() * BlockSize * (Dim + 2), 64)),
-          block_counts(histogram.size(), BlockSize), bin_buffer_stride(BlockSize * (Dim + 2)),
-          output(output), histogram(histogram) {}
+        : buffer_(finufft::allocate_aligned_array<T>(histogram.size() * BlockSize * (Dim + 2), 64)),
+          block_ptr_(histogram.size()), block_size_(histogram.size()),
+          bin_buffer_stride(BlockSize * (Dim + 2)), output(output), histogram(histogram) {
+
+        auto AlignElements = (64 / sizeof(T));
+
+        for (std::size_t i = 0; i < histogram.size(); ++i) {
+            // set the initial block size to the remainder of the histogram size.
+            // This ensures that after processing a full block of this size,
+            // the remainder of the blocks are aligned.
+            block_size_[i] = BlockSize - (AlignElements - ((histogram[i] + 1) % AlignElements - 1));
+            block_ptr_[i] = block_size_[i];
+        }
+    }
 
     template <typename BinIndexValue, bool Final>
     void operator()(
@@ -168,36 +201,39 @@ template <typename T, std::size_t Dim, std::size_t BlockSize> struct MovePointsB
         for (std::size_t j = 0; j < limit; ++j) {
             auto bin_index = bin_index_value.bin_index[j];
 
-            auto local_bin_offset = --block_counts[bin_index];
+            auto local_bin_offset = --block_ptr_[bin_index];
 
             auto local_buffer = bin_index * bin_buffer_stride;
 
             for (std::size_t d = 0; d < Dim; ++d) {
-                buffer[local_buffer + d * BlockSize + local_bin_offset] =
+                buffer_[local_buffer + d * BlockSize + local_bin_offset] =
                     bin_index_value.value[d][j];
             }
-            buffer[local_buffer + Dim * BlockSize + 2 * local_bin_offset] =
+            buffer_[local_buffer + Dim * BlockSize + 2 * local_bin_offset] =
                 input.strengths[2 * (i + j)];
-            buffer[local_buffer + Dim * BlockSize + 2 * local_bin_offset + 1] =
+            buffer_[local_buffer + Dim * BlockSize + 2 * local_bin_offset + 1] =
                 input.strengths[2 * (i + j) + 1];
 
             if (local_bin_offset == 0) {
+                auto this_block_size = block_size_[bin_index];
+
                 // trigger copy
-                auto offset = histogram[bin_index] - BlockSize;
+                auto offset = histogram[bin_index] - this_block_size;
                 histogram[bin_index] = offset;
 
                 for (std::size_t d = 0; d < Dim; ++d) {
                     std::memcpy(
                         output.coordinates[d] + offset,
-                        buffer.get() + local_buffer + d * BlockSize,
-                        BlockSize * sizeof(T));
+                        buffer_.get() + local_buffer + d * BlockSize,
+                        this_block_size * sizeof(T));
                 }
                 std::memcpy(
                     output.strengths + 2 * offset,
-                    buffer.get() + local_buffer + Dim * BlockSize,
-                    2 * BlockSize * sizeof(T));
+                    buffer_.get() + local_buffer + Dim * BlockSize,
+                    2 * this_block_size * sizeof(T));
 
-                block_counts[bin_index] = BlockSize;
+                block_ptr_[bin_index] = BlockSize;
+                block_size_[bin_index] = BlockSize;
             }
 
             if (Final) {
@@ -208,23 +244,25 @@ template <typename T, std::size_t Dim, std::size_t BlockSize> struct MovePointsB
 
     void finalize_bins() {
         // Loop over all local blocks to flush remaining data into main buffer.
-        for (std::size_t bin_index = 0; bin_index < block_counts.size(); ++bin_index) {
-            if (block_counts[bin_index] != BlockSize) {
-                auto partial_block_size = (BlockSize - block_counts[bin_index]);
+        for (std::size_t bin_index = 0; bin_index < block_ptr_.size(); ++bin_index) {
+            auto this_block_size = block_size_[bin_index];
+            auto local_offset = block_ptr_[bin_index];
+
+            if (local_offset != this_block_size) {
+                auto partial_block_size = (this_block_size - local_offset);
                 auto offset = histogram[bin_index] - partial_block_size;
                 histogram[bin_index] = offset;
 
                 for (std::size_t d = 0; d < Dim; ++d) {
                     std::memcpy(
                         output.coordinates[d] + offset,
-                        buffer.get() + bin_index * bin_buffer_stride + d * BlockSize +
-                            (BlockSize - partial_block_size),
+                        buffer_.get() + bin_index * bin_buffer_stride + d * BlockSize + local_offset,
                         partial_block_size * sizeof(T));
                 }
                 std::memcpy(
                     output.strengths + 2 * offset,
-                    buffer.get() + bin_index * bin_buffer_stride + Dim * BlockSize +
-                        2 * (BlockSize - partial_block_size),
+                    buffer_.get() + bin_index * bin_buffer_stride + Dim * BlockSize +
+                        2 * local_offset,
                     2 * partial_block_size * sizeof(T));
             }
         }

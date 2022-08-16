@@ -52,7 +52,7 @@ template <
     typename WriteTransformedCoordinate>
 void process_bin_function(
     nu_point_collection<Dim, const T> const &input, BinIndexFunctor const &compute_bin_index,
-    ProcessBinFunctor&& process_bin_index,
+    ProcessBinFunctor &&process_bin_index,
     WriteTransformedCoordinate const &write_transformed_coordinate) {
 
     constexpr std::size_t unroll = BinIndexFunctor::unroll;
@@ -152,9 +152,8 @@ void move_points_by_histogram_impl(
             for (std::size_t d = 0; d < Dim; ++d) {
                 output.coordinates[d][output_index] = bin_index_value.value[d][j];
             }
-
-            output.strengths[2 * output_index] = input.strengths[2 * (i + j)];
-            output.strengths[2 * output_index + 1] = input.strengths[2 * (i + j) + 1];
+            std::memcpy(
+                output.strengths + 2 * output_index, input.strengths + 2 * (i + j), 2 * sizeof(T));
         }
     };
 
@@ -163,15 +162,15 @@ void move_points_by_histogram_impl(
 }
 
 /** Parametrized single-threaded counting sort with direct data movement.
- * 
+ *
  * This function provides a generic implementation of a counting sort, based
  * on the given index computation. The function is provided here to enable
  * optimizations by adapting the `BinIndexFunctor` (and the associated `WriteTransformCoordinate`)
  * parameters.
- * 
+ *
  * This function does not attempt to use any kind of multithreading or adapt the data movement,
  * and is thus only suitable for small problems.
- * 
+ *
  */
 template <
     typename T, std::size_t Dim, typename BinIndexFunctor, typename WriteTransformedCoordinate>
@@ -194,7 +193,6 @@ void nu_point_counting_sort_direct_singlethreaded_impl(
         histogram, input, output, compute_bin_index, write_transformed_coordinate);
 }
 
-
 /** Reorders points into sorted order by using the given set of partial histogram sums.
  *
  * This implementation uses a blocking strategy in order to more efficiently move
@@ -204,14 +202,14 @@ void nu_point_counting_sort_direct_singlethreaded_impl(
 template <typename T, std::size_t Dim, std::size_t BlockSize> struct MovePointsBlocked {
 
     /** The local buffer is built by taking views into the buffer array.
-     * 
+     *
      * The buffer is separated into segments of size (2 + Dim) * BlockSize,
      * representing the non-uniform points in the given bin.
-     * 
+     *
      * Each block is represented in a structure of array format,
      * with the coordinates being represented in contiguous arrays of lengeth BLockSize,
      * followed by the strengths.
-     * 
+     *
      * The local buffer is filled from the back towards the front of the array.
      * To keep track of the buffer position, the `block_ptr_` member is used
      * to track an offset from the back of the buffer.
@@ -221,7 +219,7 @@ template <typename T, std::size_t Dim, std::size_t BlockSize> struct MovePointsB
      * This is only relevant for the first block, which may be a partial block
      * in order to bring the offsets into 64 byte alignment to ensure
      * optimal copy.
-     * 
+     *
      */
     finufft::aligned_unique_array<T> buffer_;
     std::vector<std::uint32_t> block_ptr_;
@@ -254,23 +252,27 @@ template <typename T, std::size_t Dim, std::size_t BlockSize> struct MovePointsB
         nu_point_collection<Dim, const T> const &input, std::size_t i, std::size_t limit,
         BinIndexValue const &bin_index_value, std::integral_constant<bool, Final>) {
 
+        // Get buffer pointer, mark with restrict to help with optimizations.
+        T *__restrict buffer = buffer_.get();
+
         for (std::size_t j = 0; j < limit; ++j) {
             auto bin_index = bin_index_value.bin_index[j];
-
             auto local_bin_offset = --block_ptr_[bin_index];
 
             auto local_buffer = bin_index * bin_buffer_stride;
 
+            // Copy point data into corresponding local buffer.
             for (std::size_t d = 0; d < Dim; ++d) {
-                buffer_[local_buffer + d * BlockSize + local_bin_offset] =
+                buffer[local_buffer + d * BlockSize + local_bin_offset] =
                     bin_index_value.value[d][j];
             }
-            buffer_[local_buffer + Dim * BlockSize + 2 * local_bin_offset] =
-                input.strengths[2 * (i + j)];
-            buffer_[local_buffer + Dim * BlockSize + 2 * local_bin_offset + 1] =
-                input.strengths[2 * (i + j) + 1];
+            std::memcpy(
+                buffer + Dim * BlockSize + 2 * local_bin_offset,
+                input.strengths + 2 * (i + j),
+                2 * sizeof(T));
 
             if (local_bin_offset == 0) {
+                // Buffer for current bin is full, trigger copy into output.
                 auto this_block_size = block_size_[bin_index];
 
                 // trigger copy
@@ -280,12 +282,12 @@ template <typename T, std::size_t Dim, std::size_t BlockSize> struct MovePointsB
                 for (std::size_t d = 0; d < Dim; ++d) {
                     std::memcpy(
                         output.coordinates[d] + offset,
-                        buffer_.get() + local_buffer + d * BlockSize,
+                        buffer + local_buffer + d * BlockSize,
                         this_block_size * sizeof(T));
                 }
                 std::memcpy(
                     output.strengths + 2 * offset,
-                    buffer_.get() + local_buffer + Dim * BlockSize,
+                    buffer + local_buffer + Dim * BlockSize,
                     2 * this_block_size * sizeof(T));
 
                 block_ptr_[bin_index] = BlockSize;
@@ -311,7 +313,8 @@ template <typename T, std::size_t Dim, std::size_t BlockSize> struct MovePointsB
                 for (std::size_t d = 0; d < Dim; ++d) {
                     std::memcpy(
                         output.coordinates[d] + offset,
-                        buffer_.get() + bin_index * bin_buffer_stride + d * BlockSize + local_offset,
+                        buffer_.get() + bin_index * bin_buffer_stride + d * BlockSize +
+                            local_offset,
                         partial_block_size * sizeof(T));
                 }
                 std::memcpy(
@@ -331,7 +334,7 @@ void move_points_by_histogram_impl_blocked(
     nu_point_collection<Dim, T> const &output, BinIndexFunctor const &compute_bin_index,
     WriteTransformedCoordinate const &write_transformed_coordinate) {
 
-    MovePointsBlocked<T, Dim, 64> move_points(histogram, output);
+    MovePointsBlocked<T, Dim, 128> move_points(histogram, output);
     detail::process_bin_function<T, Dim>(
         input, compute_bin_index, std::move(move_points), write_transformed_coordinate);
 }

@@ -53,7 +53,7 @@ void benchmark_spread_subproblem(
     benchmark::State &state, fs::SpreadSubproblemFunctor<T, Dim> const &functor) {
     auto num_points = state.range(0);
 
-    num_points = fs::round_to_next_multiple(num_points, functor.num_points_multiple());
+    num_points = finufft::round_to_next_multiple(num_points, functor.num_points_multiple());
     auto padding = functor.target_padding();
 
     // Currently use density with ~ 1 uniform point / 1 non-uniform point.
@@ -68,7 +68,7 @@ void benchmark_spread_subproblem(
         // This implies that the actual extent is padded and rounded
         // up to the correct multiple, slightly (correctly) penalizing methods
         // which require large amounts of padding or alignment.
-        extent[i] = fs::round_to_next_multiple(
+        extent[i] = finufft::round_to_next_multiple(
             static_cast<std::size_t>(
                 std::ceil(extent[i] - padding[i].offset + padding[i].grid_right)),
             extent_multiple[i]);

@@ -108,4 +108,10 @@ allocate_aligned_arrays(std::size_t size, std::size_t alignment) {
     return std::move(arrays);
 }
 
+// Utility function which rounds the given integer value to the next multiple.
+template <typename T, typename U> T round_to_next_multiple(T v, U multiple) {
+    return (v + multiple - 1) / multiple * multiple;
+}
+
+
 } // namespace finufft

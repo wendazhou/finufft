@@ -52,10 +52,10 @@ void adjust_problem_parameters(
         }
     }
 
-    num_points = finufft::spreading::round_to_next_multiple(num_points, num_points_multiple);
+    num_points = finufft::round_to_next_multiple(num_points, num_points_multiple);
     for (std::size_t i = 0; i < Dim; ++i) {
         grid.extents[i] =
-            finufft::spreading::round_to_next_multiple(grid.extents[i], extent_multiple[i]);
+            finufft::round_to_next_multiple(grid.extents[i], extent_multiple[i]);
     }
 }
 
@@ -140,10 +140,10 @@ void evaluate_subproblem_limits(int width, Fn &&factory) {
     finufft::spreading::grid_specification<Dim> grid;
     for (std::size_t i = 0; i < Dim; ++i) {
         grid.offsets[i] = offset;
-        grid.extents[i] = finufft::spreading::round_to_next_multiple(extent, extent_multiple[i]);
+        grid.extents[i] = finufft::round_to_next_multiple(extent, extent_multiple[i]);
     }
 
-    auto num_points = finufft::spreading::round_to_next_multiple(2, fn.num_points_multiple());
+    auto num_points = finufft::round_to_next_multiple(2, fn.num_points_multiple());
     auto padding = fn.target_padding();
 
     finufft::spreading::SpreaderMemoryInput<Dim, T> input(num_points);

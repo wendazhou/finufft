@@ -43,7 +43,7 @@ void test_binsort_implementation(
     finufft::spreading::nu_point_collection<Dim, const T> points_view = points;
 
     auto output = finufft::allocate_aligned_array<int64_t>(
-        finufft::spreading::round_to_next_multiple(points.num_points, 64 / sizeof(int64_t)), 64);
+        finufft::round_to_next_multiple(points.num_points, 64 / sizeof(int64_t)), 64);
     auto output_ptr = output.get();
 
     std::array<int64_t, Dim> sizes;

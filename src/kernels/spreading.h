@@ -433,11 +433,6 @@ grid_specification<Dim> compute_subgrid(
     return {offsets, sizes};
 }
 
-// Utility function which rounds the given integer value to the next multiple.
-template <typename T, typename U> T round_to_next_multiple(T v, U multiple) {
-    return (v + multiple - 1) / multiple * multiple;
-}
-
 /** Input for the spreading sub-operation.
  *
  * This struct is used to track the inputs to the contiguous spreading memory operation.

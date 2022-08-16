@@ -179,7 +179,7 @@ template <typename T, std::size_t Dim> struct OmpSpreadBlockedImplementation {
                             block_num_points * sizeof(T));
                     }
 
-                    auto num_points_padded = finufft::spreading::round_to_next_multiple(
+                    auto num_points_padded = finufft::round_to_next_multiple(
                         block_num_points, spread_subproblem_.num_points_multiple());
 
                     // Pad the input points to the required multiple, using a pad coordinate derived

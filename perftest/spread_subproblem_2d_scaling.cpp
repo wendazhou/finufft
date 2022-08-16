@@ -26,10 +26,10 @@ void benchmark_scaling_avx512(benchmark::State &state) {
     fs::grid_specification<2> grid_spec;
     grid_spec.offsets.fill(0);
     grid_spec.extents[0] =
-        fs::round_to_next_multiple(total_points / dim_y, functor.extent_multiple()[0]);
-    grid_spec.extents[1] = fs::round_to_next_multiple(dim_y, functor.extent_multiple()[1]);
+        finufft::round_to_next_multiple(total_points / dim_y, functor.extent_multiple()[0]);
+    grid_spec.extents[1] = finufft::round_to_next_multiple(dim_y, functor.extent_multiple()[1]);
 
-    auto num_points = fs::round_to_next_multiple(total_points, functor.num_points_multiple());
+    auto num_points = finufft::round_to_next_multiple(total_points, functor.num_points_multiple());
 
     benchmark_spread_subproblem<float, 2>(state, functor, num_points, grid_spec, false);
 }

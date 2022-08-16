@@ -52,7 +52,7 @@ template <
     typename WriteTransformedCoordinate>
 void process_bin_function(
     nu_point_collection<Dim, const T> const &input, BinIndexFunctor const &compute_bin_index,
-    ProcessBinFunctor const &process_bin_index,
+    ProcessBinFunctor&& process_bin_index,
     WriteTransformedCoordinate const &write_transformed_coordinate) {
 
     constexpr std::size_t unroll = BinIndexFunctor::unroll;
@@ -162,6 +162,17 @@ void move_points_by_histogram_impl(
         input, compute_bin_index, move_points, write_transformed_coordinate);
 }
 
+/** Parametrized single-threaded counting sort with direct data movement.
+ * 
+ * This function provides a generic implementation of a counting sort, based
+ * on the given index computation. The function is provided here to enable
+ * optimizations by adapting the `BinIndexFunctor` (and the associated `WriteTransformCoordinate`)
+ * parameters.
+ * 
+ * This function does not attempt to use any kind of multithreading or adapt the data movement,
+ * and is thus only suitable for small problems.
+ * 
+ */
 template <
     typename T, std::size_t Dim, typename BinIndexFunctor, typename WriteTransformedCoordinate>
 void nu_point_counting_sort_direct_singlethreaded_impl(

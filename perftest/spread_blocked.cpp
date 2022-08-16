@@ -179,7 +179,7 @@ void process_points(
                 reinterpret_cast<int64_t const *>(sort_indices + point_block_boundaries[i]));
         }
 
-        auto num_points_padded = finufft::spreading::round_to_next_multiple(
+        auto num_points_padded = finufft::round_to_next_multiple(
             block_num_points, config.spread_subproblem.num_points_multiple());
 
         // Pad the input points to the required multiple, using a pad coordinate derived from the

@@ -46,6 +46,12 @@ void bm_counting_direct(benchmark::State &state) {
         &finufft::spreading::reference::nu_point_counting_sort_direct_singlethreaded<float, 2>);
 }
 
+void bm_counting_blocked(benchmark::State &state) {
+    benchmark_sort_2d_small<float>(
+        state,
+        &finufft::spreading::reference::nu_point_counting_sort_blocked_singlethreaded<float, 2>);
+}
+
 void bm_counting_direct_avx512(benchmark::State &state) {
     benchmark_sort_2d_small<float>(
         state,
@@ -60,4 +66,5 @@ void bm_ips4o_packed(benchmark::State &state) {
 
 BENCHMARK(bm_counting_direct)->Range(1 << 16, 1 << 24)->Unit(benchmark::kMillisecond);
 BENCHMARK(bm_counting_direct_avx512)->Range(1 << 16, 1 << 24)->Unit(benchmark::kMillisecond);
+BENCHMARK(bm_counting_blocked)->Range(1 << 16, 1 << 24)->Unit(benchmark::kMillisecond);
 BENCHMARK(bm_ips4o_packed)->Range(1 << 16, 1 << 24)->Unit(benchmark::kMillisecond);

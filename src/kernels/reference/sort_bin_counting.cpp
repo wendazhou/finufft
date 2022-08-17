@@ -140,28 +140,36 @@ void nu_point_counting_sort_direct_omp_impl(
             input.num_points / omp_get_num_threads(),
             hardware_destructive_interference_size / sizeof(T));
         auto thread_start = omp_get_thread_num() * points_per_thread;
-        auto thread_length = std::min(points_per_thread, input.num_points - thread_start);
+        auto thread_length = thread_start < input.num_points
+                                 ? std::min(points_per_thread, input.num_points - thread_start)
+                                 : 0;
         auto input_thread = input.slice(thread_start, thread_length);
 
-        compute_histogram_impl(input_thread, histogram, compute_bin_index);
+        if (input_thread.num_points > 0) {
+            compute_histogram_impl(input_thread, histogram, compute_bin_index);
+        }
 #pragma omp barrier
 
 #pragma omp single
         {
+            std::size_t *histogram_global = histogram_alloc.get();
+
             // Process histograms
             std::size_t accumulator = 0;
             for (std::size_t i = 0; i < info.num_bins_total(); ++i) {
                 std::size_t bin_count = 0;
 
                 for (std::size_t j = 0; j < omp_get_num_threads(); ++j) {
-                    auto bin_thread_count = histogram_alloc[j * histogram_stride + i];
+                    auto bin_thread_count = histogram_global[j * histogram_stride + i];
                     accumulator += bin_thread_count;
                     bin_count += bin_thread_count;
-                    histogram_alloc[j * histogram_stride + i] = accumulator;
+                    histogram_global[j * histogram_stride + i] = accumulator;
                 }
 
                 num_points_per_bin[i] = bin_count;
             }
+
+            assert(accumulator == input.num_points);
         }
 
         move_points_by_histogram_impl(

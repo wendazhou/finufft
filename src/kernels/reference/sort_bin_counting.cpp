@@ -136,6 +136,7 @@ void nu_point_counting_sort_direct_omp_impl(
             histogram_alloc.get() + omp_get_thread_num() * histogram_stride, info.num_bins_total());
         std::memset(histogram.data(), 0, histogram.size_bytes());
 
+        // Compute slice to be processed by this thread
         auto points_per_thread = finufft::round_to_next_multiple(
             input.num_points / omp_get_num_threads(),
             hardware_destructive_interference_size / sizeof(T));
@@ -145,6 +146,7 @@ void nu_point_counting_sort_direct_omp_impl(
                                  : 0;
         auto input_thread = input.slice(thread_start, thread_length);
 
+        // Compute histogram for all relevant slices
         if (input_thread.num_points > 0) {
             compute_histogram_impl(input_thread, histogram, compute_bin_index);
         }
@@ -172,6 +174,7 @@ void nu_point_counting_sort_direct_omp_impl(
             assert(accumulator == input.num_points);
         }
 
+        // Move points to output
         move_points_by_histogram_impl(
             histogram, input_thread, output, compute_bin_index, write_transformed_coordinate);
     }

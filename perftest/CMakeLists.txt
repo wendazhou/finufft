@@ -32,6 +32,7 @@ endfunction()
 add_benchmark(sort_counting_prototype sort_counting_prototype.cpp)
 target_link_libraries(sort_counting_prototype PRIVATE ips4o)
 add_benchmark(sort_counting_small sort_counting_small.cpp)
+add_benchmark(sort_counting_multithreaded sort_counting_multithreaded.cpp)
 
 add_benchmark(spread_binsort_perf spread_binsort_perf.cpp)
 add_benchmark(spread_gather_perf spread_gather_perf.cpp)

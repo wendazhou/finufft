@@ -64,6 +64,18 @@ TEST(SortBinCountingTest, SingleThreadedDirect2DReference) {
         finufft::spreading::reference::nu_point_counting_sort_direct_singlethreaded<float, 2>);
 }
 
+TEST(SortBinCountingTest, OmpDirect1DReference) {
+    test_sort<float, 1>(
+        1654,
+        finufft::spreading::reference::nu_point_counting_sort_direct_omp<float, 1>);
+}
+
+TEST(SortBinCountingTest, OmpDirect2DReference) {
+    test_sort<float, 2>(
+        1654,
+        finufft::spreading::reference::nu_point_counting_sort_direct_omp<float, 2>);
+}
+
 
 TEST(SortBinCountingTest, SingleThreadedBlocked1DReference) {
     test_sort<float, 1>(

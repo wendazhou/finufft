@@ -13,6 +13,13 @@
 #include "gather_fold_reference.h"
 #include "sort_bin_counting_impl.h"
 
+#ifdef __cpp_lib_hardware_interference_size
+#include <new>
+using std::hardware_destructive_interference_size;
+#else
+constexpr std::size_t hardware_destructive_interference_size = 64;
+#endif
+
 namespace finufft {
 namespace spreading {
 namespace reference {
@@ -106,6 +113,64 @@ void move_points_by_histogram(
     detail::move_points_by_histogram_impl(histogram, input, output, compute_bin_index);
 }
 
+namespace detail {
+template <
+    typename T, std::size_t Dim, typename BinIndexFunctor, typename WriteTransformedCoordinate>
+void nu_point_counting_sort_direct_omp_impl(
+    nu_point_collection<Dim, const T> const &input, nu_point_collection<Dim, T> const &output,
+    std::size_t *num_points_per_bin, IntBinInfo<T, Dim> const &info,
+    BinIndexFunctor const &compute_bin_index,
+    WriteTransformedCoordinate const &write_transformed_coordinate) {
+
+    finufft::aligned_unique_array<std::size_t> histogram_alloc;
+    auto histogram_stride = finufft::round_to_next_multiple(
+        info.num_bins_total(), hardware_destructive_interference_size / sizeof(std::size_t));
+
+#pragma omp parallel
+    {
+#pragma omp single
+        histogram_alloc = finufft::allocate_aligned_array<std::size_t>(
+            histogram_stride * omp_get_num_threads(), 64);
+
+        auto histogram = tcb::span<std::size_t>(
+            histogram_alloc.get() + omp_get_thread_num() * histogram_stride, info.num_bins_total());
+        std::memset(histogram.data(), 0, histogram.size_bytes());
+
+        auto points_per_thread = finufft::round_to_next_multiple(
+            input.num_points / omp_get_num_threads(),
+            hardware_destructive_interference_size / sizeof(T));
+        auto thread_start = omp_get_thread_num() * points_per_thread;
+        auto thread_length = std::min(points_per_thread, input.num_points - thread_start);
+        auto input_thread = input.slice(thread_start, thread_length);
+
+        compute_histogram_impl(input_thread, histogram, compute_bin_index);
+#pragma omp barrier
+
+#pragma omp single
+        {
+            // Process histograms
+            std::size_t accumulator = 0;
+            for (std::size_t i = 0; i < info.num_bins_total(); ++i) {
+                std::size_t bin_count = 0;
+
+                for (std::size_t j = 0; j < omp_get_num_threads(); ++j) {
+                    auto bin_thread_count = histogram_alloc[j * histogram_stride + i];
+                    accumulator += bin_thread_count;
+                    bin_count += bin_thread_count;
+                    histogram_alloc[j * histogram_stride + i] = accumulator;
+                }
+
+                num_points_per_bin[i] = bin_count;
+            }
+        }
+
+        move_points_by_histogram_impl(
+            histogram, input_thread, output, compute_bin_index, write_transformed_coordinate);
+    }
+}
+
+} // namespace detail
+
 #define COUNTING_SORT_SIGNATURE(NAME, T, Dim)                                                      \
     void NAME(                                                                                     \
         nu_point_collection<Dim, const T> const &input, FoldRescaleRange input_range,              \
@@ -133,12 +198,14 @@ void move_points_by_histogram(
     }
 
 DEFINE_COUNTING_SORT_FROM_IMPL(nu_point_counting_sort_direct_singlethreaded)
+DEFINE_COUNTING_SORT_FROM_IMPL(nu_point_counting_sort_direct_omp)
 DEFINE_COUNTING_SORT_FROM_IMPL(nu_point_counting_sort_blocked_singlethreaded)
 
 #undef DEFINE_COUNTING_SORT_FROM_IMPL
 
 #define INSTANTIATE(T, Dim)                                                                        \
     template COUNTING_SORT_SIGNATURE(nu_point_counting_sort_direct_singlethreaded, T, Dim);        \
+    template COUNTING_SORT_SIGNATURE(nu_point_counting_sort_direct_omp, T, Dim);                   \
     template COUNTING_SORT_SIGNATURE(nu_point_counting_sort_blocked_singlethreaded, T, Dim);
 
 INSTANTIATE(float, 1);

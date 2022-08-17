@@ -98,6 +98,21 @@ template <std::size_t Dim, typename T> struct nu_point_collection {
         : num_points(other.num_points), coordinates(), strengths(other.strengths) {
         std::copy(other.coordinates.begin(), other.coordinates.end(), coordinates.begin());
     }
+
+    /** Slices the collection of non-uniform point into a contiguous sub-collection
+     * starting at the given offset and with the given extent.
+     * 
+     */
+    nu_point_collection<Dim, T> slice(std::size_t offset, std::size_t length) const noexcept {
+        nu_point_collection<Dim, T> result;
+        result.num_points = length;
+        result.strengths = strengths + offset * 2;
+
+        for (std::size_t i = 0; i < Dim; ++i) {
+            result.coordinates[i] = coordinates[i] + offset;
+        }
+        return result;
+    }
 };
 
 /** This structure captures the exact information required to deduce

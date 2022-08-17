@@ -42,7 +42,7 @@ set (BUILD_TESTING ON)
 FetchContent_Declare(
     ittapi
     GIT_REPOSITORY https://github.com/intel/ittapi.git
-    GIT_TAG 5b3410bb6874acf3383c1968534433411bc1df5e)
+    GIT_TAG 2428ed97aa977c66b30940081e7d3e9b1a3c740)
 set(ITT_API_IPT_SUPPORT ON CACHE BOOL "" FORCE)
 FetchContent_MakeAvailable(ittapi)
 

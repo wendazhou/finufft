@@ -161,6 +161,45 @@ void move_points_by_histogram_impl(
         input, compute_bin_index, move_points, write_transformed_coordinate);
 }
 
+/** Generic implementation for single-threaded sort.
+ *
+ */
+template <typename T, std::size_t Dim, typename Impl>
+void nu_point_counting_sort_singlethreaded_impl(
+    nu_point_collection<Dim, const T> const &input, nu_point_collection<Dim, T> const &output,
+    std::size_t *num_points_per_bin, std::size_t num_bins, Impl& impl) {
+
+    auto histogram_alloc = allocate_aligned_array<std::size_t>(num_bins, 64);
+    auto histogram = tcb::span<std::size_t>(histogram_alloc.get(), num_bins);
+    std::memset(histogram.data(), 0, histogram.size_bytes());
+
+    impl.compute_histogram(input, histogram);
+
+    std::copy(histogram.begin(), histogram.end(), num_points_per_bin);
+    std::partial_sum(histogram.begin(), histogram.end(), histogram.begin());
+
+    impl.move_points_by_histogram(histogram, input, output);
+}
+
+template <
+    typename T, std::size_t Dim, typename BinIndexFunctor, typename WriteTransformedCoordinate>
+struct DirectSinglethreadedImpl {
+    BinIndexFunctor compute_bin_index_;
+    WriteTransformedCoordinate write_transformed_coordinate_;
+
+    void compute_histogram(
+        nu_point_collection<Dim, const T> const &input, tcb::span<std::size_t> histogram) {
+        compute_histogram_impl(input, histogram, compute_bin_index_);
+    }
+
+    void move_points_by_histogram(
+        tcb::span<std::size_t> histogram, nu_point_collection<Dim, const T> const &input,
+        nu_point_collection<Dim, T> const &output) {
+        move_points_by_histogram_impl(
+            histogram, input, output, compute_bin_index_, write_transformed_coordinate_);
+    }
+};
+
 /** Parametrized single-threaded counting sort with direct data movement.
  *
  * This function provides a generic implementation of a counting sort, based
@@ -180,17 +219,9 @@ void nu_point_counting_sort_direct_singlethreaded_impl(
     BinIndexFunctor const &compute_bin_index,
     WriteTransformedCoordinate const &write_transformed_coordinate) {
 
-    auto histogram_alloc = allocate_aligned_array<std::size_t>(info.num_bins_total(), 64);
-    auto histogram = tcb::span<std::size_t>(histogram_alloc.get(), info.num_bins_total());
-    std::memset(histogram.data(), 0, histogram.size_bytes());
-
-    compute_histogram_impl(input, histogram, compute_bin_index);
-    std::copy(histogram.begin(), histogram.end(), num_points_per_bin);
-
-    std::partial_sum(histogram.begin(), histogram.end(), histogram.begin());
-
-    move_points_by_histogram_impl(
-        histogram, input, output, compute_bin_index, write_transformed_coordinate);
+    DirectSinglethreadedImpl<T, Dim, BinIndexFunctor const&, WriteTransformedCoordinate const&> impl{
+        compute_bin_index, write_transformed_coordinate};
+    nu_point_counting_sort_singlethreaded_impl(input, output, num_points_per_bin, info.num_bins_total(), impl);
 }
 
 /** Reorders points into sorted order by using the given set of partial histogram sums.

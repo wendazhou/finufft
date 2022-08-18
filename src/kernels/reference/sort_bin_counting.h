@@ -27,6 +27,10 @@ void nu_point_counting_sort_direct_singlethreaded(
     IntBinInfo<T, Dim> const &info);
 
 template <typename T, std::size_t Dim>
+SortPointsPlannedFunctor<T, Dim> make_sort_counting_direct_singlethreaded(
+    FoldRescaleRange const &input_range, IntBinInfo<T, Dim> const &info);
+
+template <typename T, std::size_t Dim>
 void nu_point_counting_sort_direct_omp(
     nu_point_collection<Dim, const T> const &input, FoldRescaleRange input_range,
     nu_point_collection<Dim, T> const &output, std::size_t *num_points_per_bin,

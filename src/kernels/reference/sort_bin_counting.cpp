@@ -24,6 +24,7 @@ namespace finufft {
 namespace spreading {
 namespace reference {
 
+namespace {
 template <std::size_t Unroll, typename T, std::size_t Dim, typename FoldRescale>
 struct ComputeBinIndex {
     IntBinInfo<T, Dim> info;
@@ -86,31 +87,65 @@ struct ComputeBinIndex {
     }
 };
 
-template <typename T, std::size_t Dim>
-void compute_histogram(
-    nu_point_collection<Dim, const T> const &input, tcb::span<std::size_t> histogram,
-    IntBinInfo<T, Dim> const &info, FoldRescaleRange input_range) {
+template <typename T, FoldRescaleRange input_range> struct FoldRescaleScalar;
+template <typename T>
+struct FoldRescaleScalar<T, FoldRescaleRange::Identity> : FoldRescaleIdentity<T> {};
+template <typename T> struct FoldRescaleScalar<T, FoldRescaleRange::Pi> : FoldRescalePi<T> {};
+
+template <typename T, std::size_t Dim> struct NuSortImplScalar {
+    template <FoldRescaleRange input_range> struct Impl {
+        ComputeBinIndex<1, T, Dim, FoldRescaleScalar<T, input_range>> compute_bin_index_;
+        detail::WriteTransformedCoordinateScalar<T, Dim, 1> write_transformed_coordinate_;
+
+        explicit Impl(IntBinInfo<T, Dim> const &info)
+            : compute_bin_index_(info, FoldRescaleScalar<T, input_range>{}),
+              write_transformed_coordinate_() {}
+
+        void compute_histogram(
+            nu_point_collection<Dim, const T> const &input, tcb::span<std::size_t> histogram) {
+            detail::compute_histogram_impl(input, histogram, compute_bin_index_);
+        }
+
+        void move_points_by_histogram(
+            tcb::span<std::size_t> histogram, nu_point_collection<Dim, const T> const &input,
+            nu_point_collection<Dim, T> const &output) {
+            detail::move_points_by_histogram_impl(
+                histogram, input, output, compute_bin_index_, write_transformed_coordinate_);
+        }
+    };
+};
+
+} // namespace
+
+/** Make single-threaded sort functor from the given implementation.
+ * 
+ */
+template <typename T, std::size_t Dim, template <FoldRescaleRange> typename Impl>
+SortPointsPlannedFunctor<T, Dim>
+make_sort_functor_singlethreaded(FoldRescaleRange const &input_range, IntBinInfo<T, Dim> const &info) {
     if (input_range == FoldRescaleRange::Identity) {
-        finufft::spreading::reference::detail::compute_histogram_impl(
-            input, histogram,
-            ComputeBinIndex<64 / sizeof(T), T, Dim, FoldRescaleIdentity<T>>(
-                info, FoldRescaleIdentity<T>{}));
+        return [impl = Impl<FoldRescaleRange::Identity>(info), num_bins = info.num_bins_total()](
+                   nu_point_collection<Dim, const T> const &input,
+                   nu_point_collection<Dim, T> const &output,
+                   std::size_t *num_points_per_bin) mutable {
+            detail::nu_point_counting_sort_singlethreaded_impl(
+                input, output, num_points_per_bin, num_bins, impl);
+        };
     } else {
-        finufft::spreading::reference::detail::compute_histogram_impl(
-            input, histogram,
-            ComputeBinIndex<64 / sizeof(T), T, Dim, FoldRescalePi<T>>(info, FoldRescalePi<T>{}));
+        return [impl = Impl<FoldRescaleRange::Pi>(info), num_bins = info.num_bins_total()](
+                   nu_point_collection<Dim, const T> const &input,
+                   nu_point_collection<Dim, T> const &output,
+                   std::size_t *num_points_per_bin) mutable {
+            detail::nu_point_counting_sort_singlethreaded_impl(
+                input, output, num_points_per_bin, num_bins, impl);
+        };
     }
 }
 
-template void compute_histogram(
-    nu_point_collection<1, const float> const &input, tcb::span<std::size_t> histogram,
-    IntBinInfo<float, 1> const &info, FoldRescaleRange input_range);
-
-template <typename T, std::size_t Dim, typename BinIndexFunctor>
-void move_points_by_histogram(
-    tcb::span<std::size_t> histogram, nu_point_collection<Dim, const T> const &input,
-    nu_point_collection<Dim, T> const &output, BinIndexFunctor const &compute_bin_index) {
-    detail::move_points_by_histogram_impl(histogram, input, output, compute_bin_index);
+template <typename T, std::size_t Dim>
+SortPointsPlannedFunctor<T, Dim> make_sort_counting_direct_singlethreaded(
+    FoldRescaleRange const &input_range, IntBinInfo<T, Dim> const &info) {
+    return make_sort_functor_singlethreaded<T, Dim, NuSortImplScalar<T, Dim>::template Impl>(input_range, info);
 }
 
 namespace detail {
@@ -184,25 +219,34 @@ void nu_point_counting_sort_direct_omp_impl(
 
 #define COUNTING_SORT_SIGNATURE(NAME, T, Dim)                                                      \
     void NAME(                                                                                     \
-        nu_point_collection<Dim, const T> const &input, FoldRescaleRange input_range,              \
-        nu_point_collection<Dim, T> const &output, std::size_t *num_points_per_bin,                \
+        nu_point_collection<Dim, const T> const &input,                                            \
+        FoldRescaleRange input_range,                                                              \
+        nu_point_collection<Dim, T> const &output,                                                 \
+        std::size_t *num_points_per_bin,                                                           \
         IntBinInfo<T, Dim> const &info)
 
 #define DEFINE_COUNTING_SORT_FROM_IMPL(NAME)                                                       \
     template <typename T, std::size_t Dim> COUNTING_SORT_SIGNATURE(NAME, T, Dim) {                 \
         const std::size_t unroll = 1;                                                              \
+        using WriteTransformedCoordinate =                                                         \
+            detail::WriteTransformedCoordinateScalar<T, Dim, unroll>;                              \
         auto write_transformed_coordinate =                                                        \
             detail::WriteTransformedCoordinateScalar<T, Dim, unroll>{};                            \
                                                                                                    \
         if (input_range == FoldRescaleRange::Identity) {                                           \
-            detail::NAME##_impl(                                                                   \
-                input, output, num_points_per_bin, info,                                           \
-                ComputeBinIndex<unroll, T, Dim, FoldRescaleIdentity<T>>(                           \
-                    info, FoldRescaleIdentity<T>{}),                                               \
-                write_transformed_coordinate);                                                     \
+            using BinIndexFunctor = ComputeBinIndex<unroll, T, Dim, FoldRescaleIdentity<T>>;       \
+            detail::DirectSinglethreadedImpl<T, Dim, BinIndexFunctor, WriteTransformedCoordinate>  \
+                impl{                                                                              \
+                    BinIndexFunctor{info, FoldRescaleIdentity<T>{}},                               \
+                    write_transformed_coordinate};                                                 \
+            detail::nu_point_counting_sort_singlethreaded_impl(                                    \
+                input, output, num_points_per_bin, info.num_bins_total(), impl);                   \
         } else {                                                                                   \
             detail::NAME##_impl(                                                                   \
-                input, output, num_points_per_bin, info,                                           \
+                input,                                                                             \
+                output,                                                                            \
+                num_points_per_bin,                                                                \
+                info,                                                                              \
                 ComputeBinIndex<unroll, T, Dim, FoldRescalePi<T>>(info, FoldRescalePi<T>{}),       \
                 write_transformed_coordinate);                                                     \
         }                                                                                          \
@@ -217,7 +261,9 @@ DEFINE_COUNTING_SORT_FROM_IMPL(nu_point_counting_sort_blocked_singlethreaded)
 #define INSTANTIATE(T, Dim)                                                                        \
     template COUNTING_SORT_SIGNATURE(nu_point_counting_sort_direct_singlethreaded, T, Dim);        \
     template COUNTING_SORT_SIGNATURE(nu_point_counting_sort_direct_omp, T, Dim);                   \
-    template COUNTING_SORT_SIGNATURE(nu_point_counting_sort_blocked_singlethreaded, T, Dim);
+    template COUNTING_SORT_SIGNATURE(nu_point_counting_sort_blocked_singlethreaded, T, Dim);       \
+    template SortPointsPlannedFunctor<T, Dim> make_sort_counting_direct_singlethreaded(            \
+        FoldRescaleRange const &input_range, IntBinInfo<T, Dim> const &info);
 
 INSTANTIATE(float, 1);
 INSTANTIATE(float, 2);

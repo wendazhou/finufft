@@ -92,21 +92,32 @@ template <typename T>
 struct FoldRescaleScalar<T, FoldRescaleRange::Identity> : FoldRescaleIdentity<T> {};
 template <typename T> struct FoldRescaleScalar<T, FoldRescaleRange::Pi> : FoldRescalePi<T> {};
 
-/**
+template <typename T, std::size_t Dim> struct ComputeBinIndexScalar {
+    template <FoldRescaleRange input_range>
+    struct Impl : ComputeBinIndex<1, T, Dim, FoldRescaleScalar<T, input_range>> {
+        Impl(IntBinInfo<T, Dim> const &info)
+            : ComputeBinIndex<1, T, Dim, FoldRescaleScalar<T, input_range>>(
+                  info, FoldRescaleScalar<T, input_range>{}) {}
+    };
+};
+
+/** Generic implementation of the elements of a counting sort.
+ * 
+ * This functor captures all state (except histogram) associated with
+ * the implementation of a counting sort.
  *
  */
-template <typename T, std::size_t Dim, typename MovePoints = detail::MovePointsDirect<T, Dim>>
+template <
+    typename T, std::size_t Dim, template <FoldRescaleRange> typename ComputeBinIndex,
+    typename WriteTransformedCoordinate, typename MovePoints>
 struct NuSortImplScalar {
     template <FoldRescaleRange input_range> struct Impl {
-        [[no_unique_address]] ComputeBinIndex<1, T, Dim, FoldRescaleScalar<T, input_range>>
-            compute_bin_index_;
-        [[no_unique_address]] detail::WriteTransformedCoordinateScalar<T, Dim, 1>
-            write_transformed_coordinate_;
+        [[no_unique_address]] ComputeBinIndex<input_range> compute_bin_index_;
+        [[no_unique_address]] WriteTransformedCoordinate write_transformed_coordinate_;
         [[no_unique_address]] MovePoints move_points_;
 
         explicit Impl(IntBinInfo<T, Dim> const &info)
-            : compute_bin_index_(info, FoldRescaleScalar<T, input_range>{}),
-              write_transformed_coordinate_(), move_points_(info) {}
+            : compute_bin_index_(info), write_transformed_coordinate_(), move_points_(info) {}
 
         void compute_histogram(
             nu_point_collection<Dim, const T> const &input, tcb::span<std::size_t> histogram) {
@@ -124,23 +135,73 @@ struct NuSortImplScalar {
     };
 };
 
+/** Single-threaded counting sort implementation delegating to given histogram computation
+ * and data movement implementations.
+ * 
+ */
+template <typename T, std::size_t Dim, typename Impl> struct SortPointsSingleThreadedImpl {
+    Impl impl_;
+    finufft::aligned_unique_array<std::size_t> histogram_alloc_;
+    tcb::span<std::size_t> histogram_;
+
+    explicit SortPointsSingleThreadedImpl(IntBinInfo<T, Dim> const &info)
+        : impl_(info),
+          histogram_alloc_(finufft::allocate_aligned_array<std::size_t>(info.num_bins_total(), 64)),
+          histogram_(histogram_alloc_.get(), info.num_bins_total()) {}
+
+    void operator()(
+        nu_point_collection<Dim, const T> const &input, nu_point_collection<Dim, T> const &output,
+        std::size_t *num_points_per_bin) {
+
+        std::memset(histogram_.data(), 0, histogram_.size_bytes());
+        impl_.compute_histogram(input, histogram_);
+
+        std::memcpy(num_points_per_bin, histogram_.data(), histogram_.size_bytes());
+        std::partial_sum(histogram_.begin(), histogram_.end(), histogram_.begin());
+
+        impl_.move_points_by_histogram(histogram_, input, output);
+    }
+};
+
+template <typename T, std::size_t Dim, template <FoldRescaleRange> typename Impl>
+SortPointsPlannedFunctor<T, Dim> make_sort_functor_singlethreaded(
+    FoldRescaleRange const &input_range, IntBinInfo<T, Dim> const &info) {
+    if (input_range == FoldRescaleRange::Identity) {
+        return SortPointsSingleThreadedImpl<T, Dim, Impl<FoldRescaleRange::Identity>>(info);
+    } else {
+        return SortPointsSingleThreadedImpl<T, Dim, Impl<FoldRescaleRange::Pi>>(info);
+    }
+}
+
 } // namespace
 
 template <typename T, std::size_t Dim>
 SortPointsPlannedFunctor<T, Dim> make_sort_counting_direct_singlethreaded(
     FoldRescaleRange const &input_range, IntBinInfo<T, Dim> const &info) {
-    return detail::
-        make_sort_functor_singlethreaded<T, Dim, NuSortImplScalar<T, Dim>::template Impl>(
-            input_range, info);
+    typedef NuSortImplScalar<
+        T,
+        Dim,
+        ComputeBinIndexScalar<T, Dim>::template Impl,
+        detail::WriteTransformedCoordinateScalar<T, Dim, 1>,
+        detail::MovePointsDirect<T, Dim>>
+        impl_type;
+
+    return make_sort_functor_singlethreaded<T, Dim, impl_type::template Impl>(
+        input_range, info);
 }
 
 template <typename T, std::size_t Dim>
 SortPointsPlannedFunctor<T, Dim> make_sort_counting_blocked_singlethreaded(
     FoldRescaleRange const &input_range, IntBinInfo<T, Dim> const &info) {
-    return detail::make_sort_functor_singlethreaded<
+    typedef NuSortImplScalar<
         T,
         Dim,
-        NuSortImplScalar<T, Dim, detail::MovePointsBlocked<T, Dim, 128>>::template Impl>(
+        ComputeBinIndexScalar<T, Dim>::template Impl,
+        detail::WriteTransformedCoordinateScalar<T, Dim, 1>,
+        detail::MovePointsBlocked<T, Dim, 128>>
+        impl_type;
+
+    return make_sort_functor_singlethreaded<T, Dim, impl_type::template Impl>(
         input_range, info);
 }
 
@@ -248,11 +309,21 @@ void nu_point_counting_sort_direct_omp_impl(
         }                                                                                          \
     }
 
-DEFINE_COUNTING_SORT_FROM_IMPL(nu_point_counting_sort_direct_singlethreaded)
 DEFINE_COUNTING_SORT_FROM_IMPL(nu_point_counting_sort_direct_omp)
-DEFINE_COUNTING_SORT_FROM_IMPL(nu_point_counting_sort_blocked_singlethreaded)
 
 #undef DEFINE_COUNTING_SORT_FROM_IMPL
+
+template <typename T, std::size_t Dim>
+COUNTING_SORT_SIGNATURE(nu_point_counting_sort_direct_singlethreaded, T, Dim) {
+    return make_sort_counting_direct_singlethreaded<T, Dim>(input_range, info)(
+        input, output, num_points_per_bin);
+}
+
+template <typename T, std::size_t Dim>
+COUNTING_SORT_SIGNATURE(nu_point_counting_sort_blocked_singlethreaded, T, Dim) {
+    return make_sort_counting_blocked_singlethreaded<T, Dim>(input_range, info)(
+        input, output, num_points_per_bin);
+}
 
 #define INSTANTIATE(T, Dim)                                                                        \
     template COUNTING_SORT_SIGNATURE(nu_point_counting_sort_direct_singlethreaded, T, Dim);        \

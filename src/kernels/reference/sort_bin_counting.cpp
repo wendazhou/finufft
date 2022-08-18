@@ -92,14 +92,21 @@ template <typename T>
 struct FoldRescaleScalar<T, FoldRescaleRange::Identity> : FoldRescaleIdentity<T> {};
 template <typename T> struct FoldRescaleScalar<T, FoldRescaleRange::Pi> : FoldRescalePi<T> {};
 
-template <typename T, std::size_t Dim> struct NuSortImplScalar {
+/**
+ *
+ */
+template <typename T, std::size_t Dim, typename MovePoints = detail::MovePointsDirect<T, Dim>>
+struct NuSortImplScalar {
     template <FoldRescaleRange input_range> struct Impl {
-        ComputeBinIndex<1, T, Dim, FoldRescaleScalar<T, input_range>> compute_bin_index_;
-        detail::WriteTransformedCoordinateScalar<T, Dim, 1> write_transformed_coordinate_;
+        [[no_unique_address]] ComputeBinIndex<1, T, Dim, FoldRescaleScalar<T, input_range>>
+            compute_bin_index_;
+        [[no_unique_address]] detail::WriteTransformedCoordinateScalar<T, Dim, 1>
+            write_transformed_coordinate_;
+        [[no_unique_address]] MovePoints move_points_;
 
         explicit Impl(IntBinInfo<T, Dim> const &info)
             : compute_bin_index_(info, FoldRescaleScalar<T, input_range>{}),
-              write_transformed_coordinate_() {}
+              write_transformed_coordinate_(), move_points_(info) {}
 
         void compute_histogram(
             nu_point_collection<Dim, const T> const &input, tcb::span<std::size_t> histogram) {
@@ -109,43 +116,32 @@ template <typename T, std::size_t Dim> struct NuSortImplScalar {
         void move_points_by_histogram(
             tcb::span<std::size_t> histogram, nu_point_collection<Dim, const T> const &input,
             nu_point_collection<Dim, T> const &output) {
-            detail::move_points_by_histogram_impl(
-                histogram, input, output, compute_bin_index_, write_transformed_coordinate_);
+
+            move_points_.initialize(input, histogram, output);
+            detail::process_bin_function<T, Dim>(
+                input, compute_bin_index_, move_points_, write_transformed_coordinate_);
         }
     };
 };
 
 } // namespace
 
-/** Make single-threaded sort functor from the given implementation.
- * 
- */
-template <typename T, std::size_t Dim, template <FoldRescaleRange> typename Impl>
-SortPointsPlannedFunctor<T, Dim>
-make_sort_functor_singlethreaded(FoldRescaleRange const &input_range, IntBinInfo<T, Dim> const &info) {
-    if (input_range == FoldRescaleRange::Identity) {
-        return [impl = Impl<FoldRescaleRange::Identity>(info), num_bins = info.num_bins_total()](
-                   nu_point_collection<Dim, const T> const &input,
-                   nu_point_collection<Dim, T> const &output,
-                   std::size_t *num_points_per_bin) mutable {
-            detail::nu_point_counting_sort_singlethreaded_impl(
-                input, output, num_points_per_bin, num_bins, impl);
-        };
-    } else {
-        return [impl = Impl<FoldRescaleRange::Pi>(info), num_bins = info.num_bins_total()](
-                   nu_point_collection<Dim, const T> const &input,
-                   nu_point_collection<Dim, T> const &output,
-                   std::size_t *num_points_per_bin) mutable {
-            detail::nu_point_counting_sort_singlethreaded_impl(
-                input, output, num_points_per_bin, num_bins, impl);
-        };
-    }
-}
-
 template <typename T, std::size_t Dim>
 SortPointsPlannedFunctor<T, Dim> make_sort_counting_direct_singlethreaded(
     FoldRescaleRange const &input_range, IntBinInfo<T, Dim> const &info) {
-    return make_sort_functor_singlethreaded<T, Dim, NuSortImplScalar<T, Dim>::template Impl>(input_range, info);
+    return detail::
+        make_sort_functor_singlethreaded<T, Dim, NuSortImplScalar<T, Dim>::template Impl>(
+            input_range, info);
+}
+
+template <typename T, std::size_t Dim>
+SortPointsPlannedFunctor<T, Dim> make_sort_counting_blocked_singlethreaded(
+    FoldRescaleRange const &input_range, IntBinInfo<T, Dim> const &info) {
+    return detail::make_sort_functor_singlethreaded<
+        T,
+        Dim,
+        NuSortImplScalar<T, Dim, detail::MovePointsBlocked<T, Dim, 128>>::template Impl>(
+        input_range, info);
 }
 
 namespace detail {
@@ -263,6 +259,8 @@ DEFINE_COUNTING_SORT_FROM_IMPL(nu_point_counting_sort_blocked_singlethreaded)
     template COUNTING_SORT_SIGNATURE(nu_point_counting_sort_direct_omp, T, Dim);                   \
     template COUNTING_SORT_SIGNATURE(nu_point_counting_sort_blocked_singlethreaded, T, Dim);       \
     template SortPointsPlannedFunctor<T, Dim> make_sort_counting_direct_singlethreaded(            \
+        FoldRescaleRange const &input_range, IntBinInfo<T, Dim> const &info);                      \
+    template SortPointsPlannedFunctor<T, Dim> make_sort_counting_blocked_singlethreaded(           \
         FoldRescaleRange const &input_range, IntBinInfo<T, Dim> const &info);
 
 INSTANTIATE(float, 1);

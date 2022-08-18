@@ -51,13 +51,13 @@ template <
     typename T, std::size_t Dim, typename BinIndexFunctor, typename ProcessBinFunctor,
     typename WriteTransformedCoordinate>
 void process_bin_function(
-    nu_point_collection<Dim, const T> const &input, BinIndexFunctor const &compute_bin_index,
+    nu_point_collection<Dim, const T> const &input, BinIndexFunctor &&compute_bin_index,
     ProcessBinFunctor &&process_bin_index,
-    WriteTransformedCoordinate const &write_transformed_coordinate) {
+    WriteTransformedCoordinate &&write_transformed_coordinate) {
 
-    constexpr std::size_t unroll = BinIndexFunctor::unroll;
-    typedef typename BinIndexFunctor::index_type index_type;
-    typedef typename WriteTransformedCoordinate::value_type value_type;
+    constexpr std::size_t unroll = std::remove_reference_t<BinIndexFunctor>::unroll;
+    typedef typename std::remove_reference_t<BinIndexFunctor>::index_type index_type;
+    typedef typename std::remove_reference_t<WriteTransformedCoordinate>::value_type value_type;
 
     BinIndexValue<unroll, index_type, value_type> bin_index_value;
 
@@ -131,6 +131,41 @@ template <typename T, std::size_t Dim, std::size_t Unroll> struct WriteTransform
     void operator()(value_type &v, std::size_t d, std::size_t j, T const &t) const { v[d][j] = t; }
 };
 
+template <typename T, std::size_t Dim> struct MovePointsDirect {
+    nu_point_collection<Dim, const T> input_;
+    nu_point_collection<Dim, T> output_;
+    tcb::span<std::size_t> histogram_;
+
+    explicit MovePointsDirect(IntBinInfo<T, Dim> const &info) {}
+
+    void initialize(
+        nu_point_collection<Dim, const T> const &input, tcb::span<std::size_t> histogram,
+        nu_point_collection<Dim, T> const &output) {
+        input_ = input;
+        output_ = output;
+        histogram_ = histogram;
+    }
+
+    template <typename BinIndexValue, bool Final>
+    void operator()(
+        // TODO: remove this argument
+        nu_point_collection<Dim, const T> const &, std::size_t i, std::size_t limit,
+        BinIndexValue const &bin_index_value, std::integral_constant<bool, Final>) {
+        for (std::size_t j = 0; j < limit; ++j) {
+            auto b = bin_index_value.bin_index[j];
+            auto output_index = --histogram_[b];
+
+            for (std::size_t d = 0; d < Dim; ++d) {
+                output_.coordinates[d][output_index] = bin_index_value.value[d][j];
+            }
+            std::memcpy(
+                output_.strengths + 2 * output_index,
+                input_.strengths + 2 * (i + j),
+                2 * sizeof(T));
+        }
+    }
+};
+
 /** Reorders points into sorted order by using the given set of partial histogram sums.
  *
  */
@@ -167,7 +202,7 @@ void move_points_by_histogram_impl(
 template <typename T, std::size_t Dim, typename Impl>
 void nu_point_counting_sort_singlethreaded_impl(
     nu_point_collection<Dim, const T> const &input, nu_point_collection<Dim, T> const &output,
-    std::size_t *num_points_per_bin, std::size_t num_bins, Impl& impl) {
+    std::size_t *num_points_per_bin, std::size_t num_bins, Impl &impl) {
 
     auto histogram_alloc = allocate_aligned_array<std::size_t>(num_bins, 64);
     auto histogram = tcb::span<std::size_t>(histogram_alloc.get(), num_bins);
@@ -179,6 +214,31 @@ void nu_point_counting_sort_singlethreaded_impl(
     std::partial_sum(histogram.begin(), histogram.end(), histogram.begin());
 
     impl.move_points_by_histogram(histogram, input, output);
+}
+
+/** Make single-threaded sort functor from the given implementation.
+ *
+ */
+template <typename T, std::size_t Dim, template <FoldRescaleRange> typename Impl>
+SortPointsPlannedFunctor<T, Dim> make_sort_functor_singlethreaded(
+    FoldRescaleRange const &input_range, IntBinInfo<T, Dim> const &info) {
+    if (input_range == FoldRescaleRange::Identity) {
+        return [impl = Impl<FoldRescaleRange::Identity>(info), num_bins = info.num_bins_total()](
+                   nu_point_collection<Dim, const T> const &input,
+                   nu_point_collection<Dim, T> const &output,
+                   std::size_t *num_points_per_bin) mutable {
+            detail::nu_point_counting_sort_singlethreaded_impl(
+                input, output, num_points_per_bin, num_bins, impl);
+        };
+    } else {
+        return [impl = Impl<FoldRescaleRange::Pi>(info), num_bins = info.num_bins_total()](
+                   nu_point_collection<Dim, const T> const &input,
+                   nu_point_collection<Dim, T> const &output,
+                   std::size_t *num_points_per_bin) mutable {
+            detail::nu_point_counting_sort_singlethreaded_impl(
+                input, output, num_points_per_bin, num_bins, impl);
+        };
+    }
 }
 
 template <
@@ -219,9 +279,10 @@ void nu_point_counting_sort_direct_singlethreaded_impl(
     BinIndexFunctor const &compute_bin_index,
     WriteTransformedCoordinate const &write_transformed_coordinate) {
 
-    DirectSinglethreadedImpl<T, Dim, BinIndexFunctor const&, WriteTransformedCoordinate const&> impl{
-        compute_bin_index, write_transformed_coordinate};
-    nu_point_counting_sort_singlethreaded_impl(input, output, num_points_per_bin, info.num_bins_total(), impl);
+    DirectSinglethreadedImpl<T, Dim, BinIndexFunctor const &, WriteTransformedCoordinate const &>
+        impl{compute_bin_index, write_transformed_coordinate};
+    nu_point_counting_sort_singlethreaded_impl(
+        input, output, num_points_per_bin, info.num_bins_total(), impl);
 }
 
 /** Reorders points into sorted order by using the given set of partial histogram sums.
@@ -258,21 +319,30 @@ template <typename T, std::size_t Dim, std::size_t BlockSize> struct MovePointsB
 
     std::size_t bin_buffer_stride;
 
-    nu_point_collection<Dim, T> const &output;
-    tcb::span<std::size_t> histogram;
+    nu_point_collection<Dim, const T> input_;
+    nu_point_collection<Dim, T> output_;
+    tcb::span<std::size_t> histogram_;
 
-    MovePointsBlocked(tcb::span<std::size_t> histogram, nu_point_collection<Dim, T> const &output)
-        : buffer_(finufft::allocate_aligned_array<T>(histogram.size() * BlockSize * (Dim + 2), 64)),
-          block_ptr_(histogram.size()), block_size_(histogram.size()),
-          bin_buffer_stride(BlockSize * (Dim + 2)), output(output), histogram(histogram) {
+    MovePointsBlocked(IntBinInfo<T, Dim> const &info)
+        : buffer_(finufft::allocate_aligned_array<T>(
+              info.num_bins_total() * BlockSize * (Dim + 2), 64)),
+          block_ptr_(info.num_bins_total()), block_size_(info.num_bins_total()),
+          bin_buffer_stride(BlockSize * (Dim + 2)) {}
+
+    void initialize(
+        nu_point_collection<Dim, const T> const &input, tcb::span<std::size_t> histogram,
+        nu_point_collection<Dim, T> const &output) {
+        input_ = input;
+        histogram_ = histogram;
+        output_ = output;
 
         auto AlignElements = (64 / sizeof(T));
 
-        for (std::size_t i = 0; i < histogram.size(); ++i) {
+        for (std::size_t i = 0; i < histogram_.size(); ++i) {
             // set the initial block size to the remainder of the histogram size.
             // This ensures that after processing a full block of this size,
             // the remainder of the blocks are aligned.
-            auto remainder = histogram[i] % AlignElements;
+            auto remainder = histogram_[i] % AlignElements;
             block_size_[i] = BlockSize - (remainder ? (AlignElements - remainder) : 0);
             block_ptr_[i] = block_size_[i];
         }
@@ -280,7 +350,8 @@ template <typename T, std::size_t Dim, std::size_t BlockSize> struct MovePointsB
 
     template <typename BinIndexValue, bool Final>
     void operator()(
-        nu_point_collection<Dim, const T> const &input, std::size_t i, std::size_t limit,
+        // TODO: refactor to remove unused first parameter
+        nu_point_collection<Dim, const T> const &, std::size_t i, std::size_t limit,
         BinIndexValue const &bin_index_value, std::integral_constant<bool, Final>) {
 
         // Get buffer pointer, mark with restrict to help with optimizations.
@@ -299,7 +370,7 @@ template <typename T, std::size_t Dim, std::size_t BlockSize> struct MovePointsB
             }
             std::memcpy(
                 buffer + Dim * BlockSize + 2 * local_bin_offset,
-                input.strengths + 2 * (i + j),
+                input_.strengths + 2 * (i + j),
                 2 * sizeof(T));
 
             if (local_bin_offset == 0) {
@@ -307,17 +378,17 @@ template <typename T, std::size_t Dim, std::size_t BlockSize> struct MovePointsB
                 auto this_block_size = block_size_[bin_index];
 
                 // trigger copy
-                auto offset = histogram[bin_index] - this_block_size;
-                histogram[bin_index] = offset;
+                auto offset = histogram_[bin_index] - this_block_size;
+                histogram_[bin_index] = offset;
 
                 for (std::size_t d = 0; d < Dim; ++d) {
                     std::memcpy(
-                        output.coordinates[d] + offset,
+                        output_.coordinates[d] + offset,
                         buffer + local_buffer + d * BlockSize,
                         this_block_size * sizeof(T));
                 }
                 std::memcpy(
-                    output.strengths + 2 * offset,
+                    output_.strengths + 2 * offset,
                     buffer + local_buffer + Dim * BlockSize,
                     2 * this_block_size * sizeof(T));
 
@@ -339,17 +410,17 @@ template <typename T, std::size_t Dim, std::size_t BlockSize> struct MovePointsB
 
             if (local_offset != this_block_size) {
                 auto partial_block_size = (this_block_size - local_offset);
-                auto offset = histogram[bin_index] - partial_block_size;
+                auto offset = histogram_[bin_index] - partial_block_size;
 
                 for (std::size_t d = 0; d < Dim; ++d) {
                     std::memcpy(
-                        output.coordinates[d] + offset,
+                        output_.coordinates[d] + offset,
                         buffer_.get() + bin_index * bin_buffer_stride + d * BlockSize +
                             local_offset,
                         partial_block_size * sizeof(T));
                 }
                 std::memcpy(
-                    output.strengths + 2 * offset,
+                    output_.strengths + 2 * offset,
                     buffer_.get() + bin_index * bin_buffer_stride + Dim * BlockSize +
                         2 * local_offset,
                     2 * partial_block_size * sizeof(T));
@@ -362,10 +433,13 @@ template <
     typename T, std::size_t Dim, typename BinIndexFunctor, typename WriteTransformedCoordinate>
 void move_points_by_histogram_impl_blocked(
     tcb::span<std::size_t> histogram, nu_point_collection<Dim, const T> const &input,
-    nu_point_collection<Dim, T> const &output, BinIndexFunctor const &compute_bin_index,
+    nu_point_collection<Dim, T> const &output, IntBinInfo<T, Dim> const &info,
+    BinIndexFunctor const &compute_bin_index,
     WriteTransformedCoordinate const &write_transformed_coordinate) {
 
-    MovePointsBlocked<T, Dim, 128> move_points(histogram, output);
+    MovePointsBlocked<T, Dim, 128> move_points(info);
+
+    move_points.initialize(input, histogram, output);
     detail::process_bin_function<T, Dim>(
         input, compute_bin_index, std::move(move_points), write_transformed_coordinate);
 }
@@ -388,7 +462,7 @@ void nu_point_counting_sort_blocked_singlethreaded_impl(
     std::partial_sum(histogram.begin(), histogram.end(), histogram.begin());
 
     move_points_by_histogram_impl_blocked(
-        histogram, input, output, compute_bin_index, write_transformed_coordinate);
+        histogram, input, output, info, compute_bin_index, write_transformed_coordinate);
 }
 
 } // namespace detail

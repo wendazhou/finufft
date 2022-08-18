@@ -146,6 +146,18 @@ TEST(SortBinCountingTest, SingleThreadedBlocked2DReference) {
         finufft::spreading::reference::nu_point_counting_sort_blocked_singlethreaded<float, 2>);
 }
 
+TEST(SortBinCountingTestFactory, SingleThreadedBlocked1DReference) {
+    test_sort_factory<float, 1>(
+        1654,
+        finufft::spreading::reference::make_sort_counting_blocked_singlethreaded<float, 1>);
+}
+
+TEST(SortBinCountingTestFactory, SingleThreadedBlocked2DReference) {
+    test_sort_factory<float, 2>(
+        1654,
+        finufft::spreading::reference::make_sort_counting_blocked_singlethreaded<float, 2>);
+}
+
 
 TEST(SortBinCountingTest, SingleThreadedDirect1DAvx512) {
     test_sort<float, 1>(

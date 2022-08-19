@@ -102,7 +102,7 @@ template <typename T, std::size_t Dim> struct ComputeBinIndexScalar {
 };
 
 /** Generic implementation of the elements of a counting sort.
- * 
+ *
  * This functor captures all state (except histogram) associated with
  * the implementation of a counting sort.
  *
@@ -137,7 +137,7 @@ struct NuSortImplScalar {
 
 /** Single-threaded counting sort implementation delegating to given histogram computation
  * and data movement implementations.
- * 
+ *
  */
 template <typename T, std::size_t Dim, typename Impl> struct SortPointsSingleThreadedImpl {
     Impl impl_;
@@ -163,15 +163,95 @@ template <typename T, std::size_t Dim, typename Impl> struct SortPointsSingleThr
     }
 };
 
-template <typename T, std::size_t Dim, template <FoldRescaleRange> typename Impl>
-SortPointsPlannedFunctor<T, Dim> make_sort_functor_singlethreaded(
-    FoldRescaleRange const &input_range, IntBinInfo<T, Dim> const &info) {
+template <
+    typename T, std::size_t Dim, template <typename, std::size_t, typename> typename Sort,
+    template <FoldRescaleRange> typename Impl>
+SortPointsPlannedFunctor<T, Dim>
+make_sort_functor(FoldRescaleRange const &input_range, IntBinInfo<T, Dim> const &info) {
     if (input_range == FoldRescaleRange::Identity) {
-        return SortPointsSingleThreadedImpl<T, Dim, Impl<FoldRescaleRange::Identity>>(info);
+        return Sort<T, Dim, Impl<FoldRescaleRange::Identity>>(info);
     } else {
-        return SortPointsSingleThreadedImpl<T, Dim, Impl<FoldRescaleRange::Pi>>(info);
+        return Sort<T, Dim, Impl<FoldRescaleRange::Pi>>(info);
     }
 }
+
+template <typename T, std::size_t Dim, typename Impl> struct SortPointsOmpImpl {
+    std::vector<Impl> impl_;
+    finufft::aligned_unique_array<std::size_t> histogram_alloc_;
+    std::size_t num_bins_;
+
+    explicit SortPointsOmpImpl(IntBinInfo<T, Dim> const &info) : num_bins_(info.num_bins_total()) {
+        auto max_threads = omp_get_max_threads();
+        impl_.reserve(max_threads);
+        for (std::size_t i = 0; i < max_threads; ++i) {
+            impl_.emplace_back(info);
+        }
+
+        auto bins_rounded = finufft::round_to_next_multiple(
+            num_bins_, hardware_destructive_interference_size / sizeof(std::size_t));
+        histogram_alloc_ =
+            finufft::allocate_aligned_array<std::size_t>(bins_rounded * max_threads, 64);
+    }
+
+    void operator()(
+        nu_point_collection<Dim, const T> const &input, nu_point_collection<Dim, T> const &output,
+        std::size_t *num_points_per_bin) {
+
+        auto histogram_stride = finufft::round_to_next_multiple(
+            num_bins_, hardware_destructive_interference_size / sizeof(std::size_t));
+
+#pragma omp parallel num_threads(impl_.size())
+        {
+            // get local histogram
+            auto histogram = tcb::span<std::size_t>(
+                histogram_alloc_.get() + omp_get_thread_num() * histogram_stride, num_bins_);
+            std::memset(histogram.data(), 0, histogram.size_bytes());
+
+            // Compute slice to be processed by this thread
+            auto points_per_thread = finufft::round_to_next_multiple(
+                input.num_points / omp_get_num_threads(),
+                hardware_destructive_interference_size / sizeof(T));
+            auto thread_start = omp_get_thread_num() * points_per_thread;
+            auto thread_length = thread_start < input.num_points
+                                     ? std::min(points_per_thread, input.num_points - thread_start)
+                                     : 0;
+            auto input_thread = input.slice(thread_start, thread_length);
+
+            auto &impl = impl_[omp_get_thread_num()];
+
+            // Compute histogram for all relevant slices
+            if (input_thread.num_points > 0) {
+                impl.compute_histogram(input_thread, histogram);
+            }
+#pragma omp barrier
+
+#pragma omp single
+            {
+                std::size_t *histogram_global = histogram_alloc_.get();
+
+                // Process histograms
+                std::size_t accumulator = 0;
+                for (std::size_t i = 0; i < num_bins_; ++i) {
+                    std::size_t bin_count = 0;
+
+                    for (std::size_t j = 0; j < omp_get_num_threads(); ++j) {
+                        auto bin_thread_count = histogram_global[j * histogram_stride + i];
+                        accumulator += bin_thread_count;
+                        bin_count += bin_thread_count;
+                        histogram_global[j * histogram_stride + i] = accumulator;
+                    }
+
+                    num_points_per_bin[i] = bin_count;
+                }
+
+                assert(accumulator == input.num_points);
+            }
+
+            // Move points to output
+            impl.move_points_by_histogram(histogram, input_thread, output);
+        }
+    }
+};
 
 } // namespace
 
@@ -186,7 +266,7 @@ SortPointsPlannedFunctor<T, Dim> make_sort_counting_direct_singlethreaded(
         detail::MovePointsDirect<T, Dim>>
         impl_type;
 
-    return make_sort_functor_singlethreaded<T, Dim, impl_type::template Impl>(
+    return make_sort_functor<T, Dim, SortPointsSingleThreadedImpl, impl_type::template Impl>(
         input_range, info);
 }
 
@@ -201,7 +281,22 @@ SortPointsPlannedFunctor<T, Dim> make_sort_counting_blocked_singlethreaded(
         detail::MovePointsBlocked<T, Dim, 128>>
         impl_type;
 
-    return make_sort_functor_singlethreaded<T, Dim, impl_type::template Impl>(
+    return make_sort_functor<T, Dim, SortPointsSingleThreadedImpl, impl_type::template Impl>(
+        input_range, info);
+}
+
+template <typename T, std::size_t Dim>
+SortPointsPlannedFunctor<T, Dim>
+make_sort_counting_direct_omp(FoldRescaleRange const &input_range, IntBinInfo<T, Dim> const &info) {
+    typedef NuSortImplScalar<
+        T,
+        Dim,
+        ComputeBinIndexScalar<T, Dim>::template Impl,
+        detail::WriteTransformedCoordinateScalar<T, Dim, 1>,
+        detail::MovePointsDirect<T, Dim>>
+        impl_type;
+
+    return make_sort_functor<T, Dim, SortPointsOmpImpl, impl_type::template Impl>(
         input_range, info);
 }
 
@@ -332,6 +427,8 @@ COUNTING_SORT_SIGNATURE(nu_point_counting_sort_blocked_singlethreaded, T, Dim) {
     template SortPointsPlannedFunctor<T, Dim> make_sort_counting_direct_singlethreaded(            \
         FoldRescaleRange const &input_range, IntBinInfo<T, Dim> const &info);                      \
     template SortPointsPlannedFunctor<T, Dim> make_sort_counting_blocked_singlethreaded(           \
+        FoldRescaleRange const &input_range, IntBinInfo<T, Dim> const &info);                      \
+    template SortPointsPlannedFunctor<T, Dim> make_sort_counting_direct_omp(                       \
         FoldRescaleRange const &input_range, IntBinInfo<T, Dim> const &info);
 
 INSTANTIATE(float, 1);

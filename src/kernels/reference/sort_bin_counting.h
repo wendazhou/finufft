@@ -36,6 +36,10 @@ void nu_point_counting_sort_direct_omp(
     nu_point_collection<Dim, T> const &output, std::size_t *num_points_per_bin,
     IntBinInfo<T, Dim> const &info);
 
+template <typename T, std::size_t Dim>
+SortPointsPlannedFunctor<T, Dim>
+make_sort_counting_direct_omp(FoldRescaleRange const &input_range, IntBinInfo<T, Dim> const &info);
+
 /** Bin-sort the given collection of non-uniform points.
  *
  * This implementation is single threaded but makes use

@@ -43,11 +43,11 @@ template <typename T, std::size_t Dim> struct IntBinInfo {
     std::array<int64_t, Dim> global_offset;        ///< Offset to use when computing bin index
 
     /** Construct bin information based on the given specification.
-     * 
+     *
      * @param size Size of the underlying target grid
      * @param bin_size Size of each bin
      * @param offset Offset to use when computing bin index
-     * 
+     *
      */
     IntBinInfo(
         tcb::span<const std::size_t, Dim> size, tcb::span<const std::size_t, Dim> bin_size,
@@ -181,7 +181,7 @@ std::size_t compute_bin_index(IntBinInfo<T, Dim> const &info, tcb::span<const T,
 }
 
 template <typename T, std::size_t Dim>
-std::size_t compute_bin_index(IntBinInfo<T, Dim> const &info, std::array<T, Dim> const& coord) {
+std::size_t compute_bin_index(IntBinInfo<T, Dim> const &info, std::array<T, Dim> const &coord) {
     return compute_bin_index(info, tcb::span<const T, Dim>(coord));
 }
 
@@ -286,30 +286,47 @@ F(SortPointsFunctor,
       nu_point_collection<Dim, T> const &, std::size_t *, IntBinInfo<T, Dim> const &) const);
 
 /** Functor for point sorting operation.
- * 
+ *
  * This functor is set up assuming that all meta information about sorting
  * strategy is held by the functor itself, and only takes as parameters
  * the input and output array to operate on.
- * 
+ *
  * @param input A collection of points to be sorted
  * @param output A collection of points to which the sorted points will be written.
  * @param num_points_per_bin An array of length `info.num_bins_total()` to which the number of
  *  points falling into each bin will be written.
- * 
+ *
  */
-F(SortPointsPlannedFunctor,
-  void(nu_point_collection<Dim, const T> const&, nu_point_collection<Dim, T> const&, std::size_t*));
+F(SortPointsPlannedFunctor, void(
+                                nu_point_collection<Dim, const T> const &,
+                                nu_point_collection<Dim, T> const &, std::size_t *));
 
 /** Functor for instantiating a point sorting operation.
- * 
+ *
  * @param input_range The range of the input data - determines how folding will be performed
  * @param info Bin / grid configuration
- * 
+ *
  */
 F(SortPointsFactory,
-  SortPointsPlannedFunctor<T, Dim> (FoldRescaleRange, IntBinInfo<T, Dim> const&) const);
+  SortPointsPlannedFunctor<T, Dim>(FoldRescaleRange, IntBinInfo<T, Dim> const &) const);
 
 #undef F
+
+/** Temporary utility function to convert from old-style functors
+ * to factory + planned functor.
+ *
+ */
+template <typename T, std::size_t Dim>
+SortPointsFactory<T, Dim> make_factory_from_functor(SortPointsFunctor<T, Dim> &&functor) {
+    return [functor_ptr = std::make_shared<SortPointsFunctor<T, Dim>>(std::move(functor))](
+               FoldRescaleRange range, IntBinInfo<T, Dim> const &info) {
+        return SortPointsPlannedFunctor<T, Dim>([=](nu_point_collection<Dim, const T> const &input,
+                                                    nu_point_collection<Dim, T> const &output,
+                                                    std::size_t *num_points_per_bin) mutable {
+            (*functor_ptr)(input, range, output, num_points_per_bin, info);
+        });
+    };
+}
 
 } // namespace spreading
 } // namespace finufft

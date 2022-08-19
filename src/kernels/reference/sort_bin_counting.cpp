@@ -300,130 +300,7 @@ make_sort_counting_direct_omp(FoldRescaleRange const &input_range, IntBinInfo<T,
         input_range, info);
 }
 
-namespace detail {
-template <
-    typename T, std::size_t Dim, typename BinIndexFunctor, typename WriteTransformedCoordinate>
-void nu_point_counting_sort_direct_omp_impl(
-    nu_point_collection<Dim, const T> const &input, nu_point_collection<Dim, T> const &output,
-    std::size_t *num_points_per_bin, IntBinInfo<T, Dim> const &info,
-    BinIndexFunctor const &compute_bin_index,
-    WriteTransformedCoordinate const &write_transformed_coordinate) {
-
-    finufft::aligned_unique_array<std::size_t> histogram_alloc;
-    auto histogram_stride = finufft::round_to_next_multiple(
-        info.num_bins_total(), hardware_destructive_interference_size / sizeof(std::size_t));
-
-#pragma omp parallel
-    {
-#pragma omp single
-        histogram_alloc = finufft::allocate_aligned_array<std::size_t>(
-            histogram_stride * omp_get_num_threads(), 64);
-
-        auto histogram = tcb::span<std::size_t>(
-            histogram_alloc.get() + omp_get_thread_num() * histogram_stride, info.num_bins_total());
-        std::memset(histogram.data(), 0, histogram.size_bytes());
-
-        // Compute slice to be processed by this thread
-        auto points_per_thread = finufft::round_to_next_multiple(
-            input.num_points / omp_get_num_threads(),
-            hardware_destructive_interference_size / sizeof(T));
-        auto thread_start = omp_get_thread_num() * points_per_thread;
-        auto thread_length = thread_start < input.num_points
-                                 ? std::min(points_per_thread, input.num_points - thread_start)
-                                 : 0;
-        auto input_thread = input.slice(thread_start, thread_length);
-
-        // Compute histogram for all relevant slices
-        if (input_thread.num_points > 0) {
-            compute_histogram_impl(input_thread, histogram, compute_bin_index);
-        }
-#pragma omp barrier
-
-#pragma omp single
-        {
-            std::size_t *histogram_global = histogram_alloc.get();
-
-            // Process histograms
-            std::size_t accumulator = 0;
-            for (std::size_t i = 0; i < info.num_bins_total(); ++i) {
-                std::size_t bin_count = 0;
-
-                for (std::size_t j = 0; j < omp_get_num_threads(); ++j) {
-                    auto bin_thread_count = histogram_global[j * histogram_stride + i];
-                    accumulator += bin_thread_count;
-                    bin_count += bin_thread_count;
-                    histogram_global[j * histogram_stride + i] = accumulator;
-                }
-
-                num_points_per_bin[i] = bin_count;
-            }
-
-            assert(accumulator == input.num_points);
-        }
-
-        // Move points to output
-        move_points_by_histogram_impl(
-            histogram, input_thread, output, compute_bin_index, write_transformed_coordinate);
-    }
-}
-
-} // namespace detail
-
-#define COUNTING_SORT_SIGNATURE(NAME, T, Dim)                                                      \
-    void NAME(                                                                                     \
-        nu_point_collection<Dim, const T> const &input,                                            \
-        FoldRescaleRange input_range,                                                              \
-        nu_point_collection<Dim, T> const &output,                                                 \
-        std::size_t *num_points_per_bin,                                                           \
-        IntBinInfo<T, Dim> const &info)
-
-#define DEFINE_COUNTING_SORT_FROM_IMPL(NAME)                                                       \
-    template <typename T, std::size_t Dim> COUNTING_SORT_SIGNATURE(NAME, T, Dim) {                 \
-        const std::size_t unroll = 1;                                                              \
-        using WriteTransformedCoordinate =                                                         \
-            detail::WriteTransformedCoordinateScalar<T, Dim, unroll>;                              \
-        auto write_transformed_coordinate =                                                        \
-            detail::WriteTransformedCoordinateScalar<T, Dim, unroll>{};                            \
-                                                                                                   \
-        if (input_range == FoldRescaleRange::Identity) {                                           \
-            using BinIndexFunctor = ComputeBinIndex<unroll, T, Dim, FoldRescaleIdentity<T>>;       \
-            detail::DirectSinglethreadedImpl<T, Dim, BinIndexFunctor, WriteTransformedCoordinate>  \
-                impl{                                                                              \
-                    BinIndexFunctor{info, FoldRescaleIdentity<T>{}},                               \
-                    write_transformed_coordinate};                                                 \
-            detail::nu_point_counting_sort_singlethreaded_impl(                                    \
-                input, output, num_points_per_bin, info.num_bins_total(), impl);                   \
-        } else {                                                                                   \
-            detail::NAME##_impl(                                                                   \
-                input,                                                                             \
-                output,                                                                            \
-                num_points_per_bin,                                                                \
-                info,                                                                              \
-                ComputeBinIndex<unroll, T, Dim, FoldRescalePi<T>>(info, FoldRescalePi<T>{}),       \
-                write_transformed_coordinate);                                                     \
-        }                                                                                          \
-    }
-
-DEFINE_COUNTING_SORT_FROM_IMPL(nu_point_counting_sort_direct_omp)
-
-#undef DEFINE_COUNTING_SORT_FROM_IMPL
-
-template <typename T, std::size_t Dim>
-COUNTING_SORT_SIGNATURE(nu_point_counting_sort_direct_singlethreaded, T, Dim) {
-    return make_sort_counting_direct_singlethreaded<T, Dim>(input_range, info)(
-        input, output, num_points_per_bin);
-}
-
-template <typename T, std::size_t Dim>
-COUNTING_SORT_SIGNATURE(nu_point_counting_sort_blocked_singlethreaded, T, Dim) {
-    return make_sort_counting_blocked_singlethreaded<T, Dim>(input_range, info)(
-        input, output, num_points_per_bin);
-}
-
 #define INSTANTIATE(T, Dim)                                                                        \
-    template COUNTING_SORT_SIGNATURE(nu_point_counting_sort_direct_singlethreaded, T, Dim);        \
-    template COUNTING_SORT_SIGNATURE(nu_point_counting_sort_direct_omp, T, Dim);                   \
-    template COUNTING_SORT_SIGNATURE(nu_point_counting_sort_blocked_singlethreaded, T, Dim);       \
     template SortPointsPlannedFunctor<T, Dim> make_sort_counting_direct_singlethreaded(            \
         FoldRescaleRange const &input_range, IntBinInfo<T, Dim> const &info);                      \
     template SortPointsPlannedFunctor<T, Dim> make_sort_counting_blocked_singlethreaded(           \
@@ -440,7 +317,6 @@ INSTANTIATE(double, 2);
 INSTANTIATE(double, 3);
 
 #undef INSTANTIATE
-#undef COUNTING_SORT_SIGNATURE
 
 } // namespace reference
 } // namespace spreading

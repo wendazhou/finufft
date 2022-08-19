@@ -10,7 +10,7 @@ namespace {
 
 template <typename T, std::size_t Dim>
 void benchmark_sort(
-    benchmark::State &state, finufft::spreading::SortPointsFunctor<T, Dim> const &fn,
+    benchmark::State &state, finufft::spreading::SortPointsFactory<T, Dim> const &factory,
     finufft::spreading::IntBinInfo<T, Dim> const &info) {
     auto num_points = state.range(0);
 
@@ -19,12 +19,10 @@ void benchmark_sort(
     auto num_points_per_bin =
         finufft::allocate_aligned_array<std::size_t>(info.num_bins_total(), 64);
 
+    auto fn = factory(finufft::spreading::FoldRescaleRange::Pi, info);
+
     for (auto _ : state) {
-        fn(points,
-           finufft::spreading::FoldRescaleRange::Pi,
-           output,
-           num_points_per_bin.get(),
-           info);
+        fn(points, output, num_points_per_bin.get());
         benchmark::DoNotOptimize(output.coordinates[0]);
         benchmark::ClobberMemory();
     }
@@ -35,29 +33,34 @@ void benchmark_sort(
 
 template <typename T>
 void benchmark_sort_2d_small(
-    benchmark::State &state, finufft::spreading::SortPointsFunctor<T, 2> const &fn) {
+    benchmark::State &state, finufft::spreading::SortPointsFunctor<T, 2> &&fn) {
     finufft::spreading::IntBinInfo<T, 2> info({1024, 1024}, {128, 32}, {4, 4});
-    benchmark_sort(state, fn, info);
+    benchmark_sort(state, finufft::spreading::make_factory_from_functor(std::move(fn)), info);
+}
+
+template <typename T>
+void benchmark_sort_2d_small(
+    benchmark::State &state, finufft::spreading::SortPointsFactory<T, 2> const& factory) {
+    finufft::spreading::IntBinInfo<T, 2> info({1024, 1024}, {128, 32}, {4, 4});
+    benchmark_sort(state, factory, info);
 }
 
 void bm_counting_direct_scalar(benchmark::State &state) {
     benchmark_sort_2d_small<float>(
         state,
-        &finufft::spreading::reference::nu_point_counting_sort_direct_singlethreaded<float, 2>);
+        &finufft::spreading::reference::make_sort_counting_direct_singlethreaded<float, 2>);
 }
 
 void bm_counting_blocked_scalar(benchmark::State &state) {
     benchmark_sort_2d_small<float>(
         state,
-        &finufft::spreading::reference::nu_point_counting_sort_blocked_singlethreaded<float, 2>);
+        &finufft::spreading::reference::make_sort_counting_blocked_singlethreaded<float, 2>);
 }
 
 void bm_counting_direct_avx512(benchmark::State &state) {
     benchmark_sort_2d_small<float>(
-        state,
-        &finufft::spreading::avx512::nu_point_counting_sort_direct_singlethreaded<float, 2>);
+        state, &finufft::spreading::avx512::nu_point_counting_sort_direct_singlethreaded<float, 2>);
 }
-
 
 void bm_counting_blocked_avx512(benchmark::State &state) {
     benchmark_sort_2d_small<float>(

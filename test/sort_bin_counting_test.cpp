@@ -59,18 +59,6 @@ void test_sort(std::size_t num_points, finufft::spreading::SortPointsFunctor<T, 
 
 } // namespace
 
-TEST(SortBinCountingTest, SingleThreadedDirect1DReference) {
-    test_sort<float, 1>(
-        1654,
-        finufft::spreading::reference::nu_point_counting_sort_direct_singlethreaded<float, 1>);
-}
-
-TEST(SortBinCountingTest, SingleThreadedDirect2DReference) {
-    test_sort<float, 2>(
-        1654,
-        finufft::spreading::reference::nu_point_counting_sort_direct_singlethreaded<float, 2>);
-}
-
 TEST(SortBinCountingTestFactory, SingleThreadedDirect1DReference) {
     test_sort_factory<float, 1>(
         1654, finufft::spreading::reference::make_sort_counting_direct_singlethreaded<float, 1>);
@@ -81,16 +69,6 @@ TEST(SortBinCountingTestFactory, SingleThreadedDirect2DReference) {
         1654, finufft::spreading::reference::make_sort_counting_direct_singlethreaded<float, 2>);
 }
 
-TEST(SortBinCountingTest, OmpDirect1DReference) {
-    test_sort<float, 1>(
-        1654, finufft::spreading::reference::nu_point_counting_sort_direct_omp<float, 1>);
-}
-
-TEST(SortBinCountingTest, OmpDirect2DReference) {
-    test_sort<float, 2>(
-        1654, finufft::spreading::reference::nu_point_counting_sort_direct_omp<float, 2>);
-}
-
 TEST(SortBinCountingTestFactory, OmpDirect1DReference) {
     test_sort_factory<float, 1>(
         1654, finufft::spreading::reference::make_sort_counting_direct_omp<float, 1>);
@@ -99,18 +77,6 @@ TEST(SortBinCountingTestFactory, OmpDirect1DReference) {
 TEST(SortBinCountingTestFactory, OmpDirect2DReference) {
     test_sort_factory<float, 2>(
         1654, finufft::spreading::reference::make_sort_counting_direct_omp<float, 2>);
-}
-
-TEST(SortBinCountingTest, SingleThreadedBlocked1DReference) {
-    test_sort<float, 1>(
-        1654,
-        finufft::spreading::reference::nu_point_counting_sort_blocked_singlethreaded<float, 1>);
-}
-
-TEST(SortBinCountingTest, SingleThreadedBlocked2DReference) {
-    test_sort<float, 2>(
-        1654,
-        finufft::spreading::reference::nu_point_counting_sort_blocked_singlethreaded<float, 2>);
 }
 
 TEST(SortBinCountingTestFactory, SingleThreadedBlocked1DReference) {

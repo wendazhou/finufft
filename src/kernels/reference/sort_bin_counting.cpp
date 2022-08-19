@@ -13,13 +13,6 @@
 #include "gather_fold_reference.h"
 #include "sort_bin_counting_impl.h"
 
-#ifdef __cpp_lib_hardware_interference_size
-#include <new>
-using std::hardware_destructive_interference_size;
-#else
-constexpr std::size_t hardware_destructive_interference_size = 64;
-#endif
-
 namespace finufft {
 namespace spreading {
 namespace reference {
@@ -101,85 +94,6 @@ template <typename T, std::size_t Dim> struct ComputeBinIndexScalar {
     };
 };
 
-
-template <typename T, std::size_t Dim, typename Impl> struct SortPointsOmpImpl {
-    std::vector<Impl> impl_;
-    finufft::aligned_unique_array<std::size_t> histogram_alloc_;
-    std::size_t num_bins_;
-
-    explicit SortPointsOmpImpl(IntBinInfo<T, Dim> const &info) : num_bins_(info.num_bins_total()) {
-        auto max_threads = omp_get_max_threads();
-        impl_.reserve(max_threads);
-        for (std::size_t i = 0; i < max_threads; ++i) {
-            impl_.emplace_back(info);
-        }
-
-        auto bins_rounded = finufft::round_to_next_multiple(
-            num_bins_, hardware_destructive_interference_size / sizeof(std::size_t));
-        histogram_alloc_ =
-            finufft::allocate_aligned_array<std::size_t>(bins_rounded * max_threads, 64);
-    }
-
-    void operator()(
-        nu_point_collection<Dim, const T> const &input, nu_point_collection<Dim, T> const &output,
-        std::size_t *num_points_per_bin) {
-
-        auto histogram_stride = finufft::round_to_next_multiple(
-            num_bins_, hardware_destructive_interference_size / sizeof(std::size_t));
-
-#pragma omp parallel num_threads(impl_.size())
-        {
-            // get local histogram
-            auto histogram = tcb::span<std::size_t>(
-                histogram_alloc_.get() + omp_get_thread_num() * histogram_stride, num_bins_);
-            std::memset(histogram.data(), 0, histogram.size_bytes());
-
-            // Compute slice to be processed by this thread
-            auto points_per_thread = finufft::round_to_next_multiple(
-                input.num_points / omp_get_num_threads(),
-                hardware_destructive_interference_size / sizeof(T));
-            auto thread_start = omp_get_thread_num() * points_per_thread;
-            auto thread_length = thread_start < input.num_points
-                                     ? std::min(points_per_thread, input.num_points - thread_start)
-                                     : 0;
-            auto input_thread = input.slice(thread_start, thread_length);
-
-            auto &impl = impl_[omp_get_thread_num()];
-
-            // Compute histogram for all relevant slices
-            if (input_thread.num_points > 0) {
-                impl.compute_histogram(input_thread, histogram);
-            }
-#pragma omp barrier
-
-#pragma omp single
-            {
-                std::size_t *histogram_global = histogram_alloc_.get();
-
-                // Process histograms
-                std::size_t accumulator = 0;
-                for (std::size_t i = 0; i < num_bins_; ++i) {
-                    std::size_t bin_count = 0;
-
-                    for (std::size_t j = 0; j < omp_get_num_threads(); ++j) {
-                        auto bin_thread_count = histogram_global[j * histogram_stride + i];
-                        accumulator += bin_thread_count;
-                        bin_count += bin_thread_count;
-                        histogram_global[j * histogram_stride + i] = accumulator;
-                    }
-
-                    num_points_per_bin[i] = bin_count;
-                }
-
-                assert(accumulator == input.num_points);
-            }
-
-            // Move points to output
-            impl.move_points_by_histogram(histogram, input_thread, output);
-        }
-    }
-};
-
 template <typename T, std::size_t Dim, std::size_t Unroll> struct WriteTransformedCoordinateScalar {
     typedef std::array<std::array<T, Unroll>, Dim> value_type;
 
@@ -229,7 +143,7 @@ make_sort_counting_direct_omp(FoldRescaleRange const &input_range, IntBinInfo<T,
         detail::MovePointsDirect<T, Dim>>
         impl_type;
 
-    return detail::make_sort_functor<T, Dim, SortPointsOmpImpl, impl_type::template Impl>(
+    return detail::make_sort_functor<T, Dim, detail::SortPointsOmpImpl, impl_type::template Impl>(
         input_range, info);
 }
 

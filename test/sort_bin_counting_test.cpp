@@ -108,3 +108,13 @@ TEST(SortBinCountingTestFactory, SingleThreadedBlocked2DAvx512) {
     test_sort_factory<float, 2>(
         1654, finufft::spreading::avx512::make_sort_counting_blocked_singlethreaded<float, 2>);
 }
+
+TEST(SortBinCountingTestFactory, OmpBlocked1DAvx512) {
+    test_sort_factory<float, 1>(
+        1654, finufft::spreading::avx512::make_sort_counting_blocked_omp<float, 1>);
+}
+
+TEST(SortBinCountingTestFactory, OmpBlocked2DAvx512) {
+    test_sort_factory<float, 2>(
+        1654, finufft::spreading::avx512::make_sort_counting_blocked_omp<float, 2>);
+}

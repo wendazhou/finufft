@@ -145,11 +145,28 @@ SortPointsPlannedFunctor<T, Dim> make_sort_counting_blocked_singlethreaded(
         impl_type::template Impl>(input_range, info);
 }
 
+template <typename T, std::size_t Dim>
+SortPointsPlannedFunctor<T, Dim>
+make_sort_counting_blocked_omp(FoldRescaleRange input_range, IntBinInfo<T, Dim> const &info) {
+    typedef reference::detail::NuSortImpl<
+        T,
+        Dim,
+        ComputeBinIndexBound<T, Dim>::template Impl,
+        WriteTransformedCoordinate<T, Dim>,
+        reference::detail::MovePointsBlocked<T, Dim, 128>>
+        impl_type;
+
+    return reference::detail::
+        make_sort_functor<T, Dim, reference::detail::SortPointsOmpImpl, impl_type::template Impl>(
+            input_range, info);
+}
 
 #define INSTANTIATE(T, Dim)                                                                        \
     template SortPointsPlannedFunctor<T, Dim> make_sort_counting_direct_singlethreaded(            \
         FoldRescaleRange input_range, IntBinInfo<T, Dim> const &info);                             \
     template SortPointsPlannedFunctor<T, Dim> make_sort_counting_blocked_singlethreaded(           \
+        FoldRescaleRange input_range, IntBinInfo<T, Dim> const &info);                             \
+    template SortPointsPlannedFunctor<T, Dim> make_sort_counting_blocked_omp(                      \
         FoldRescaleRange input_range, IntBinInfo<T, Dim> const &info);
 
 INSTANTIATE(float, 1);

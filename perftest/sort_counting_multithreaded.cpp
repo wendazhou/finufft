@@ -49,6 +49,11 @@ void bm_counting_direct_scalar(benchmark::State &state) {
         state, &finufft::spreading::reference::make_sort_counting_direct_omp<float, 2>);
 }
 
+void bm_counting_blocked_avx512(benchmark::State &state) {
+    benchmark_sort_2d_small<float>(
+        state, &finufft::spreading::avx512::make_sort_counting_blocked_omp<float, 2>);
+}
+
 void bm_ips4o_packed(benchmark::State &state) {
     benchmark_sort_2d_small<float>(state, 
         finufft::spreading::make_factory_from_functor(finufft::spreading::avx512::get_sort_functor<float, 2>()));
@@ -57,4 +62,5 @@ void bm_ips4o_packed(benchmark::State &state) {
 } // namespace
 
 BENCHMARK(bm_counting_direct_scalar)->Range(1 << 20, 1 << 24)->Unit(benchmark::kMillisecond);
+BENCHMARK(bm_counting_blocked_avx512)->Range(1 << 20, 1 << 24)->Unit(benchmark::kMillisecond);
 BENCHMARK(bm_ips4o_packed)->Range(1 << 20, 1 << 24)->Unit(benchmark::kMillisecond);

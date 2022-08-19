@@ -14,6 +14,10 @@ template <typename T, std::size_t Dim>
 SortPointsPlannedFunctor<T, Dim> make_sort_counting_blocked_singlethreaded(
     FoldRescaleRange input_range, IntBinInfo<T, Dim> const &info);
 
+template <typename T, std::size_t Dim>
+SortPointsPlannedFunctor<T, Dim>
+make_sort_counting_blocked_omp(FoldRescaleRange input_range, IntBinInfo<T, Dim> const &info);
+
 } // namespace avx512
 } // namespace spreading
 } // namespace finufft

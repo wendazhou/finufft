@@ -16,10 +16,20 @@
 #include "../../memory.h"
 #include "sort_bin_counting.h"
 
+#ifdef __cpp_lib_hardware_interference_size
+#include <new>
+#endif
+
 namespace finufft {
 namespace spreading {
 namespace reference {
 namespace detail {
+
+#ifdef __cpp_lib_hardware_interference_size
+using hardware_destructive_interference_size = std::hardware_destructive_interference_size;
+#else
+constexpr std::size_t hardware_destructive_interference_size = 64;
+#endif
 
 template <std::size_t S, typename IndexType, typename T> struct BinIndexValue {
     alignas(64) IndexType bin_index[S];
@@ -196,6 +206,95 @@ template <typename T, std::size_t Dim, typename Impl> struct SortPointsSingleThr
         impl_.move_points_by_histogram(histogram_, input, output);
     }
 };
+
+/** Multi-threaded implementation of a bin-sorting harness based on OMP parallelization.
+ * 
+ * This class implements a generic parametrized bin-sort through a counting sort strategy,
+ * parametrized by the histogram counting and data movement implementations.
+ * The parallelization strategy is based on a partitioning of the array into slices
+ * between threads, which are separately scanned. The process then joins the histogram
+ * data from different slices together, and computes global target directions.
+ * Finally, each thread moves the points in its slice to their final location in the output.
+ * 
+ */
+template <typename T, std::size_t Dim, typename Impl> struct SortPointsOmpImpl {
+    std::vector<Impl> impl_;
+    finufft::aligned_unique_array<std::size_t> histogram_alloc_;
+    std::size_t num_bins_;
+
+    explicit SortPointsOmpImpl(IntBinInfo<T, Dim> const &info) : num_bins_(info.num_bins_total()) {
+        auto max_threads = omp_get_max_threads();
+        impl_.reserve(max_threads);
+        for (std::size_t i = 0; i < max_threads; ++i) {
+            impl_.emplace_back(info);
+        }
+
+        auto bins_rounded = finufft::round_to_next_multiple(
+            num_bins_, hardware_destructive_interference_size / sizeof(std::size_t));
+        histogram_alloc_ =
+            finufft::allocate_aligned_array<std::size_t>(bins_rounded * max_threads, 64);
+    }
+
+    void operator()(
+        nu_point_collection<Dim, const T> const &input, nu_point_collection<Dim, T> const &output,
+        std::size_t *num_points_per_bin) {
+
+        auto histogram_stride = finufft::round_to_next_multiple(
+            num_bins_, hardware_destructive_interference_size / sizeof(std::size_t));
+
+#pragma omp parallel num_threads(impl_.size())
+        {
+            // get local histogram
+            auto histogram = tcb::span<std::size_t>(
+                histogram_alloc_.get() + omp_get_thread_num() * histogram_stride, num_bins_);
+            std::memset(histogram.data(), 0, histogram.size_bytes());
+
+            // Compute slice to be processed by this thread
+            auto points_per_thread = finufft::round_to_next_multiple(
+                input.num_points / omp_get_num_threads(),
+                hardware_destructive_interference_size / sizeof(T));
+            auto thread_start = omp_get_thread_num() * points_per_thread;
+            auto thread_length = thread_start < input.num_points
+                                     ? std::min(points_per_thread, input.num_points - thread_start)
+                                     : 0;
+            auto input_thread = input.slice(thread_start, thread_length);
+
+            auto &impl = impl_[omp_get_thread_num()];
+
+            // Compute histogram for all relevant slices
+            if (input_thread.num_points > 0) {
+                impl.compute_histogram(input_thread, histogram);
+            }
+#pragma omp barrier
+
+#pragma omp single
+            {
+                std::size_t *histogram_global = histogram_alloc_.get();
+
+                // Process histograms
+                std::size_t accumulator = 0;
+                for (std::size_t i = 0; i < num_bins_; ++i) {
+                    std::size_t bin_count = 0;
+
+                    for (std::size_t j = 0; j < omp_get_num_threads(); ++j) {
+                        auto bin_thread_count = histogram_global[j * histogram_stride + i];
+                        accumulator += bin_thread_count;
+                        bin_count += bin_thread_count;
+                        histogram_global[j * histogram_stride + i] = accumulator;
+                    }
+
+                    num_points_per_bin[i] = bin_count;
+                }
+
+                assert(accumulator == input.num_points);
+            }
+
+            // Move points to output
+            impl.move_points_by_histogram(histogram, input_thread, output);
+        }
+    }
+};
+
 
 template <
     typename T, std::size_t Dim, template <typename, std::size_t, typename> typename Sort,

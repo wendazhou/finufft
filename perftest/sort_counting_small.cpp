@@ -59,13 +59,13 @@ void bm_counting_blocked_scalar(benchmark::State &state) {
 
 void bm_counting_direct_avx512(benchmark::State &state) {
     benchmark_sort_2d_small<float>(
-        state, &finufft::spreading::avx512::nu_point_counting_sort_direct_singlethreaded<float, 2>);
+        state, &finufft::spreading::avx512::make_sort_counting_direct_singlethreaded<float, 2>);
 }
 
 void bm_counting_blocked_avx512(benchmark::State &state) {
     benchmark_sort_2d_small<float>(
         state,
-        &finufft::spreading::avx512::nu_point_counting_sort_blocked_singlethreaded<float, 2>);
+        &finufft::spreading::avx512::make_sort_counting_blocked_singlethreaded<float, 2>);
 }
 
 void bm_ips4o_packed(benchmark::State &state) {

@@ -9,6 +9,13 @@ namespace finufft {
 namespace spreading {
 namespace avx512 {
 
+namespace {
+
+template <typename T, FoldRescaleRange input_range> struct FoldRescaleAvx512;
+template <typename T>
+struct FoldRescaleAvx512<T, FoldRescaleRange::Identity> : FoldRescaleIdentityAvx512<T> {};
+template <typename T> struct FoldRescaleAvx512<T, FoldRescaleRange::Pi> : FoldRescalePiAvx512<T> {};
+
 template <typename T, std::size_t Dim, typename FoldRescale> struct ComputeBinIndex;
 
 template <std::size_t Dim, typename FoldRescale> struct ComputeBinIndex<float, Dim, FoldRescale> {
@@ -75,6 +82,15 @@ template <std::size_t Dim, typename FoldRescale> struct ComputeBinIndex<float, D
     }
 };
 
+template <typename T, std::size_t Dim> struct ComputeBinIndexBound {
+    template <FoldRescaleRange input_range>
+    struct Impl : ComputeBinIndex<T, Dim, FoldRescaleAvx512<T, input_range>> {
+        explicit Impl(IntBinInfo<T, Dim> const &info)
+            : ComputeBinIndex<T, Dim, FoldRescaleAvx512<T, input_range>>(
+                  info, FoldRescaleAvx512<T, input_range>{}) {}
+    };
+};
+
 template <typename T, std::size_t Dim> struct WriteTransformedCoordinate;
 
 template <std::size_t Dim> struct WriteTransformedCoordinate<float, Dim> {
@@ -91,75 +107,50 @@ template <std::size_t Dim> struct WriteTransformedCoordinate<float, Dim> {
     }
 };
 
+} // namespace
+
 template <typename T, std::size_t Dim>
-void nu_point_counting_sort_direct_singlethreaded(
-    nu_point_collection<Dim, const T> const &input, FoldRescaleRange input_range,
-    nu_point_collection<Dim, T> const &output, std::size_t *num_points_per_bin,
-    IntBinInfo<T, Dim> const &info) {
+SortPointsPlannedFunctor<T, Dim> make_sort_counting_direct_singlethreaded(
+    FoldRescaleRange input_range, IntBinInfo<T, Dim> const &info) {
+    typedef reference::detail::NuSortImpl<
+        T,
+        Dim,
+        ComputeBinIndexBound<T, Dim>::template Impl,
+        WriteTransformedCoordinate<T, Dim>,
+        reference::detail::MovePointsDirect<T, Dim>>
+        impl_type;
 
-    WriteTransformedCoordinate<T, Dim> write_transformed_coordinate;
-
-    if (input_range == FoldRescaleRange::Identity) {
-        reference::detail::nu_point_counting_sort_direct_singlethreaded_impl(
-            input,
-            output,
-            num_points_per_bin,
-            info,
-            ComputeBinIndex<T, Dim, FoldRescaleIdentityAvx512<T>>{
-                info, FoldRescaleIdentityAvx512<T>{}},
-            write_transformed_coordinate);
-    } else {
-        reference::detail::nu_point_counting_sort_direct_singlethreaded_impl(
-            input,
-            output,
-            num_points_per_bin,
-            info,
-            ComputeBinIndex<T, Dim, FoldRescalePiAvx512<T>>{info, FoldRescalePiAvx512<T>{}},
-            write_transformed_coordinate);
-    }
+    return reference::detail::make_sort_functor<
+        T,
+        Dim,
+        reference::detail::SortPointsSingleThreadedImpl,
+        impl_type::template Impl>(input_range, info);
 }
 
 template <typename T, std::size_t Dim>
-void nu_point_counting_sort_blocked_singlethreaded(
-    nu_point_collection<Dim, const T> const &input, FoldRescaleRange input_range,
-    nu_point_collection<Dim, T> const &output, std::size_t *num_points_per_bin,
-    IntBinInfo<T, Dim> const &info) {
+SortPointsPlannedFunctor<T, Dim> make_sort_counting_blocked_singlethreaded(
+    FoldRescaleRange input_range, IntBinInfo<T, Dim> const &info) {
+    typedef reference::detail::NuSortImpl<
+        T,
+        Dim,
+        ComputeBinIndexBound<T, Dim>::template Impl,
+        WriteTransformedCoordinate<T, Dim>,
+        reference::detail::MovePointsBlocked<T, Dim, 128>>
+        impl_type;
 
-    WriteTransformedCoordinate<T, Dim> write_transformed_coordinate;
-
-    if (input_range == FoldRescaleRange::Identity) {
-        reference::detail::nu_point_counting_sort_blocked_singlethreaded_impl(
-            input,
-            output,
-            num_points_per_bin,
-            info,
-            ComputeBinIndex<T, Dim, FoldRescaleIdentityAvx512<T>>{
-                info, FoldRescaleIdentityAvx512<T>{}},
-            write_transformed_coordinate);
-    } else {
-        reference::detail::nu_point_counting_sort_blocked_singlethreaded_impl(
-            input,
-            output,
-            num_points_per_bin,
-            info,
-            ComputeBinIndex<T, Dim, FoldRescalePiAvx512<T>>{info, FoldRescalePiAvx512<T>{}},
-            write_transformed_coordinate);
-    }
+    return reference::detail::make_sort_functor<
+        T,
+        Dim,
+        reference::detail::SortPointsSingleThreadedImpl,
+        impl_type::template Impl>(input_range, info);
 }
+
 
 #define INSTANTIATE(T, Dim)                                                                        \
-    template void nu_point_counting_sort_direct_singlethreaded<T, Dim>(                            \
-        nu_point_collection<Dim, const T> const &input,                                            \
-        FoldRescaleRange input_range,                                                              \
-        nu_point_collection<Dim, T> const &output,                                                 \
-        std::size_t *num_points_per_bin,                                                           \
-        IntBinInfo<T, Dim> const &info);                                                           \
-    template void nu_point_counting_sort_blocked_singlethreaded<T, Dim>(                           \
-        nu_point_collection<Dim, const T> const &input,                                            \
-        FoldRescaleRange input_range,                                                              \
-        nu_point_collection<Dim, T> const &output,                                                 \
-        std::size_t *num_points_per_bin,                                                           \
-        IntBinInfo<T, Dim> const &info);
+    template SortPointsPlannedFunctor<T, Dim> make_sort_counting_direct_singlethreaded(            \
+        FoldRescaleRange input_range, IntBinInfo<T, Dim> const &info);                             \
+    template SortPointsPlannedFunctor<T, Dim> make_sort_counting_blocked_singlethreaded(           \
+        FoldRescaleRange input_range, IntBinInfo<T, Dim> const &info);
 
 INSTANTIATE(float, 1);
 INSTANTIATE(float, 2);

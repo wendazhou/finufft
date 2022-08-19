@@ -180,6 +180,12 @@ template <typename T, std::size_t Dim, typename Impl> struct SortPointsOmpImpl {
     }
 };
 
+template <typename T, std::size_t Dim, std::size_t Unroll> struct WriteTransformedCoordinateScalar {
+    typedef std::array<std::array<T, Unroll>, Dim> value_type;
+
+    void operator()(value_type &v, std::size_t d, std::size_t j, T const &t) const { v[d][j] = t; }
+};
+
 } // namespace
 
 template <typename T, std::size_t Dim>
@@ -189,7 +195,7 @@ SortPointsPlannedFunctor<T, Dim> make_sort_counting_direct_singlethreaded(
         T,
         Dim,
         ComputeBinIndexScalar<T, Dim>::template Impl,
-        detail::WriteTransformedCoordinateScalar<T, Dim, 1>,
+        WriteTransformedCoordinateScalar<T, Dim, 1>,
         detail::MovePointsDirect<T, Dim>>
         impl_type;
 
@@ -204,7 +210,7 @@ SortPointsPlannedFunctor<T, Dim> make_sort_counting_blocked_singlethreaded(
         T,
         Dim,
         ComputeBinIndexScalar<T, Dim>::template Impl,
-        detail::WriteTransformedCoordinateScalar<T, Dim, 1>,
+        WriteTransformedCoordinateScalar<T, Dim, 1>,
         detail::MovePointsBlocked<T, Dim, 128>>
         impl_type;
 
@@ -219,7 +225,7 @@ make_sort_counting_direct_omp(FoldRescaleRange const &input_range, IntBinInfo<T,
         T,
         Dim,
         ComputeBinIndexScalar<T, Dim>::template Impl,
-        detail::WriteTransformedCoordinateScalar<T, Dim, 1>,
+        WriteTransformedCoordinateScalar<T, Dim, 1>,
         detail::MovePointsDirect<T, Dim>>
         impl_type;
 

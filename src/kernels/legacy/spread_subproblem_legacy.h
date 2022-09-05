@@ -1,5 +1,7 @@
 #pragma once
 
+#include <cassert>
+
 #include <finufft/defs.h>
 #include <finufft_spread_opts.h>
 
@@ -49,8 +51,10 @@ namespace spreading {
 struct SpreadSubproblemLegacy {
     template <typename T>
     void operator()(
-        nu_point_collection<1, T const> const &input, grid_specification<1> const &grid, T *output,
-        const kernel_specification &kernel) const {
+        nu_point_collection<1, T const> const &input, subgrid_specification<1> const &grid,
+        T *output, const kernel_specification &kernel) const {
+
+        assert(grid.is_contiguous());
 
         auto opts = legacy::construct_opts_from_kernel(kernel, 1);
 
@@ -68,8 +72,10 @@ struct SpreadSubproblemLegacy {
 
     template <typename T>
     void operator()(
-        nu_point_collection<2, T const> const &input, grid_specification<2> const &grid, T *output,
-        const kernel_specification &kernel) const {
+        nu_point_collection<2, T const> const &input, subgrid_specification<2> const &grid,
+        T *output, const kernel_specification &kernel) const {
+
+        assert(grid.is_contiguous());
 
         auto opts = legacy::construct_opts_from_kernel(kernel, 2);
         finufft::spreadinterp::spread_subproblem_2d(
@@ -87,8 +93,10 @@ struct SpreadSubproblemLegacy {
 
     template <typename T>
     void operator()(
-        nu_point_collection<3, T const> const &input, grid_specification<3> const &grid, T *output,
-        const kernel_specification &kernel) const {
+        nu_point_collection<3, T const> const &input, subgrid_specification<3> const &grid,
+        T *output, const kernel_specification &kernel) const {
+
+        assert(grid.is_contiguous());
 
         auto opts = legacy::construct_opts_from_kernel(kernel, 3);
         finufft::spreadinterp::spread_subproblem_3d(

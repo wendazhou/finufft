@@ -57,15 +57,15 @@ template <typename T, std::size_t Dim> struct WriteSeparableKernelImpl;
  */
 template <typename T, std::size_t Dim>
 void write_separable_kernel(
-    T *__restrict output, tcb::span<std::size_t, Dim> strides, tcb::span<T const *, Dim> values,
-    std::size_t width) {
+    T *__restrict output, tcb::span<const std::size_t, Dim> strides,
+    tcb::span<T const *const, Dim> values, std::size_t width) {
     return WriteSeparableKernelImpl<T, Dim>{}(output, strides, values, width);
 }
 
 template <typename T, std::size_t Dim> struct WriteSeparableKernelImpl {
     void operator()(
-        T *__restrict output, tcb::span<std::size_t, Dim> strides, tcb::span<T const *, Dim> values,
-        std::size_t width, T k = T(1)) const {
+        T *__restrict output, tcb::span<const std::size_t, Dim> strides,
+        tcb::span<T const *const, Dim> values, std::size_t width, T k = T(1)) const {
         for (std::size_t i = 0; i < width; ++i) {
             // Set-up values for the current slice in the slowest dimension
             auto k_i = k * values[Dim - 1][i];
@@ -83,8 +83,8 @@ template <typename T, std::size_t Dim> struct WriteSeparableKernelImpl {
 
 template <typename T> struct WriteSeparableKernelImpl<T, 1> {
     void operator()(
-        T *__restrict output, tcb::span<std::size_t, 1> strides, tcb::span<T const *, 1> values,
-        std::size_t width) {
+        T *__restrict output, tcb::span<const std::size_t, 1> strides,
+        tcb::span<T const *const, 1> values, std::size_t width) {
 
         // Base case of the recursion: 1-D kernel accumulation.
         for (std::size_t i = 0; i < 2 * width; ++i) {
@@ -93,8 +93,8 @@ template <typename T> struct WriteSeparableKernelImpl<T, 1> {
     }
 
     void operator()(
-        T *__restrict output, tcb::span<std::size_t, 1> strides, tcb::span<T const *, 1> values,
-        std::size_t width, T k) {
+        T *__restrict output, tcb::span<const std::size_t, 1> strides,
+        tcb::span<T const *const, 1> values, std::size_t width, T k) {
 
         // Base case of the recursion: 1-D kernel accumulation.
         for (std::size_t i = 0; i < 2 * width; ++i) {
@@ -133,7 +133,7 @@ template <typename T> struct WriteSeparableKernelImpl<T, 1> {
  */
 template <std::size_t Dim, typename T, typename Fn>
 void spread_subproblem_generic_with_kernel(
-    nu_point_collection<Dim, T const> const &input, grid_specification<Dim> const &grid,
+    nu_point_collection<Dim, T const> const &input, subgrid_specification<Dim> const &grid,
     T *__restrict output, Fn &&kernel, std::size_t kernel_width) {
     std::fill_n(output, 2 * grid.num_elements(), T(0));
 
@@ -146,12 +146,8 @@ void spread_subproblem_generic_with_kernel(
 
     T ns2 = static_cast<T>(0.5 * kernel_width);
 
-    // Pre-compute strides for each array dimension (column-major format).
-    std::array<std::size_t, Dim> strides;
-    strides[0] = 1;
-    for (std::size_t dim = 1; dim < Dim; ++dim) {
-        strides[dim] = strides[dim - 1] * grid.extents[dim - 1];
-    }
+    // Get strides from the grid specification
+    auto const &strides = grid.strides;
 
     // Pre-compute pointers into each segment containing the computed kernel values.
     std::array<T const *, Dim> kernel_values_view;
@@ -223,7 +219,7 @@ template <typename T, std::size_t Dim> struct SpreadSubproblemDirectReference {
 
     void operator()(
         nu_point_collection<Dim, typename identity<T>::type const> const &input,
-        grid_specification<Dim> const &grid, T *__restrict output) const {
+        subgrid_specification<Dim> const &grid, T *__restrict output) const {
         KernelDirectReference<T> kernel_fn{
             static_cast<T>(kernel_.es_beta), static_cast<std::size_t>(kernel_.width)};
         spread_subproblem_generic_with_kernel(
@@ -407,7 +403,7 @@ struct SpreadSubproblemPolynomialReference {
     template <std::size_t Dim>
     void operator()(
         nu_point_collection<Dim, typename identity<T>::type const> const &input,
-        grid_specification<Dim> const &grid, T *__restrict output) const {
+        subgrid_specification<Dim> const &grid, T *__restrict output) const {
         return spread_subproblem_generic_with_kernel(
             input, grid, output, kernel_polynomial_, kernel_width_);
     }

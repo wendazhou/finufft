@@ -99,6 +99,22 @@ template <std::size_t Dim> struct subgrid_specification : grid_specification<Dim
             s *= grid.extents[i];
         }
     };
+
+    /** Checks whether the given subgrid is Fortran-contiguous
+     *
+     */
+    constexpr bool is_contiguous() const noexcept {
+        std::size_t s = 1;
+
+        for (std::size_t i = 0; i < Dim; ++i) {
+            if (this->strides[i] != s) {
+                return false;
+            }
+            s *= this->extents[i];
+        }
+
+        return true;
+    }
 };
 
 /** This structure represents a collection of non-uniform points, and their associated complex

@@ -58,11 +58,13 @@ struct kernel_specification {
     int width;
 };
 
-/** This structure represents a grid of points, potentially within a larger grid.
+/** This structure represents a grid of points.
  *
  */
 template <std::size_t Dim> struct grid_specification {
+    //! An offset to apply to each index when accessing the points in the grid.
     std::array<std::int64_t, Dim> offsets;
+    //! The number of points in each dimension of the grid.
     std::array<std::size_t, Dim> extents;
 
     std::int64_t num_elements() const {
@@ -72,6 +74,31 @@ template <std::size_t Dim> struct grid_specification {
             static_cast<std::size_t>(1),
             std::multiplies<std::size_t>());
     }
+};
+
+/** This structure represents a set of points explicitly
+ * as a multi-dimensional array embedded in a contiguous block
+ * of memory in a strided format.
+ *
+ * Note that most functionality in this library assumes that
+ * the stride of the first dimension (left-most) is 1, and
+ * some may assume that the stride are increasing left-to-right.
+ *
+ */
+template <std::size_t Dim> struct subgrid_specification : grid_specification<Dim> {
+    //! The stride for each dimension in the grid
+    std::array<std::size_t, Dim> strides;
+
+    subgrid_specification() noexcept = default;
+    subgrid_specification(grid_specification<Dim> const &grid) noexcept
+        : grid_specification<Dim>(grid) {
+        std::size_t s = 1;
+
+        for (std::size_t i = 0; i < Dim; ++i) {
+            this->strides[i] = s;
+            s *= grid.extents[i];
+        }
+    };
 };
 
 /** This structure represents a collection of non-uniform points, and their associated complex
@@ -101,7 +128,7 @@ template <std::size_t Dim, typename T> struct nu_point_collection {
 
     /** Slices the collection of non-uniform point into a contiguous sub-collection
      * starting at the given offset and with the given extent.
-     * 
+     *
      */
     nu_point_collection<Dim, T> slice(std::size_t offset, std::size_t length) const noexcept {
         nu_point_collection<Dim, T> result;
@@ -204,7 +231,7 @@ template <typename T, std::size_t Dim> class SpreadSubproblemFunctor {
          *
          */
         virtual void operator()(
-            nu_point_collection<Dim, T const> const &input, grid_specification<Dim> const &grid,
+            nu_point_collection<Dim, T const> const &input, subgrid_specification<Dim> const &grid,
             T *output) const = 0;
     };
 
@@ -225,7 +252,7 @@ template <typename T, std::size_t Dim> class SpreadSubproblemFunctor {
             return impl_.target_padding();
         };
         virtual void operator()(
-            nu_point_collection<Dim, T const> const &input, grid_specification<Dim> const &grid,
+            nu_point_collection<Dim, T const> const &input, subgrid_specification<Dim> const &grid,
             T *output) const override {
             return impl_(input, grid, output);
         }
@@ -243,7 +270,7 @@ template <typename T, std::size_t Dim> class SpreadSubproblemFunctor {
     std::array<std::size_t, Dim> extent_multiple() const { return impl_->extent_multiple(); }
     std::array<KernelWriteSpec<T>, Dim> target_padding() const { return impl_->target_padding(); }
     void operator()(
-        nu_point_collection<Dim, T const> const &input, grid_specification<Dim> const &grid,
+        nu_point_collection<Dim, T const> const &input, subgrid_specification<Dim> const &grid,
         T *__restrict output) const {
         impl_->operator()(input, grid, output);
     }

@@ -1,7 +1,7 @@
 #pragma once
 
-#include <cstring>
 #include <cstddef>
+#include <cstring>
 #include <immintrin.h>
 
 #include "align_split_routines.h"
@@ -174,7 +174,7 @@ template <std::size_t Degree> struct SpreadSubproblemPoly3DW8 {
     void operator()(
         // Main loop of the spreading subproblem.
         // This loop is unrolled to process 4 points at a time.
-        nu_point_collection<3, float const> const &input, grid_specification<3> const &grid,
+        nu_point_collection<3, float const> const &input, subgrid_specification<3> const &grid,
         float *__restrict output) const {
 
         std::memset(output, 0, 2 * grid.num_elements() * sizeof(float));
@@ -188,8 +188,8 @@ template <std::size_t Degree> struct SpreadSubproblemPoly3DW8 {
         auto offset_y = grid.offsets[1];
         auto offset_z = grid.offsets[2];
 
-        auto stride_y = 2 * grid.extents[0];
-        auto stride_z = 2 * grid.extents[0] * grid.extents[1];
+        auto stride_y = 2 * grid.strides[1];
+        auto stride_z = 2 * grid.strides[2];
 
         for (std::size_t i = 0; i < input.num_points; i += 4) {
             process_4(
@@ -418,7 +418,7 @@ template <std::size_t Degree> struct SpreadSubproblemPoly3DW8F64 {
     void operator()(
         // Main loop of the spreading subproblem.
         // This loop is unrolled to process 4 points at a time.
-        nu_point_collection<3, double const> const &input, grid_specification<3> const &grid,
+        nu_point_collection<3, double const> const &input, subgrid_specification<3> const &grid,
         double *__restrict output) const {
 
         std::memset(output, 0, 2 * grid.num_elements() * sizeof(double));
@@ -432,8 +432,8 @@ template <std::size_t Degree> struct SpreadSubproblemPoly3DW8F64 {
         auto offset_y = grid.offsets[1];
         auto offset_z = grid.offsets[2];
 
-        auto stride_y = 2 * grid.extents[0];
-        auto stride_z = 2 * grid.extents[0] * grid.extents[1];
+        auto stride_y = 2 * grid.strides[1];
+        auto stride_z = 2 * grid.strides[2];
 
         for (std::size_t i = 0; i < input.num_points; i += 4) {
             process_4(

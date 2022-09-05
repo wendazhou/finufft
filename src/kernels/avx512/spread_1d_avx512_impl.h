@@ -14,8 +14,8 @@
 #include <cstddef>
 #include <immintrin.h>
 
-#include "../spreading.h"
 #include "../reference/spread_subproblem_reference.h"
+#include "../spreading.h"
 
 namespace finufft {
 namespace spreading {
@@ -184,7 +184,7 @@ template <std::size_t Degree> struct SpreadSubproblemPolyW8 {
     void operator()(
         // Main loop of the spreading subproblem.
         // This loop is unrolled to process 8 points at a time.
-        nu_point_collection<1, float const> const &input, grid_specification<1> const &grid,
+        nu_point_collection<1, float const> const &input, subgrid_specification<1> const &grid,
         float *__restrict output) const {
 
         std::fill_n(output, 2 * grid.num_elements(), 0.0f);
@@ -347,7 +347,7 @@ template <std::size_t Degree> struct SpreadSubproblemPolyW4 {
     }
 
     void operator()(
-        nu_point_collection<1, float const> const &input, grid_specification<1> const &grid,
+        nu_point_collection<1, float const> const &input, subgrid_specification<1> const &grid,
         float *__restrict output) const {
 
         std::fill_n(output, 2 * grid.num_elements(), 0.0f);
@@ -502,7 +502,7 @@ template <std::size_t Degree> struct SpreadSubproblemPolyW8F64 {
     }
 
     void operator()(
-        nu_point_collection<1, double const> const &input, grid_specification<1> const &grid,
+        nu_point_collection<1, double const> const &input, subgrid_specification<1> const &grid,
         double *__restrict output) const {
 
         std::fill_n(output, 2 * grid.num_elements(), 0.0f);

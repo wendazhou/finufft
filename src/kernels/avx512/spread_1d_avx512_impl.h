@@ -187,8 +187,6 @@ template <std::size_t Degree> struct SpreadSubproblemPolyW8 {
         nu_point_collection<1, float const> const &input, subgrid_specification<1> const &grid,
         float *__restrict output) const {
 
-        std::fill_n(output, 2 * grid.num_elements(), 0.0f);
-
         float const *coord_x = input.coordinates[0];
         float const *strengths = input.strengths;
 
@@ -350,8 +348,6 @@ template <std::size_t Degree> struct SpreadSubproblemPolyW4 {
         nu_point_collection<1, float const> const &input, subgrid_specification<1> const &grid,
         float *__restrict output) const {
 
-        std::fill_n(output, 2 * grid.num_elements(), 0.0f);
-
         float const *coord_x = input.coordinates[0];
         float const *strengths = input.strengths;
 
@@ -504,8 +500,6 @@ template <std::size_t Degree> struct SpreadSubproblemPolyW8F64 {
     void operator()(
         nu_point_collection<1, double const> const &input, subgrid_specification<1> const &grid,
         double *__restrict output) const {
-
-        std::fill_n(output, 2 * grid.num_elements(), 0.0f);
 
         double const *coord_x = input.coordinates[0];
         double const *strengths = input.strengths;

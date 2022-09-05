@@ -115,6 +115,19 @@ template <std::size_t Dim> struct subgrid_specification : grid_specification<Dim
 
         return true;
     }
+
+    /** Returns the maximum linear offset of elements in the subgrid.
+     *
+     */
+    constexpr std::size_t max_elements() const noexcept {
+        std::size_t max = 0;
+
+        for (std::size_t i = 0; i < Dim; ++i) {
+            max = std::max(this->extents[i] * this->strides[i], max);
+        }
+
+        return max;
+    }
 };
 
 /** This structure represents a collection of non-uniform points, and their associated complex

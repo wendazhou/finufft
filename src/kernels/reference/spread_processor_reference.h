@@ -61,7 +61,9 @@ SubgridData<Dim, T> spread_block_impl(
     auto output_size = 2 * subgrid.num_elements();
     auto spread_weights = allocate_aligned_array<T>(output_size, 64);
 
+    std::memset(spread_weights.get(), 0, output_size * sizeof(T));
     spread_subproblem(memory, subgrid, spread_weights.get());
+
     return {std::move(spread_weights), subgrid};
 }
 
@@ -141,9 +143,9 @@ struct OmpSpreadProcessor {
         nu_point_collection<Dim, typename identity<T>::type const> const &input,
         int64_t const *sort_index, std::array<int64_t, Dim> const &sizes, T *output) const {
 
-        auto total_size =
-            std::accumulate(sizes.begin(), sizes.end(), static_cast<int64_t>(1), std::multiplies<int64_t>{});
-        std::memset(output, 0,  2 * total_size * sizeof(T));
+        auto total_size = std::accumulate(
+            sizes.begin(), sizes.end(), static_cast<int64_t>(1), std::multiplies<int64_t>{});
+        std::memset(output, 0, 2 * total_size * sizeof(T));
 
         auto max_num_threads = static_cast<std::size_t>(omp_get_num_threads());
         if (num_threads_ > 0) {

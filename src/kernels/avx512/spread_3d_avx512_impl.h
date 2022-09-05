@@ -177,8 +177,6 @@ template <std::size_t Degree> struct SpreadSubproblemPoly3DW8 {
         nu_point_collection<3, float const> const &input, subgrid_specification<3> const &grid,
         float *__restrict output) const {
 
-        std::memset(output, 0, 2 * grid.num_elements() * sizeof(float));
-
         float const *coord_x = input.coordinates[0];
         float const *coord_y = input.coordinates[1];
         float const *coord_z = input.coordinates[2];
@@ -420,8 +418,6 @@ template <std::size_t Degree> struct SpreadSubproblemPoly3DW8F64 {
         // This loop is unrolled to process 4 points at a time.
         nu_point_collection<3, double const> const &input, subgrid_specification<3> const &grid,
         double *__restrict output) const {
-
-        std::memset(output, 0, 2 * grid.num_elements() * sizeof(double));
 
         double const *coord_x = input.coordinates[0];
         double const *coord_y = input.coordinates[1];

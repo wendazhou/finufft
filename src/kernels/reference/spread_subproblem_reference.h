@@ -135,7 +135,6 @@ template <std::size_t Dim, typename T, typename Fn>
 void spread_subproblem_generic_with_kernel(
     nu_point_collection<Dim, T const> const &input, subgrid_specification<Dim> const &grid,
     T *__restrict output, Fn &&kernel, std::size_t kernel_width) {
-    std::fill_n(output, 2 * grid.num_elements(), T(0));
 
     // Allocate according to the width requested by the kernel.
     // To allow for pre-multiplication by real and imaginary strengths,

@@ -166,9 +166,6 @@ void process_points(
 
         local_points.num_points = block_num_points;
 
-        // Zero local memory
-        std::memset(subgrid_output.get(), 0, 2 * grid.num_elements() * sizeof(float));
-
         // Gather local points
         {
             finufft::ScopedTimerGuard guard(timers.gather);
@@ -196,6 +193,8 @@ void process_points(
 
         // Spread to local subgrid
         {
+            // Zero local memory
+            std::memset(subgrid_output.get(), 0, 2 * grid.num_elements() * sizeof(float));
             finufft::ScopedTimerGuard guard(timers.subproblem);
             config.spread_subproblem(local_points, grid, subgrid_output.get());
         }

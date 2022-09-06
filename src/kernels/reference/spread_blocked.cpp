@@ -128,8 +128,6 @@ template <typename T, std::size_t Dim> struct OmpSpreadBlockedImplementation {
                     continue;
                 }
 
-                local_points.num_points = block_num_points;
-
                 auto grid = grids[i];
                 for (std::size_t j = 0; j < Dim; ++j) {
                     grid.extents[j] = grid_size[j];
@@ -138,6 +136,8 @@ template <typename T, std::size_t Dim> struct OmpSpreadBlockedImplementation {
                 // Gather local points
                 {
                     finufft::ScopedTimerGuard guard(timers.gather);
+
+                    local_points.num_points = block_num_points;
 
                     // Copy points to local buffer
                     std::memcpy(

@@ -66,7 +66,7 @@ finufft::aligned_unique_array<int64_t> make_random_permutation(std::size_t n, in
 template <typename T, std::size_t Dim>
 finufft::spreading::SpreaderMemoryInput<Dim, T> make_spread_subproblem_input(
     std::size_t num_points, uint32_t seed, finufft::spreading::grid_specification<Dim> const &grid,
-    std::array<finufft::spreading::KernelWriteSpec<T>, Dim> const &padding) {
+    tcb::span<const finufft::spreading::KernelWriteSpec<T>, Dim> const &padding) {
     std::array<std::pair<T, T>, Dim> range;
 
     for (std::size_t i = 0; i < Dim; ++i) {

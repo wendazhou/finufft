@@ -30,7 +30,7 @@ void benchmark_spread_subproblem(
     std::size_t num_points, fs::grid_specification<Dim> const &grid_spec,
     bool sort_points = true) {
 
-    auto input = fs::testing::make_spread_subproblem_input<T>(num_points, 0, grid_spec, functor.target_padding());
+    auto input = fs::testing::make_spread_subproblem_input<T, Dim>(num_points, 0, grid_spec, functor.target_padding());
 
     if (sort_points) {
         fs::testing::sort_point_collection(input);

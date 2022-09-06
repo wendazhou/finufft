@@ -17,8 +17,8 @@
 
 #include <gtest/gtest.h>
 
-#include "spread_test_utils.h"
 #include "spread_subproblem_test_utils.h"
+#include "spread_test_utils.h"
 
 namespace fst = finufft::spreading::testing;
 
@@ -33,30 +33,15 @@ int setup_spreader(
 
 namespace {
 
-template <std::size_t Dim, typename T> struct evaluation_result {
-    finufft::aligned_unique_array<T> output_reference;
-    finufft::aligned_unique_array<T> output;
-    finufft::spreading::grid_specification<Dim> grid;
-};
-
-/** Evaluates an implementation of the subproblem spread compared to the reference implementation.
- *
- */
 template <std::size_t Dim, typename T, typename Fn>
-evaluation_result<Dim, T> evaluate_subproblem_implementation(
+fst::evaluation_result<T, Dim> evaluate_subproblem_implementation(
     Fn &&fn_factory, std::size_t num_points, uint32_t seed, int width) {
-    // Get the kernel specification
-    auto kernel_spec = fst::specification_from_width(width, 2.0);
-
-    auto reference_fn =
-        finufft::spreading::get_subproblem_polynomial_reference_functor<T, Dim>(kernel_spec);
-    auto fn = fn_factory(kernel_spec);
+    finufft::spreading::subgrid_specification<Dim> grid;
 
     // Arbitrary grid specification in all dimensions
     auto offset = 3;
     auto size = 24;
 
-    finufft::spreading::subgrid_specification<Dim> grid;
     for (std::size_t i = 0; i < Dim; ++i) {
         grid.offsets[i] = offset;
         grid.extents[i] = size;
@@ -75,45 +60,14 @@ evaluation_result<Dim, T> evaluate_subproblem_implementation(
         }
     }
 
-    // Adjust grid and number of points according to padding requirements of target.
-    std::size_t num_points_initial = num_points;
-    finufft::spreading::testing::adjust_problem_parameters(num_points, grid, fn, reference_fn);
-    std::array<finufft::spreading::KernelWriteSpec<T>, Dim> padding_ref =
-        reference_fn.target_padding();
-    std::array<finufft::spreading::KernelWriteSpec<T>, Dim> padding = fn.target_padding();
-    for (std::size_t i = 0; i < Dim; ++i) {
-        if (padding[i].offset != padding_ref[i].offset) {
-            // don't try to unify different offsets yet (they probably correspond to different
-            // problems).
-            ADD_FAILURE() << "Target padding offset mismatch for dimension " << i << ": "
-                          << padding[i].offset << " != " << padding_ref[i].offset;
-        }
-
-        padding[i].grid_left = std::max(padding[i].grid_left, padding_ref[i].grid_left);
-        padding[i].grid_right = std::max(padding[i].grid_right, padding_ref[i].grid_right);
-    }
-
-    // Create subproblem input.
-    // Note that input is not sorted as this is functionality, not performance test.
-    auto input = fst::make_spread_subproblem_input<T>(num_points, seed, grid, padding);
-
-    std::memset(
-        input.strengths + 2 * num_points_initial,
-        0,
-        2 * sizeof(T) * (num_points - num_points_initial));
-
-    // Allocate output arrays.
-    auto output = finufft::allocate_aligned_array<T>(2 * grid.max_elements(), 64);
-    auto output_reference = finufft::allocate_aligned_array<T>(2 * grid.max_elements(), 64);
-
-    // Zero output arrays.
-    std::memset(output.get(), 0, 2 * sizeof(T) * grid.max_elements());
-    std::memset(output_reference.get(), 0, 2 * sizeof(T) * grid.max_elements());
-
-    reference_fn(input, grid, output_reference.get());
-    fn(input, grid, output.get());
-
-    return {std::move(output_reference), std::move(output), grid};
+    return fst::evaluate_subproblem_implementation<Dim, T>(
+        std::forward<Fn>(fn_factory),
+        num_points,
+        grid,
+        width,
+        [seed](auto num_points, auto grid, auto padding) {
+            return fst::make_spread_subproblem_input<T, Dim>(num_points, seed, grid, padding);
+        });
 }
 
 /** Calls the given implementation of the subproblem with data

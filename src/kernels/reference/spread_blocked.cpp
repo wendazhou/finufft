@@ -4,6 +4,7 @@
 #include <vector>
 
 #include "../sorting.h"
+#include "spread_blocked_impl.h"
 
 namespace finufft {
 namespace spreading {
@@ -11,63 +12,35 @@ namespace reference {
 
 namespace {
 
-template <typename T>
-std::vector<grid_specification<1>> make_bin_grids(IntGridBinInfo<T, 1> const &info) {
-    std::vector<grid_specification<1>> grids(info.num_bins_total());
-
-    for (std::size_t i = 0; i < info.num_bins[0]; ++i) {
-        grids[i].extents[0] = info.grid_size[0];
-        grids[i].offsets[0] = info.global_offset[0] + i * info.bin_size[0];
+/** Create array of grid information for each bin.
+ * 
+ */
+template <typename T, std::size_t Dim>
+std::vector<grid_specification<Dim>> make_bin_grids(IntGridBinInfo<T, Dim> const &info) {
+    std::array<std::size_t, Dim> grid_extents;
+    for (std::size_t i = 0; i < Dim; ++i) {
+        grid_extents[i] = info.grid_size[0];
     }
 
-    return grids;
-}
+    auto grid_fn = [&](auto... idxs) -> grid_specification<Dim> {
+        std::array<std::size_t, Dim> idx{idxs...};
+        grid_specification<Dim> grid;
 
-template <typename T>
-std::vector<grid_specification<2>> make_bin_grids(IntGridBinInfo<T, 2> const &info) {
-    std::vector<grid_specification<2>> grids(info.num_bins_total());
-
-    std::size_t idx = 0;
-
-    for (std::size_t j = 0; j < info.num_bins[1]; ++j) {
-        for (std::size_t i = 0; i < info.num_bins[0]; ++i) {
-            grids[idx].extents[0] = info.grid_size[0];
-            grids[idx].extents[1] = info.grid_size[1];
-
-            grids[idx].offsets[0] = info.global_offset[0] + i * info.bin_size[0];
-            grids[idx].offsets[1] = info.global_offset[1] + j * info.bin_size[1];
-
-            idx += 1;
+        for (std::size_t i = 0; i < Dim; ++i) {
+            grid.offsets[i] = info.global_offset[i] + idx[i] * info.bin_size[i];
         }
-    }
+
+        std::copy(grid_extents.begin(), grid_extents.end(), grid.extents.begin());
+
+        return grid;
+    };
+
+    std::vector<grid_specification<Dim>> grids(info.num_bins_total());
+    generate_cartesian_grid<std::size_t, Dim>(grids.begin(), info.num_bins, std::move(grid_fn));
 
     return grids;
 }
 
-template <typename T>
-std::vector<grid_specification<3>> make_bin_grids(IntGridBinInfo<T, 3> const &info) {
-    std::vector<grid_specification<3>> grids(info.num_bins_total());
-
-    std::size_t idx = 0;
-
-    for (std::size_t k = 0; k < info.num_bins[2]; ++k) {
-        for (std::size_t j = 0; j < info.num_bins[1]; ++j) {
-            for (std::size_t i = 0; i < info.num_bins[0]; ++i) {
-                grids[idx].extents[0] = info.grid_size[0];
-                grids[idx].extents[1] = info.grid_size[1];
-                grids[idx].extents[2] = info.grid_size[2];
-
-                grids[idx].offsets[0] = info.global_offset[0] + i * info.bin_size[0];
-                grids[idx].offsets[1] = info.global_offset[1] + j * info.bin_size[1];
-                grids[idx].offsets[2] = info.global_offset[2] + k * info.bin_size[2];
-
-                idx += 1;
-            }
-        }
-    }
-
-    return grids;
-}
 
 /** Main implementation of blocked spreading, with parallelization through OpenMP.
  *

@@ -177,7 +177,7 @@ template <std::size_t Dim, typename T> struct nu_point_collection {
  *
  * The locations written to, for a given point at coordinate x represented
  * in type T, is computed in the following fashion:
- * - let xi = (int64_t)ceil(x + offset), where all computations are done in floating point precision
+ * - let xi = (int64_t)ceil(x - offset), where all computations are done in floating point precision
  * T
  * - the functor will write to (at most) locations [xi - grid_left, xi + grid_right).
  *

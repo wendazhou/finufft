@@ -78,6 +78,10 @@ template <typename T, std::size_t Dim> struct IntBinInfo {
 };
 
 /** Computes the bin size from the given target grid size and padding requirement.
+ * 
+ * The obtained bin size is such that the spreading subproblem, for points lying
+ * in a given bin, and using the functor with the given `padding` specification,
+ * will only write to an extent of the given `grid_size`.
  *
  */
 template <typename T, std::size_t Dim>
@@ -96,6 +100,12 @@ std::array<std::size_t, Dim> compute_bin_size_from_grid_and_padding(
     return bin_size;
 }
 
+
+/** Handle corner case where the output buffer size is smaller than the size of a single bin.
+ * In this case, we reduce the size of the grid to ensure that the size of the corresponding
+ * inferred bin is equal to the size of the output buffer (in that dimension).
+ * 
+ */
 template <typename T, std::size_t Dim>
 std::array<std::size_t, Dim> reduce_grid_size(
     tcb::span<const std::size_t, Dim> target_size, tcb::span<const std::size_t, Dim> grid_size,

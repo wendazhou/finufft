@@ -130,3 +130,36 @@ TEST(SpreadSubproblemUnaligned, Avx512_2D_f32) {
             return finufft::spreading::get_subproblem_polynomial_avx512_2d_fp32_functor(k);
         });
 }
+
+TEST(SpreadSubproblemUnaligned, Avx512_2D_f64) {
+    if (finufft::get_current_capability() < finufft::DispatchCapability::AVX512) {
+        GTEST_SKIP() << "Skipping AVX512 test";
+    }
+
+    test_subproblem_implementation_unaligned<double, 2>(
+        5, [](finufft::spreading::kernel_specification const &k) {
+            return finufft::spreading::get_subproblem_polynomial_avx512_2d_fp64_functor(k);
+        });
+}
+
+TEST(SpreadSubproblemUnaligned, Avx512_3D_f32) {
+    if (finufft::get_current_capability() < finufft::DispatchCapability::AVX512) {
+        GTEST_SKIP() << "Skipping AVX512 test";
+    }
+
+    test_subproblem_implementation_unaligned<float, 3>(
+        5, [](finufft::spreading::kernel_specification const &k) {
+            return finufft::spreading::get_subproblem_polynomial_avx512_3d_fp32_functor(k);
+        });
+}
+
+TEST(SpreadSubproblemUnaligned, Avx512_3D_f64) {
+    if (finufft::get_current_capability() < finufft::DispatchCapability::AVX512) {
+        GTEST_SKIP() << "Skipping AVX512 test";
+    }
+
+    test_subproblem_implementation_unaligned<double, 3>(
+        5, [](finufft::spreading::kernel_specification const &k) {
+            return finufft::spreading::get_subproblem_polynomial_avx512_3d_fp64_functor(k);
+        });
+}

@@ -10,6 +10,25 @@
 
 #include "../../memory.h"
 
+#ifdef __has_cpp_attribute
+#if __has_cpp_attribute(likely)
+#define FINUFFT_LIKELY [[likely]]
+#endif
+
+#if __has_cpp_attribute(unlikely)
+#define FINUFFT_UNLIKELY [[unlikely]]
+#endif
+
+#endif
+
+#ifndef FINUFFT_LIKELY
+#define FINUFFT_LIKELY
+#endif
+
+#ifndef FINUFFT_UNLIKELY
+#define FINUFFT_UNLIKELY
+#endif
+
 namespace finufft {
 namespace spreading {
 namespace avx512 {
@@ -35,10 +54,11 @@ void split_loop(
     std::size_t i = 0;
 
     // Initial peel loop, brings the loop index into alignment
-    if (loop_initial_missing > 0) {
-        body(i, std::true_type{}, (loop_alignment - 1) - ((1 << loop_initial_missing) - 1));
-        loop_count += loop_initial_missing;
-    }
+    if (loop_initial_missing > 0)
+        FINUFFT_UNLIKELY {
+            body(i, std::true_type{}, (loop_alignment - 1) - ((1 << loop_initial_missing) - 1));
+            loop_count += loop_initial_missing;
+        }
 
     // Main loop
     for (; i + loop_alignment - 1 < loop_count; i += loop_alignment) {

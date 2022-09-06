@@ -4,6 +4,7 @@
 #include <cstring>
 
 #include "align_split_routines.h"
+#include "loop_routines.h"
 #include "poly_eval_routines.h"
 
 #include "../reference/spread_subproblem_reference.h"
@@ -105,16 +106,26 @@ template <std::size_t Degree> struct SpreadSubproblemPoly2DW8 {
         }
     }
 
+    template <bool Partial>
     void process_4(
         float *__restrict output, float const *coord_x, float const *coord_y,
-        float const *strengths, int offset_x, int offset_y, std::size_t stride_y) const {
+        float const *strengths, int offset_x, int offset_y, std::size_t stride_y,
+        std::integral_constant<bool, Partial>, std::uint32_t mask) const {
 
         // Load position of 4 non-uniform points, compute grid and subgrid offsets (vectorized)
         // For better efficiency, we jointly process the x and y coordinates of the 4 points
         // in a 8-wide vector, with the x coordinates in the lower half and the y coordinates
         // in the upper half.
-        __m128 x = _mm_load_ps(coord_x);
-        __m128 y = _mm_load_ps(coord_y);
+        __m128 x, y;
+
+        if (Partial) {
+            x = _mm_maskz_load_ps(mask, coord_x);
+            y = _mm_maskz_load_ps(mask, coord_y);
+        } else {
+            x = _mm_load_ps(coord_x);
+            y = _mm_load_ps(coord_y);
+        }
+
         __m256 xy = _mm256_setr_m128(x, y);
 
         __m256 xy_ceil = _mm256_ceil_ps(_mm256_sub_ps(xy, _mm256_set1_ps(0.5f * kernel_width)));
@@ -164,8 +175,11 @@ template <std::size_t Degree> struct SpreadSubproblemPoly2DW8 {
             vx1,
             vx2,
             vy);
-        accumulate_strengths(output + indices_base[0], indices_offset[0], stride_y, vx1, vy);
-        accumulate_strengths(output + indices_base[1], indices_offset[1], stride_y, vx2, vy + 8);
+        if (!Partial || mask & (1 << 0))
+            accumulate_strengths(output + indices_base[0], indices_offset[0], stride_y, vx1, vy);
+        if (!Partial || mask & (1 << 1))
+            accumulate_strengths(
+                output + indices_base[1], indices_offset[1], stride_y, vx2, vy + 8);
 
         compute_kernel(
             _mm512_permute_ps(xy_nd, 0b0101'0101),
@@ -174,8 +188,11 @@ template <std::size_t Degree> struct SpreadSubproblemPoly2DW8 {
             vx1,
             vx2,
             vy);
-        accumulate_strengths(output + indices_base[2], indices_offset[2], stride_y, vx1, vy);
-        accumulate_strengths(output + indices_base[3], indices_offset[3], stride_y, vx2, vy + 8);
+        if (!Partial || mask & (1 << 2))
+            accumulate_strengths(output + indices_base[2], indices_offset[2], stride_y, vx1, vy);
+        if (!Partial || mask & (1 << 3))
+            accumulate_strengths(
+                output + indices_base[3], indices_offset[3], stride_y, vx2, vy + 8);
     }
 
     void operator()(
@@ -192,13 +209,29 @@ template <std::size_t Degree> struct SpreadSubproblemPoly2DW8 {
         auto offset_y = grid.offsets[1];
         auto stride_y = 2 * grid.strides[1];
 
-        for (std::size_t i = 0; i < input.num_points; i += 4) {
-            process_4(
-                output, coord_x + i, coord_y + i, strengths + 2 * i, offset_x, offset_y, stride_y);
-        }
+        auto initial_elements_missing = align_multiple_pointers_previous(16, coord_x, coord_y);
+        strengths -= 2 * initial_elements_missing;
+
+        // Dispatch to main loop
+        split_loop(
+            input.num_points,
+            initial_elements_missing,
+            4,
+            [&](std::size_t i, auto partial, std::size_t mask) {
+                process_4(
+                    output,
+                    coord_x + i,
+                    coord_y + i,
+                    strengths + 2 * i,
+                    offset_x,
+                    offset_y,
+                    stride_y,
+                    partial,
+                    mask);
+            });
     }
 
-    std::size_t num_points_multiple() const { return 4; }
+    std::size_t num_points_multiple() const { return 1; }
     std::array<std::size_t, 2> extent_multiple() const { return {8, 1}; }
     std::array<KernelWriteSpec<float>, 2> target_padding() const {
         // Use split writeout in first dimension, hence may write 16 in total.
@@ -296,16 +329,25 @@ template <std::size_t Degree> struct SpreadSubproblemPoly2DW8F64 {
         }
     }
 
+    template <bool Partial>
     void process_4(
         double *__restrict output, double const *coord_x, double const *coord_y,
-        double const *strengths, int offset_x, int offset_y, std::size_t stride_y) const {
+        double const *strengths, int offset_x, int offset_y, std::size_t stride_y,
+        std::integral_constant<bool, Partial>, std::uint32_t mask) const {
 
         // Load position of 4 non-uniform points, compute grid and subgrid offsets (vectorized)
         // For better efficiency, we jointly process the x and y coordinates of the 4 points
         // in a 8-wide vector, with the x coordinates in the lower half and the y coordinates
         // in the upper half.
-        __m256d x = _mm256_load_pd(coord_x);
-        __m256d y = _mm256_load_pd(coord_y);
+        __m256d x, y;
+
+        if (Partial) {
+            x = _mm256_maskz_load_pd(mask, coord_x);
+            y = _mm256_maskz_load_pd(mask, coord_y);
+        } else {
+            x = _mm256_load_pd(coord_x);
+            y = _mm256_load_pd(coord_y);
+        }
         __m512d xy = _mm512_insertf64x4(_mm512_castpd256_pd512(x), y, 1);
 
         __m512d xy_ceil = _mm512_ceil_pd(_mm512_sub_pd(xy, _mm512_set1_pd(0.5 * kernel_width)));
@@ -342,17 +384,25 @@ template <std::size_t Degree> struct SpreadSubproblemPoly2DW8F64 {
         // At each stage, we permute from the z1 or z2 register into a register
         // of the form z = [x y x y x y x y], selecting the appropriate pair
         // corresponding to the current point.
-        compute_kernel(_mm512_permutex_pd(z1, 0b01000100), strengths, vx1, vx2, vy);
-        accumulate_strengths(output, indices[0], indices[4], stride_y, vx1, vx2, vy);
+        if (!Partial || (mask & (1 << 0))) {
+            compute_kernel(_mm512_permutex_pd(z1, 0b01000100), strengths, vx1, vx2, vy);
+            accumulate_strengths(output, indices[0], indices[4], stride_y, vx1, vx2, vy);
+        }
 
-        compute_kernel(_mm512_permutex_pd(z1, 0b11101110), strengths + 2, vx1, vx2, vy);
-        accumulate_strengths(output, indices[1], indices[5], stride_y, vx1, vx2, vy);
+        if (!Partial || (mask & (1 << 1))) {
+            compute_kernel(_mm512_permutex_pd(z1, 0b11101110), strengths + 2, vx1, vx2, vy);
+            accumulate_strengths(output, indices[1], indices[5], stride_y, vx1, vx2, vy);
+        }
 
-        compute_kernel(_mm512_permutex_pd(z2, 0b01000100), strengths + 4, vx1, vx2, vy);
-        accumulate_strengths(output, indices[2], indices[6], stride_y, vx1, vx2, vy);
+        if (!Partial || (mask & (1 << 2))) {
+            compute_kernel(_mm512_permutex_pd(z2, 0b01000100), strengths + 4, vx1, vx2, vy);
+            accumulate_strengths(output, indices[2], indices[6], stride_y, vx1, vx2, vy);
+        }
 
-        compute_kernel(_mm512_permutex_pd(z2, 0b11101110), strengths + 6, vx1, vx2, vy);
-        accumulate_strengths(output, indices[3], indices[7], stride_y, vx1, vx2, vy);
+        if (!Partial || (mask & (1 << 3))) {
+            compute_kernel(_mm512_permutex_pd(z2, 0b11101110), strengths + 6, vx1, vx2, vy);
+            accumulate_strengths(output, indices[3], indices[7], stride_y, vx1, vx2, vy);
+        }
     }
 
     void operator()(
@@ -369,13 +419,29 @@ template <std::size_t Degree> struct SpreadSubproblemPoly2DW8F64 {
         auto offset_y = grid.offsets[1];
         auto stride_y = 2 * grid.strides[1];
 
-        for (std::size_t i = 0; i < input.num_points; i += 4) {
-            process_4(
-                output, coord_x + i, coord_y + i, strengths + 2 * i, offset_x, offset_y, stride_y);
-        }
+        auto initial_elements_missing = align_multiple_pointers_previous(32, coord_x, coord_y);
+        strengths -= 2 * initial_elements_missing;
+
+        // Dispatch to main loop
+        split_loop(
+            input.num_points,
+            initial_elements_missing,
+            4,
+            [&](std::size_t i, auto partial, std::size_t mask) {
+                process_4(
+                    output,
+                    coord_x + i,
+                    coord_y + i,
+                    strengths + 2 * i,
+                    offset_x,
+                    offset_y,
+                    stride_y,
+                    partial,
+                    mask);
+            });
     }
 
-    std::size_t num_points_multiple() const { return 4; }
+    std::size_t num_points_multiple() const { return 1; }
     std::array<std::size_t, 2> extent_multiple() const { return {4, 1}; }
     std::array<KernelWriteSpec<double>, 2> target_padding() const {
         double ns2 = 0.5 * kernel_width;

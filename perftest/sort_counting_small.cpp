@@ -6,6 +6,8 @@
 
 #include "../test/spread_test_utils.h"
 
+using namespace finufft::spreading;
+
 namespace {
 
 template <typename T, std::size_t Dim>
@@ -14,8 +16,8 @@ void benchmark_sort(
     finufft::spreading::IntBinInfo<T, Dim> const &info) {
     auto num_points = state.range(0);
 
-    auto points = make_random_point_collection<Dim, T>(num_points, 0, {-M_PI, M_PI});
-    auto output = finufft::spreading::SpreaderMemoryInput<Dim, T>(num_points);
+    auto points = testing::make_random_point_collection<Dim, T>(num_points, 0, {-M_PI, M_PI});
+    auto output = SpreaderMemoryInput<Dim, T>(num_points);
     auto num_points_per_bin =
         finufft::allocate_aligned_array<std::size_t>(info.num_bins_total(), 64);
 
@@ -40,21 +42,19 @@ void benchmark_sort_2d_small(
 
 template <typename T>
 void benchmark_sort_2d_small(
-    benchmark::State &state, finufft::spreading::SortPointsFactory<T, 2> const& factory) {
+    benchmark::State &state, finufft::spreading::SortPointsFactory<T, 2> const &factory) {
     finufft::spreading::IntBinInfo<T, 2> info({1024, 1024}, {128, 32}, {4, 4});
     benchmark_sort(state, factory, info);
 }
 
 void bm_counting_direct_scalar(benchmark::State &state) {
     benchmark_sort_2d_small<float>(
-        state,
-        &finufft::spreading::reference::make_sort_counting_direct_singlethreaded<float, 2>);
+        state, &finufft::spreading::reference::make_sort_counting_direct_singlethreaded<float, 2>);
 }
 
 void bm_counting_blocked_scalar(benchmark::State &state) {
     benchmark_sort_2d_small<float>(
-        state,
-        &finufft::spreading::reference::make_sort_counting_blocked_singlethreaded<float, 2>);
+        state, &finufft::spreading::reference::make_sort_counting_blocked_singlethreaded<float, 2>);
 }
 
 void bm_counting_direct_avx512(benchmark::State &state) {
@@ -64,8 +64,7 @@ void bm_counting_direct_avx512(benchmark::State &state) {
 
 void bm_counting_blocked_avx512(benchmark::State &state) {
     benchmark_sort_2d_small<float>(
-        state,
-        &finufft::spreading::avx512::make_sort_counting_blocked_singlethreaded<float, 2>);
+        state, &finufft::spreading::avx512::make_sort_counting_blocked_singlethreaded<float, 2>);
 }
 
 void bm_ips4o_packed(benchmark::State &state) {

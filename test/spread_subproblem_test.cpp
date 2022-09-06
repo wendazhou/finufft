@@ -18,6 +18,9 @@
 #include <gtest/gtest.h>
 
 #include "spread_test_utils.h"
+#include "spread_subproblem_test_utils.h"
+
+namespace fst = finufft::spreading::testing;
 
 namespace finufft {
 namespace spreadinterp {
@@ -29,34 +32,6 @@ int setup_spreader(
 } // namespace finufft
 
 namespace {
-
-/** Adjusts the number of points and the extents of the grid according to alignment requirements.
- *
- * Implementations may specify alignment requirements, so that the total number of points and the
- * dimensions of the grid are multiples of some specified value. This function adjusts the given
- * specification to match these requirements.
- *
- */
-template <std::size_t Dim, typename Fn1, typename Fn2>
-void adjust_problem_parameters(
-    std::size_t &num_points, finufft::spreading::grid_specification<Dim> &grid, Fn1 const &fn1,
-    Fn2 const &fn2) {
-    auto num_points_multiple = std::lcm(fn1.num_points_multiple(), fn2.num_points_multiple());
-
-    std::array<std::size_t, Dim> extent_multiple;
-    {
-        auto fn1_extent_multiple = fn1.extent_multiple();
-        auto fn2_extent_multiple = fn2.extent_multiple();
-        for (std::size_t i = 0; i < Dim; ++i) {
-            extent_multiple[i] = std::lcm(fn1_extent_multiple[i], fn2_extent_multiple[i]);
-        }
-    }
-
-    num_points = finufft::round_to_next_multiple(num_points, num_points_multiple);
-    for (std::size_t i = 0; i < Dim; ++i) {
-        grid.extents[i] = finufft::round_to_next_multiple(grid.extents[i], extent_multiple[i]);
-    }
-}
 
 template <std::size_t Dim, typename T> struct evaluation_result {
     finufft::aligned_unique_array<T> output_reference;
@@ -71,7 +46,7 @@ template <std::size_t Dim, typename T, typename Fn>
 evaluation_result<Dim, T> evaluate_subproblem_implementation(
     Fn &&fn_factory, std::size_t num_points, uint32_t seed, int width) {
     // Get the kernel specification
-    auto kernel_spec = specification_from_width(width, 2.0);
+    auto kernel_spec = fst::specification_from_width(width, 2.0);
 
     auto reference_fn =
         finufft::spreading::get_subproblem_polynomial_reference_functor<T, Dim>(kernel_spec);
@@ -102,7 +77,7 @@ evaluation_result<Dim, T> evaluate_subproblem_implementation(
 
     // Adjust grid and number of points according to padding requirements of target.
     std::size_t num_points_initial = num_points;
-    adjust_problem_parameters(num_points, grid, fn, reference_fn);
+    finufft::spreading::testing::adjust_problem_parameters(num_points, grid, fn, reference_fn);
     std::array<finufft::spreading::KernelWriteSpec<T>, Dim> padding_ref =
         reference_fn.target_padding();
     std::array<finufft::spreading::KernelWriteSpec<T>, Dim> padding = fn.target_padding();
@@ -120,7 +95,7 @@ evaluation_result<Dim, T> evaluate_subproblem_implementation(
 
     // Create subproblem input.
     // Note that input is not sorted as this is functionality, not performance test.
-    auto input = make_spread_subproblem_input<T>(num_points, seed, grid, padding);
+    auto input = fst::make_spread_subproblem_input<T>(num_points, seed, grid, padding);
 
     std::memset(
         input.strengths + 2 * num_points_initial,
@@ -150,7 +125,7 @@ evaluation_result<Dim, T> evaluate_subproblem_implementation(
  */
 template <std::size_t Dim, typename T, typename Fn>
 void evaluate_subproblem_limits(int width, Fn &&factory) {
-    auto kernel_spec = specification_from_width(width, 2.0);
+    auto kernel_spec = fst::specification_from_width(width, 2.0);
     auto fn = factory(kernel_spec);
 
     // Arbitrary grid specification
@@ -191,7 +166,7 @@ template <typename T, std::size_t Dim, typename Fn>
 void evaluate_subproblem_implementation_with_points(int width, int num_points, Fn &&factory) {
     auto result = evaluate_subproblem_implementation<Dim, T>(factory, num_points, 0, width);
 
-    auto error_level = compute_max_relative_threshold(
+    auto error_level = fst::compute_max_relative_threshold(
         std::pow(10, -width + 1),
         result.output_reference.get(),
         result.output_reference.get() + 2 * result.grid.num_elements());

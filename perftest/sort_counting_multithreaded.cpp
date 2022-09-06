@@ -20,7 +20,7 @@ void benchmark_sort(
     finufft::spreading::IntBinInfo<T, Dim> const &info) {
     auto num_points = state.range(0);
 
-    auto points = make_random_point_collection<Dim, T>(num_points, 0, {-M_PI, M_PI});
+    auto points = finufft::spreading::testing::make_random_point_collection<Dim, T>(num_points, 0, {-M_PI, M_PI});
     auto output = finufft::spreading::SpreaderMemoryInput<Dim, T>(num_points);
     auto num_points_per_bin =
         finufft::allocate_aligned_array<std::size_t>(info.num_bins_total(), 64);

@@ -18,7 +18,7 @@ void benchmark_scaling_avx512(benchmark::State &state) {
     auto total_points = state.range(1);
     auto dim_y = state.range(2);
 
-    auto kernel_spec = specification_from_width(width, 2.0);
+    auto kernel_spec = finufft::spreading::testing::specification_from_width(width, 2.0);
     auto functor = fs::get_subproblem_polynomial_avx512_functor<float, 2>(kernel_spec);
 
     auto padding = functor.target_padding();

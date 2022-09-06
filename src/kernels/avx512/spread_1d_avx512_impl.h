@@ -9,6 +9,7 @@
  */
 
 #include "align_split_routines.h"
+#include "loop_routines.h"
 #include "poly_eval_routines.h"
 
 #include <cstddef>
@@ -130,11 +131,18 @@ template <std::size_t Degree> struct SpreadSubproblemPolyW8 {
      * in order to leverage vectorization in the computation of the index into the grid.
      *
      */
+    template <bool Partial>
     void process_8(
         float *__restrict output, float const *coord_x, float const *strengths, int64_t offset,
-        std::size_t i) const {
+        std::size_t i, std::integral_constant<bool, Partial>, uint32_t mask) const {
         // Load position of 8 non-uniform points, compute grid and subgrid offsets (vectorized)
-        __m256 x = _mm256_load_ps(coord_x + i);
+        __m256 x;
+        if (Partial) {
+            x = _mm256_maskz_load_ps((__mmask8)mask, coord_x + i);
+        } else {
+            x = _mm256_load_ps(coord_x + i);
+        }
+
         __m256 x_ceil = _mm256_ceil_ps(_mm256_sub_ps(x, _mm256_set1_ps(0.5f * kernel_width)));
         __m256i x_ceili = _mm256_cvtps_epi32(x_ceil);
         __m256 xi = _mm256_sub_ps(x_ceil, x);
@@ -162,23 +170,31 @@ template <std::size_t Degree> struct SpreadSubproblemPolyW8 {
         // At each stage, we permute from xid into a register
         // which contains z_0 in the lower 256-bit, and z_1 in the upper 256-bit.
         compute_kernel(_mm512_permute_ps(zd, 0), strengths + 2 * i, v1, v2);
-        accumulate_strengths(output, indices[0], v1);
-        accumulate_strengths(output, indices[1], v2);
+        if (!Partial || (mask & 1 << 0))
+            accumulate_strengths(output, indices[0], v1);
+        if (!Partial || (mask & 1 << 1))
+            accumulate_strengths(output, indices[1], v2);
 
         // Permute to obtain z_2 in the lower 256-bit, and z_3 in the upper 256-bit.
         compute_kernel(_mm512_permute_ps(zd, 0b01010101), strengths + 2 * i + 4, v1, v2);
-        accumulate_strengths(output, indices[2], v1);
-        accumulate_strengths(output, indices[3], v2);
+        if (!Partial || (mask & 1 << 2))
+            accumulate_strengths(output, indices[2], v1);
+        if (!Partial || (mask & 1 << 3))
+            accumulate_strengths(output, indices[3], v2);
 
         // Permute to obtain z_4 in the lower 256-bit, and z_5 in the upper 256-bit.
         compute_kernel(_mm512_permute_ps(zd, 0b10101010), strengths + 2 * i + 8, v1, v2);
-        accumulate_strengths(output, indices[4], v1);
-        accumulate_strengths(output, indices[5], v2);
+        if (!Partial || (mask & 1 << 4))
+            accumulate_strengths(output, indices[4], v1);
+        if (!Partial || (mask & 1 << 5))
+            accumulate_strengths(output, indices[5], v2);
 
         // Permute to obtain z_6 in the lower 256-bit, and z_7 in the upper 256-bit.
         compute_kernel(_mm512_permute_ps(zd, 0b11111111), strengths + 2 * i + 12, v1, v2);
-        accumulate_strengths(output, indices[6], v1);
-        accumulate_strengths(output, indices[7], v2);
+        if (!Partial || (mask & 1 << 6))
+            accumulate_strengths(output, indices[6], v1);
+        if (!Partial || (mask & 1 << 7))
+            accumulate_strengths(output, indices[7], v2);
     }
 
     void operator()(
@@ -192,9 +208,20 @@ template <std::size_t Degree> struct SpreadSubproblemPolyW8 {
 
         auto offset = grid.offsets[0];
 
-        for (std::size_t i = 0; i < input.num_points; i += 8) {
-            process_8(output, coord_x, strengths, offset, i);
-        }
+        auto initial_elements_missing = align_multiple_pointers_previous(32, coord_x);
+        strengths -= 2 * initial_elements_missing;
+
+        // Strengths should be aligned after adjustment
+        assert((uintptr_t)strengths % 32 == 0);
+
+        // Dispatch to main loop
+        split_loop(
+            input.num_points,
+            initial_elements_missing,
+            8,
+            [&](std::size_t i, auto partial, std::size_t mask) {
+                process_8(output, coord_x, strengths, offset, i, partial, mask);
+            });
     }
 
     std::size_t num_points_multiple() const {
@@ -300,11 +327,18 @@ template <std::size_t Degree> struct SpreadSubproblemPolyW4 {
         _mm256_store_ps(out + 8, out_hi);
     }
 
+    template <bool Partial>
     void process_8(
         float *__restrict output, float const *coord_x, float const *strengths, int64_t offset,
-        std::size_t i) const {
+        std::size_t i, std::integral_constant<bool, Partial>, uint16_t mask) const {
         // Load position of 8 non-uniform points, compute grid and subgrid offsets (vectorized)
-        __m256 x = _mm256_load_ps(coord_x + i);
+        __m256 x;
+        if (Partial) {
+            x = _mm256_maskz_load_ps((__mmask8)mask, coord_x + i);
+        } else {
+            x = _mm256_load_ps(coord_x + i);
+        }
+
         __m256 x_ceil = _mm256_ceil_ps(_mm256_sub_ps(x, _mm256_set1_ps(0.5f * kernel_width)));
         __m256i x_ceili = _mm256_cvtps_epi32(x_ceil);
         __m256 xi = _mm256_sub_ps(x_ceil, x);
@@ -332,16 +366,24 @@ template <std::size_t Degree> struct SpreadSubproblemPolyW4 {
         // At each stage, we permute from zd into a register
         // which contains [z_0 x4, z_1 x4, z_2 x4, z_3 x4]
         compute_kernel(_mm512_permute_ps(zd, 0), strengths + 2 * i, v1, v2);
-        accumulate_strengths(output, indices[0], _mm512_extractf32x8_ps(v1, 0));
-        accumulate_strengths(output, indices[1], _mm512_extractf32x8_ps(v1, 1));
-        accumulate_strengths(output, indices[2], _mm512_extractf32x8_ps(v2, 0));
-        accumulate_strengths(output, indices[3], _mm512_extractf32x8_ps(v2, 1));
+        if (!Partial || (mask & 1 << 0))
+            accumulate_strengths(output, indices[0], _mm512_extractf32x8_ps(v1, 0));
+        if (!Partial || (mask & 1 << 1))
+            accumulate_strengths(output, indices[1], _mm512_extractf32x8_ps(v1, 1));
+        if (!Partial || (mask & 1 << 2))
+            accumulate_strengths(output, indices[2], _mm512_extractf32x8_ps(v2, 0));
+        if (!Partial || (mask & 1 << 3))
+            accumulate_strengths(output, indices[3], _mm512_extractf32x8_ps(v2, 1));
 
         compute_kernel(_mm512_permute_ps(zd, 0b11111111), strengths + 2 * i + 8, v1, v2);
-        accumulate_strengths(output, indices[4], _mm512_extractf32x8_ps(v1, 0));
-        accumulate_strengths(output, indices[5], _mm512_extractf32x8_ps(v1, 1));
-        accumulate_strengths(output, indices[6], _mm512_extractf32x8_ps(v2, 0));
-        accumulate_strengths(output, indices[7], _mm512_extractf32x8_ps(v2, 1));
+        if (!Partial || (mask & 1 << 4))
+            accumulate_strengths(output, indices[4], _mm512_extractf32x8_ps(v1, 0));
+        if (!Partial || (mask & 1 << 5))
+            accumulate_strengths(output, indices[5], _mm512_extractf32x8_ps(v1, 1));
+        if (!Partial || (mask & 1 << 6))
+            accumulate_strengths(output, indices[6], _mm512_extractf32x8_ps(v2, 0));
+        if (!Partial || (mask & 1 << 7))
+            accumulate_strengths(output, indices[7], _mm512_extractf32x8_ps(v2, 1));
     }
 
     void operator()(
@@ -353,9 +395,20 @@ template <std::size_t Degree> struct SpreadSubproblemPolyW4 {
 
         auto offset = grid.offsets[0];
 
-        for (std::size_t i = 0; i < input.num_points; i += 8) {
-            process_8(output, coord_x, strengths, offset, i);
-        }
+        auto initial_elements_missing = align_multiple_pointers_previous(32, coord_x);
+        strengths -= 2 * initial_elements_missing;
+
+        // Strengths should be aligned after adjustment
+        assert((uintptr_t)strengths % 32 == 0);
+
+        // Dispatch to main loop
+        split_loop(
+            input.num_points,
+            initial_elements_missing,
+            8,
+            [&](std::size_t i, auto partial, std::size_t mask) {
+                process_8(output, coord_x, strengths, offset, i, partial, mask);
+            });
     }
 
     std::size_t num_points_multiple() const {
@@ -456,11 +509,19 @@ template <std::size_t Degree> struct SpreadSubproblemPolyW8F64 {
      * in order to leverage vectorization in the computation of the index into the grid.
      *
      */
+    template <bool Partial>
     void process_4(
         double *__restrict output, double const *coord_x, double const *strengths, int64_t offset,
-        std::size_t i) const {
+        std::size_t i, std::integral_constant<bool, Partial>, uint16_t mask) const {
         // Load position of 8 non-uniform points, compute grid and subgrid offsets (vectorized)
-        __m256d x = _mm256_load_pd(coord_x + i);
+        __m256d x;
+
+        if (Partial) {
+            x = _mm256_maskz_load_pd(mask, coord_x + i);
+        } else {
+            x = _mm256_load_pd(coord_x + i);
+        }
+
         __m256d x_ceil = _mm256_ceil_pd(_mm256_sub_pd(x, _mm256_set1_pd(0.5 * kernel_width)));
         __m256i x_ceili = _mm256_cvtpd_epi64(x_ceil);
         __m256d xi = _mm256_sub_pd(x_ceil, x);
@@ -484,17 +545,25 @@ template <std::size_t Degree> struct SpreadSubproblemPolyW8F64 {
         _mm256_store_epi64(indices, _mm256_sub_epi64(x_ceili, _mm256_set1_epi64x(offset)));
 
         // Unrolled loop to compute 4 values, one at a time.
-        compute_kernel(_mm512_permutex_pd(zd, 0b00000000), strengths + 2 * i, v1, v2);
-        accumulate_strengths(output, indices[0], v1, v2);
+        if (!Partial || (mask & (1 << 0))) {
+            compute_kernel(_mm512_permutex_pd(zd, 0b00000000), strengths + 2 * i, v1, v2);
+            accumulate_strengths(output, indices[0], v1, v2);
+        }
 
-        compute_kernel(_mm512_permutex_pd(zd, 0b01010101), strengths + 2 * i + 2, v1, v2);
-        accumulate_strengths(output, indices[1], v1, v2);
+        if (!Partial || (mask & (1 << 1))) {
+            compute_kernel(_mm512_permutex_pd(zd, 0b01010101), strengths + 2 * i + 2, v1, v2);
+            accumulate_strengths(output, indices[1], v1, v2);
+        }
 
-        compute_kernel(_mm512_permutex_pd(zd, 0b10101010), strengths + 2 * i + 4, v1, v2);
-        accumulate_strengths(output, indices[2], v1, v2);
+        if (!Partial || (mask & (1 << 2))) {
+            compute_kernel(_mm512_permutex_pd(zd, 0b10101010), strengths + 2 * i + 4, v1, v2);
+            accumulate_strengths(output, indices[2], v1, v2);
+        }
 
-        compute_kernel(_mm512_permutex_pd(zd, 0b11111111), strengths + 2 * i + 6, v1, v2);
-        accumulate_strengths(output, indices[3], v1, v2);
+        if (!Partial || (mask & (1 << 3))) {
+            compute_kernel(_mm512_permutex_pd(zd, 0b11111111), strengths + 2 * i + 6, v1, v2);
+            accumulate_strengths(output, indices[3], v1, v2);
+        }
     }
 
     void operator()(
@@ -506,9 +575,20 @@ template <std::size_t Degree> struct SpreadSubproblemPolyW8F64 {
 
         auto offset = grid.offsets[0];
 
-        for (std::size_t i = 0; i < input.num_points; i += 4) {
-            process_4(output, coord_x, strengths, offset, i);
-        }
+        auto initial_elements_missing = align_multiple_pointers_previous(32, coord_x);
+        strengths -= 2 * initial_elements_missing;
+
+        // Strengths should be aligned after adjustment
+        assert((uintptr_t)strengths % 32 == 0);
+
+        // Dispatch to main loop
+        split_loop(
+            input.num_points,
+            initial_elements_missing,
+            4,
+            [&](std::size_t i, auto partial, std::size_t mask) {
+                process_4(output, coord_x, strengths, offset, i, partial, mask);
+            });
     }
 
     std::size_t num_points_multiple() const { return 4; }

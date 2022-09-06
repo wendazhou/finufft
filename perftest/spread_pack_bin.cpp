@@ -18,7 +18,7 @@ namespace {
 template <typename T, std::size_t Dim, typename Fn>
 void benchmark_pack(benchmark::State &state, Fn &&compute_bins_and_pack) {
     auto num_points = state.range(0);
-    auto points = make_random_point_collection<Dim, T>(num_points, 0, {-3 * M_PI, 3 * M_PI});
+    auto points = testing::make_random_point_collection<Dim, T>(num_points, 0, {-3 * M_PI, 3 * M_PI});
 
     auto packed = finufft::allocate_aligned_array<PointBin<T, Dim>>(points.num_points, 64);
 

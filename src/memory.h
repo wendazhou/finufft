@@ -60,11 +60,11 @@ void *allocate_aligned_memory_hugepage_posix(std::size_t size_bytes, std::size_t
 }
 
 /** Allocator for aligned array memory using posix_memalign.
- * 
+ *
  * This allocator uses posix_memalign to allocate aligned memory on linux systems.
  * Additionally, it attempts to allocate a huge page for allocations larger than
  * the standard page size (4 kiB).
- * 
+ *
  */
 template <typename T> struct PosixMemalignArrayAllocator {
     typedef FreeDeleter Deleter;
@@ -113,5 +113,15 @@ template <typename T, typename U> T round_to_next_multiple(T v, U multiple) {
     return (v + multiple - 1) / multiple * multiple;
 }
 
+/** Utility function which aligns the pointer to the previous pointer (i.e. the largest pointer
+ *  which compares less than `ptr`) which is aligned to the given alignment.
+ *
+ * @param ptr The pointer to align
+ * @param alignment The alignment in bytes
+ *
+ */
+template <typename T> T *align_pointer_previous(T *ptr, std::size_t alignment) {
+    return reinterpret_cast<T *>(reinterpret_cast<std::uintptr_t>(ptr) / alignment * alignment);
+}
 
 } // namespace finufft

@@ -9,14 +9,17 @@
 
 #include "../test/spread_test_utils.h"
 
+using namespace finufft::spreading;
+
 namespace {
 template <typename T, std::size_t Dim>
 void benchmark_binsort(
     benchmark::State &state, finufft::spreading::BinSortFunctor<T, Dim> &&functor) {
     std::size_t num_points = std::size_t(1) << state.range(0);
 
-    auto points = make_random_point_collection<Dim, T>(num_points, 0, {-3 * M_PI, 3 * M_PI});
-    finufft::spreading::nu_point_collection<Dim, const T> points_view = points;
+    auto points =
+        testing::make_random_point_collection<Dim, T>(num_points, 0, {-3 * M_PI, 3 * M_PI});
+    nu_point_collection<Dim, const T> points_view = points;
 
     auto output = finufft::allocate_aligned_array<int64_t>(points.num_points, 64);
 

@@ -27,6 +27,8 @@
 
 #include "../test/spread_test_utils.h"
 
+using namespace finufft::spreading;
+
 namespace {
 
 using finufft::spreading::IntGridBinInfo;
@@ -263,7 +265,7 @@ void benchmark_spread_2d(benchmark::State &state, bool resolve_indirect_sort) {
     auto dim = state.range(0);
     auto num_points = dim * dim;
 
-    auto points = make_random_point_collection<2, float>(num_points, 0, {-3 * M_PI, 3 * M_PI});
+    auto points = testing::make_random_point_collection<2, float>(num_points, 0, {-3 * M_PI, 3 * M_PI});
     std::array<std::size_t, 2> sizes;
     sizes.fill(dim);
 
@@ -272,7 +274,7 @@ void benchmark_spread_2d(benchmark::State &state, bool resolve_indirect_sort) {
     auto output = finufft::allocate_aligned_array<float>(
         2 * std::accumulate(sizes.begin(), sizes.end(), size_t(1), std::multiplies<size_t>{}), 64);
 
-    auto kernel_spec = specification_from_width(8, 2.0);
+    auto kernel_spec = testing::specification_from_width(8, 2.0);
 
     finufft_spread_opts opts;
     opts.pirange = true;

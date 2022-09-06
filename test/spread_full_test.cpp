@@ -14,6 +14,7 @@
 #include <iostream>
 
 using namespace finufft::spreading;
+namespace fst = finufft::spreading::testing;
 
 namespace {
 
@@ -27,7 +28,7 @@ void test_spread_functor(
     auto total_size =
         std::accumulate(target_size.begin(), target_size.end(), 1, std::multiplies<std::size_t>());
 
-    auto points = make_random_point_collection<Dim, T>(num_points, 0, {-0.5, 0.5});
+    auto points = fst::make_random_point_collection<Dim, T>(num_points, 0, {-0.5, 0.5});
 
     auto output_ref_holder = finufft::allocate_aligned_array<T>(2 * total_size, 64);
     auto output_holder = finufft::allocate_aligned_array<T>(2 * total_size, 64);
@@ -79,7 +80,7 @@ void test_spread_functor_vary_points(
 } // namespace
 
 TEST(TestSpreadFull, TestSpreadLegacy1D) {
-    auto kernel_spec = specification_from_width(8, 2);
+    auto kernel_spec = fst::specification_from_width(8, 2);
     std::size_t target_width = 128;
 
     auto spread_legacy_functor = legacy::make_spread_functor<float, 1>(
@@ -88,7 +89,7 @@ TEST(TestSpreadFull, TestSpreadLegacy1D) {
 }
 
 TEST(TestSpreadFull, TestSpreadLegacy2D) {
-    auto kernel_spec = specification_from_width(8, 2);
+    auto kernel_spec = fst::specification_from_width(8, 2);
     std::size_t target_width = 128;
 
     auto spread_legacy_functor = legacy::make_spread_functor<float, 2>(
@@ -97,7 +98,7 @@ TEST(TestSpreadFull, TestSpreadLegacy2D) {
 }
 
 TEST(TestSpreadFull, TestSpreadReferenceIndirect1D) {
-    auto kernel_spec = specification_from_width(8, 2);
+    auto kernel_spec = fst::specification_from_width(8, 2);
     std::size_t target_width = 128;
 
     auto spread_functor = reference::get_indirect_spread_functor<float, 1>(
@@ -107,7 +108,7 @@ TEST(TestSpreadFull, TestSpreadReferenceIndirect1D) {
 }
 
 TEST(TestSpreadFull, TestSpreadReferenceIndirect2D) {
-    auto kernel_spec = specification_from_width(8, 2);
+    auto kernel_spec = fst::specification_from_width(8, 2);
     std::size_t target_width = 128;
 
     auto spread_functor = reference::get_indirect_spread_functor<float, 2>(
@@ -117,7 +118,7 @@ TEST(TestSpreadFull, TestSpreadReferenceIndirect2D) {
 }
 
 TEST(TestSpreadFull, TestSpreadReferenceBlocked1D) {
-    auto kernel_spec = specification_from_width(5, 2);
+    auto kernel_spec = fst::specification_from_width(5, 2);
     std::size_t target_width = 128;
 
     auto spread_functor = reference::get_blocked_spread_functor<float, 1>(
@@ -128,7 +129,7 @@ TEST(TestSpreadFull, TestSpreadReferenceBlocked1D) {
 
 // Note: numerical errors don't seem to work out for this test
 TEST(TestSpreadFull, DISABLED_TestSpreadReferenceBlocked2D) {
-    auto kernel_spec = specification_from_width(5, 2);
+    auto kernel_spec = fst::specification_from_width(5, 2);
     std::size_t target_width = 128;
 
     auto spread_functor = reference::get_blocked_spread_functor<float, 2>(
@@ -138,7 +139,7 @@ TEST(TestSpreadFull, DISABLED_TestSpreadReferenceBlocked2D) {
 }
 
 TEST(TestSpreadFull, TestSpreadAvx512Blocked1D) {
-    auto kernel_spec = specification_from_width(5, 2);
+    auto kernel_spec = fst::specification_from_width(5, 2);
     std::size_t target_width = 128;
 
     auto spread_functor = avx512::get_blocked_spread_functor<float, 1>(
@@ -148,7 +149,7 @@ TEST(TestSpreadFull, TestSpreadAvx512Blocked1D) {
 }
 
 TEST(TestSpreadFull, TestSpreadAvx512Blocked2D) {
-    auto kernel_spec = specification_from_width(5, 2);
+    auto kernel_spec = fst::specification_from_width(5, 2);
     std::size_t target_width = 128;
 
     auto spread_functor = avx512::get_blocked_spread_functor<float, 2>(

@@ -10,7 +10,9 @@
 
 #include "test_utils.h"
 
-namespace {
+namespace finufft {
+namespace spreading {
+namespace testing {
 
 template <std::size_t Dim, typename T>
 finufft::spreading::SpreaderMemoryInput<Dim, T> make_random_point_collection(
@@ -24,15 +26,10 @@ finufft::spreading::SpreaderMemoryInput<Dim, T> make_random_point_collection(
         }
 
         finufft::testing::fill_random_uniform(
-            points.coordinates[dim],
-            num_points,
-            dim + seed,
-            range[dim].first,
-            range[dim].second);
+            points.coordinates[dim], num_points, dim + seed, range[dim].first, range[dim].second);
     }
 
-    finufft::testing::fill_random_uniform(
-        points.strengths, 2 * num_points, Dim + seed, -1, 1);
+    finufft::testing::fill_random_uniform(points.strengths, 2 * num_points, Dim + seed, -1, 1);
 
     return points;
 }
@@ -161,4 +158,6 @@ compute_max_relative_threshold(U tolerance, It first, It last) {
     return static_cast<T>(tolerance * r_max);
 }
 
-} // namespace
+} // namespace testing
+} // namespace spreading
+} // namespace finufft

@@ -15,6 +15,9 @@
 #include "../src/kernels/reference/spread_reference.h"
 #include "../src/spreading_default.h"
 
+using namespace finufft::spreading;
+namespace fst = finufft::spreading::testing;
+
 namespace finufft {
 namespace spreadinterp {
 
@@ -137,8 +140,8 @@ std::pair<std::vector<T>, std::vector<T>> run_spread_interp(double eps, ConfigTy
 
     auto num_points = 100;
 
-    auto input = make_random_point_collection<Dim, T>(num_points, 0, {-3 * M_PI, 3 * M_PI});
-    auto permutation = make_random_permutation(num_points, 1);
+    auto input = fst::make_random_point_collection<Dim, T>(num_points, 0, {-3 * M_PI, 3 * M_PI});
+    auto permutation = fst::make_random_permutation(num_points, 1);
 
     auto output_expected = std::vector<T>(2 * output_size);
     auto output = std::vector<T>(2 * output_size);
@@ -169,7 +172,7 @@ TEST_P(SpreadSortedIntegrationTest, SpreadSorted1DF32) {
     auto &output = result.second;
 
     auto tolerance =
-        compute_max_relative_threshold(eps, output_expected.begin(), output_expected.end());
+        fst::compute_max_relative_threshold(eps, output_expected.begin(), output_expected.end());
 
     for (std::size_t i = 0; i < output_expected.size(); ++i) {
         ASSERT_NEAR(output_expected[i], output[i], tolerance) << "i = " << i;
@@ -186,7 +189,7 @@ TEST_P(SpreadSortedIntegrationTest, SpreadSorted1DF64) {
     auto &output = result.second;
 
     auto tolerance =
-        compute_max_relative_threshold(eps, output_expected.begin(), output_expected.end());
+        fst::compute_max_relative_threshold(eps, output_expected.begin(), output_expected.end());
 
     for (std::size_t i = 0; i < output_expected.size(); ++i) {
         ASSERT_NEAR(output_expected[i], output[i], tolerance) << "i = " << i;
@@ -203,7 +206,7 @@ TEST_P(SpreadSortedIntegrationTest, SpreadSorted2DF32) {
     auto &output = result.second;
 
     auto tolerance =
-        compute_max_relative_threshold(eps, output_expected.begin(), output_expected.end());
+        fst::compute_max_relative_threshold(eps, output_expected.begin(), output_expected.end());
 
     for (std::size_t i = 0; i < output_expected.size(); ++i) {
         ASSERT_NEAR(output_expected[i], output[i], tolerance) << "i = " << i;
@@ -220,7 +223,7 @@ TEST_P(SpreadSortedIntegrationTest, SpreadSorted2DF64) {
     auto &output = result.second;
 
     auto tolerance =
-        compute_max_relative_threshold(eps, output_expected.begin(), output_expected.end());
+        fst::compute_max_relative_threshold(eps, output_expected.begin(), output_expected.end());
 
     for (std::size_t i = 0; i < output_expected.size(); ++i) {
         ASSERT_NEAR(output_expected[i], output[i], tolerance) << "i = " << i;
@@ -237,14 +240,13 @@ TEST_P(SpreadSortedIntegrationTest, SpreadSorted3DF32) {
     auto &output = result.second;
 
     // TODO: check tolerance again once polynomial weights are standardized.
-    auto tolerance =
-        compute_max_relative_threshold(eps * 10, output_expected.begin(), output_expected.end());
+    auto tolerance = fst::compute_max_relative_threshold(
+        eps * 10, output_expected.begin(), output_expected.end());
 
     for (std::size_t i = 0; i < output_expected.size(); ++i) {
         ASSERT_NEAR(output_expected[i], output[i], tolerance) << "i = " << i;
     }
 }
-
 
 TEST_P(SpreadSortedIntegrationTest, SpreadSorted3DF64) {
     auto params = GetParam();
@@ -256,8 +258,8 @@ TEST_P(SpreadSortedIntegrationTest, SpreadSorted3DF64) {
     auto &output = result.second;
 
     // TODO: check tolerance again once polynomial weights are standardized.
-    auto tolerance =
-        compute_max_relative_threshold(eps * 10, output_expected.begin(), output_expected.end());
+    auto tolerance = fst::compute_max_relative_threshold(
+        eps * 10, output_expected.begin(), output_expected.end());
 
     for (std::size_t i = 0; i < output_expected.size(); ++i) {
         ASSERT_NEAR(output_expected[i], output[i], tolerance) << "i = " << i;

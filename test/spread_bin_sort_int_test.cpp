@@ -22,7 +22,7 @@ namespace {
 
 template <typename T, std::size_t Dim, typename Fn>
 void test_compute_bins_and_pack(std::size_t num_points, Fn &&fn) {
-    auto points = make_random_point_collection<Dim, T>(num_points, 0, {-3 * M_PI, 3 * M_PI});
+    auto points = fs::testing::make_random_point_collection<Dim, T>(num_points, 0, {-3 * M_PI, 3 * M_PI});
     auto packed_expected = finufft::allocate_aligned_array<PointBin<T, Dim>>(num_points, 64);
     auto packed_actual = finufft::allocate_aligned_array<PointBin<T, Dim>>(num_points, 64);
 
@@ -65,7 +65,7 @@ template <typename T, std::size_t Dim, typename Fn> void test_compute_bins_and_p
 }
 
 template <typename T, std::size_t Dim> void test_unpack_bins(std::size_t num_points) {
-    auto points = make_random_point_collection<Dim, T>(num_points, 0, {-3 * M_PI, 3 * M_PI});
+    auto points = fs::testing::make_random_point_collection<Dim, T>(num_points, 0, {-3 * M_PI, 3 * M_PI});
     auto packed = finufft::allocate_aligned_array<PointBin<T, Dim>>(num_points, 64);
 
     std::array<std::size_t, Dim> size;

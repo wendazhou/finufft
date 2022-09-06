@@ -2,10 +2,12 @@
 
 #include "../src/kernels/avx2/gather_fold_avx2.h"
 #include "../src/kernels/avx512/gather_fold_avx512.h"
+#include "../src/kernels/dispatch.h"
 #include "../src/kernels/hwy/gather_fold_hwy.h"
 #include "../src/kernels/reference/gather_fold_reference.h"
-#include "../src/kernels/dispatch.h"
 #include "../test/spread_test_utils.h"
+
+using namespace finufft::spreading;
 
 namespace {
 
@@ -19,8 +21,8 @@ int64_t num_bytes_read_gather_rescale(std::size_t dim, std::size_t num_points, s
 template <std::size_t Dim, typename T, typename Fn>
 void gather_rescale_impl(benchmark::State &state, Fn &&fn) {
     std::size_t num_points = state.range(0);
-    auto points = make_random_point_collection<Dim, T>(num_points, 0, {-1.0, 2.0});
-    auto permutation = make_random_permutation(num_points, 1);
+    auto points = testing::make_random_point_collection<Dim, T>(num_points, 0, {-1.0, 2.0});
+    auto permutation = testing::make_random_permutation(num_points, 1);
 
     finufft::spreading::SpreaderMemoryInput<Dim, T> output(num_points / 2);
     std::array<int64_t, Dim> sizes;

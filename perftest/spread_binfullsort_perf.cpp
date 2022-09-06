@@ -71,7 +71,7 @@ void sort_packed(
 template <typename T, std::size_t Dim> void bench_sort_packed(benchmark::State &state) {
     auto num_points = state.range(0);
 
-    auto points = make_random_point_collection<Dim, T>(num_points, 1, {-3 * M_PI, 3 * M_PI});
+    auto points = testing::make_random_point_collection<Dim, T>(num_points, 1, {-3 * M_PI, 3 * M_PI});
     auto output = finufft::spreading::SpreaderMemoryInput<Dim, T>(num_points);
     auto output_bin_index = finufft::allocate_aligned_array<uint32_t>(num_points, 64);
 

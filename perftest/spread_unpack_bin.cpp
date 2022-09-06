@@ -21,7 +21,7 @@ namespace {
 template <typename T, std::size_t Dim, typename Fn>
 void benchmark_unpack(benchmark::State &state, Fn &&unpack) {
     auto num_points = state.range(0);
-    auto points = make_random_point_collection<Dim, T>(num_points, 0, {-3 * M_PI, 3 * M_PI});
+    auto points = testing::make_random_point_collection<Dim, T>(num_points, 0, {-3 * M_PI, 3 * M_PI});
 
     auto packed = finufft::allocate_aligned_array<PointBin<T, Dim>>(points.num_points, 64);
     auto unpacked = finufft::spreading::SpreaderMemoryInput<Dim, T>(num_points);
@@ -55,7 +55,7 @@ void benchmark_unpack(benchmark::State &state, Fn &&unpack) {
 template <typename T, std::size_t Dim, typename Fn>
 void benchmark_unpack_sorted(benchmark::State &state, Fn &&unpack) {
     auto num_points = state.range(0);
-    auto points = make_random_point_collection<Dim, T>(num_points, 0, {-3 * M_PI, 3 * M_PI});
+    auto points = testing::make_random_point_collection<Dim, T>(num_points, 0, {-3 * M_PI, 3 * M_PI});
 
     auto packed_holder = finufft::allocate_aligned_array<PointBin<T, Dim>>(points.num_points, 64);
     auto packed = packed_holder.get();

@@ -7,17 +7,18 @@
 #include "../src/kernels/legacy/spread_bin_sort_legacy.h"
 #include "../src/kernels/reference/gather_fold_reference.h"
 #include "../src/kernels/reference/spread_bin_sort_reference.h"
-#include "../src/memory.h"
 #include "../src/kernels/spreading.h"
+#include "../src/memory.h"
 
 #include "spread_test_utils.h"
+
+using namespace finufft::spreading;
 
 namespace {
 template <typename T, std::size_t Dim>
 std::vector<int64_t> compute_bin(
-    finufft::spreading::nu_point_collection<Dim, T const> const &points,
-    int64_t const *sort_indices, std::array<int64_t, Dim> const &sizes,
-    std::array<T, Dim> const &bin_sizes) {
+    nu_point_collection<Dim, T const> const &points, int64_t const *sort_indices,
+    std::array<int64_t, Dim> const &sizes, std::array<T, Dim> const &bin_sizes) {
 
     finufft::spreading::SpreaderMemoryInput<Dim, T> points_folded(points.num_points);
     finufft::spreading::nu_point_collection<Dim, const T> points_folded_view = points_folded;
@@ -39,7 +40,8 @@ std::vector<int64_t> compute_bin(
 template <typename T, std::size_t Dim>
 void test_binsort_implementation(
     std::size_t num_points, finufft::spreading::BinSortFunctor<T, Dim> &functor) {
-    auto points = make_random_point_collection<Dim, T>(num_points, 0, {-3 * M_PI, 3 * M_PI});
+    auto points =
+        finufft::spreading::testing::make_random_point_collection<Dim, T>(num_points, 0, {-3 * M_PI, 3 * M_PI});
     finufft::spreading::nu_point_collection<Dim, const T> points_view = points;
 
     auto output = finufft::allocate_aligned_array<int64_t>(

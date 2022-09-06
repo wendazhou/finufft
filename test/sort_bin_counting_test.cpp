@@ -5,13 +5,16 @@
 
 #include "spread_test_utils.h"
 
+namespace fs = finufft::spreading;
+namespace fst = finufft::spreading::testing;
+
 namespace {
 
 template <typename T, std::size_t Dim>
 void test_sort_factory(
     std::size_t num_points, finufft::spreading::SortPointsFactory<T, Dim> const &fn) {
-    auto points = make_random_point_collection<Dim, T>(1654, 0, {-M_PI, M_PI});
-    auto output = finufft::spreading::SpreaderMemoryInput<Dim, T>(points.num_points);
+    auto points = fst::make_random_point_collection<Dim, T>(1654, 0, {-M_PI, M_PI});
+    auto output = fs::SpreaderMemoryInput<Dim, T>(points.num_points);
 
     std::array<std::size_t, Dim> size;
     std::array<std::size_t, Dim> bin_size;

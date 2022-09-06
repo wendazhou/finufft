@@ -17,6 +17,8 @@
 
 #include "spread_test_utils.h"
 
+namespace fst = finufft::spreading::testing;
+
 namespace {
 
 template <std::size_t Dim, typename T, typename SpreaderFn>
@@ -108,8 +110,8 @@ TYPED_TEST_P(GatherRescaleFixture, GatherRescaleIdentity) {
     std::size_t num_points = 100;
     std::size_t num_gather_points = 20;
 
-    auto points = make_random_point_collection<Dim, FloatingType>(num_points, 0, {-1.0, 2.0});
-    auto permutation = make_random_permutation(num_points, 1);
+    auto points = fst::make_random_point_collection<Dim, FloatingType>(num_points, 0, {-1.0, 2.0});
+    auto permutation = fst::make_random_permutation(num_points, 1);
 
     auto range = finufft::spreading::FoldRescaleRange::Identity;
 
@@ -155,8 +157,8 @@ TYPED_TEST_P(GatherRescaleFixture, GatherRescalePi) {
     std::size_t num_gather_points = 20;
 
     auto points =
-        make_random_point_collection<Dim, FloatingType>(num_points, 0, {-3 * M_PI, 3 * M_PI});
-    auto permutation = make_random_permutation(num_points, 1);
+        fst::make_random_point_collection<Dim, FloatingType>(num_points, 0, {-3 * M_PI, 3 * M_PI});
+    auto permutation = fst::make_random_permutation(num_points, 1);
 
     auto range = finufft::spreading::FoldRescaleRange::Pi;
 

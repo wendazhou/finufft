@@ -61,7 +61,7 @@ void bm_spread_2d(
 
     finufft::testing::pause_collection();
 
-    auto points = make_random_point_collection<2, float>(num_points, 0, {-3 * M_PI, 3 * M_PI});
+    auto points = testing::make_random_point_collection<2, float>(num_points, 0, {-3 * M_PI, 3 * M_PI});
     auto output = finufft::allocate_aligned_array<float>(2 * target_size * target_size, 64);
 
     finufft::testing::resume_collection();
@@ -82,7 +82,7 @@ void bm_avx512(benchmark::State &state) {
     std::size_t target_size = state.range(0);
     std::size_t kernel_width = state.range(1);
 
-    auto kernel_spec = specification_from_width(kernel_width, 2);
+    auto kernel_spec = testing::specification_from_width(kernel_width, 2);
 
     finufft::TimerRoot root("bench_full_spread");
     auto timer = root.make_timer("full_spread");
@@ -100,7 +100,7 @@ void bm_legacy(benchmark::State &state) {
     std::size_t target_size = state.range(0);
     std::size_t kernel_width = state.range(1);
 
-    auto kernel_spec = specification_from_width(kernel_width, 2);
+    auto kernel_spec = testing::specification_from_width(kernel_width, 2);
 
     finufft::TimerRoot root("bench_full_spread");
     auto timer = root.make_timer("full_spread");

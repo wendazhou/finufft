@@ -30,10 +30,10 @@ void benchmark_spread_subproblem(
     std::size_t num_points, fs::grid_specification<Dim> const &grid_spec,
     bool sort_points = true) {
 
-    auto input = make_spread_subproblem_input<T>(num_points, 0, grid_spec, functor.target_padding());
+    auto input = fs::testing::make_spread_subproblem_input<T>(num_points, 0, grid_spec, functor.target_padding());
 
     if (sort_points) {
-        sort_point_collection(input);
+        fs::testing::sort_point_collection(input);
     }
 
     auto output = finufft::allocate_aligned_array<T>(2 * grid_spec.num_elements(), 64);
@@ -84,7 +84,7 @@ void benchmark_spread_subproblem(
 
 template <typename T, std::size_t Dim, typename Factory>
 void benchmark_for_width(benchmark::State &state, Factory const &factory) {
-    auto kernel_spec = specification_from_width(state.range(1), 2.0);
+    auto kernel_spec = finufft::spreading::testing::specification_from_width(state.range(1), 2.0);
     benchmark_spread_subproblem<T, Dim>(state, factory(kernel_spec));
 }
 

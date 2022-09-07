@@ -41,84 +41,6 @@ std::vector<grid_specification<Dim>> make_bin_grids(IntGridBinInfo<T, Dim> const
     return grids;
 }
 
-/** To handle the possibility of having alignment requirements for subproblem implementations,
- * we may need to copy points into a local buffer. However, for implementations which have no
- * such requirement, we can simply directly reference the input points.
- * 
- * The following class, and `DirectReferenceLocalPointsBuffer`, implement both facets
- * of this functionality.
- * 
- */
-template <typename T, std::size_t Dim> struct CopyingLocalPointsBuffer {
-    std::size_t max_num_points_;
-    std::size_t num_points_multiple_;
-    SpreaderMemoryInput<Dim, T> points_;
-    std::array<KernelWriteSpec<T>, Dim> padding_info_;
-
-    CopyingLocalPointsBuffer(
-        std::size_t max_num_points, std::size_t num_points_multiple,
-        tcb::span<const KernelWriteSpec<T>, Dim> padding_info)
-        : max_num_points_(max_num_points), num_points_multiple_(num_points_multiple),
-          points_(max_num_points) {
-        std::copy(padding_info.begin(), padding_info.end(), padding_info_.begin());
-    }
-
-    nu_point_collection<Dim, const T> operator()(
-        nu_point_collection<Dim, const T> const &input, std::size_t offset, std::size_t num_points,
-        finufft::spreading::grid_specification<Dim> const &grid) noexcept {
-
-        points_.num_points = num_points;
-        std::memcpy(points_.strengths, input.strengths + 2 * offset, num_points * sizeof(T) * 2);
-
-        for (std::size_t dim = 0; dim < Dim; ++dim) {
-            std::memcpy(
-                points_.coordinates[dim], input.coordinates[dim] + offset, num_points * sizeof(T));
-        }
-
-        auto num_points_padded = finufft::round_to_next_multiple(num_points, num_points_multiple_);
-
-        // Pad the input points to the required multiple, using a pad coordinate
-        // derived from the subgrid. The pad coordinate is given by the leftmost valid
-        // coordinate in the subgrid.
-        std::array<T, Dim> pad_coordinate;
-        for (std::size_t i = 0; i < Dim; ++i) {
-            pad_coordinate[i] = padding_info_[i].min_valid_value(grid.offsets[i], grid.extents[i]);
-        }
-        finufft::spreading::pad_nu_point_collection(points_, num_points_padded, pad_coordinate);
-
-        return points_;
-    }
-};
-
-template <typename T, std::size_t Dim> struct DirectReferenceLocalPointsBuffer {
-    nu_point_collection<Dim, const T> operator()(
-        nu_point_collection<Dim, const T> const &input, std::size_t offset, std::size_t num_points,
-        grid_specification<Dim> const &grid) noexcept {
-        nu_point_collection<Dim, const T> points;
-
-        points.num_points = num_points;
-        points.strengths = input.strengths + 2 * offset;
-        for (std::size_t dim = 0; dim < Dim; ++dim) {
-            points.coordinates[dim] = input.coordinates[dim] + offset;
-        }
-
-        return points;
-    }
-};
-
-#define F(NAME, ...)                                                                               \
-    template <typename T, std::size_t Dim> struct NAME : fu2::unique_function<__VA_ARGS__> {       \
-        using fu2::unique_function<__VA_ARGS__>::unique_function;                                  \
-        using fu2::unique_function<__VA_ARGS__>::operator=;                                        \
-    };
-
-F(LocalPointsBuffer, nu_point_collection<Dim, const T>(
-                         nu_point_collection<Dim, const T> const &, std::size_t, std::size_t,
-                         grid_specification<Dim> const &) noexcept);
-F(LocalPointsBufferFactory, LocalPointsBuffer<T, Dim>(std::size_t) const);
-
-#undef F
-
 /** Main implementation of blocked spreading, with parallelization through OpenMP.
  *
  * This function assembles a subproblem functor and an accumulate functor to spread
@@ -233,21 +155,6 @@ template <typename T, std::size_t Dim> struct OmpSpreadBlockedImplementation {
         }
     }
 };
-
-template <typename T, std::size_t Dim>
-LocalPointsBufferFactory<T, Dim>
-make_default_points_buffer(SpreadSubproblemFunctor<T, Dim> const &fn) {
-    if (fn.num_points_multiple() == 1) {
-        return LocalPointsBufferFactory<T, Dim>(
-            [](std::size_t) { return DirectReferenceLocalPointsBuffer<T, Dim>{}; });
-    } else {
-        return [num_points_multiple = fn.num_points_multiple(),
-                target_padding = fn.target_padding()](std::size_t max_num_points) {
-            return CopyingLocalPointsBuffer<T, Dim>{
-                max_num_points, num_points_multiple, target_padding};
-        };
-    }
-}
 
 } // namespace
 

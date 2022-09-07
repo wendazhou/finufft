@@ -119,7 +119,6 @@ function(set_finufft_options target)
         # Enable cx-limited-range on supported compilers
         target_compile_options(${target} PRIVATE $<$<CONFIG:Release,RelWithDebInfo>:-fcx-limited-range>)
     endif()
-    target_compile_options(${target} PRIVATE $<$<CONFIG:Debug>:-Og>)
     target_include_directories(${target} PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/include")
     target_include_directories(${target} PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/third_party")
     if(FINUFFT_USE_OPENMP)
@@ -161,6 +160,7 @@ add_library(finufft_obj OBJECT
     src/kernels/reference/spread_bin_sort_int.cpp
     src/kernels/reference/spread_bin_sort_reference.cpp
     src/kernels/reference/spread_blocked.cpp
+    src/kernels/reference/spread_blocked_st.cpp
     src/kernels/reference/spreading_reference.cpp
     src/kernels/reference/synchronized_accumulate_reference.cpp)
 set_finufft_options(finufft_obj)

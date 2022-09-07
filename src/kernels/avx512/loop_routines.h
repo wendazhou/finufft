@@ -53,11 +53,14 @@ void split_loop(
     Fn &&body) {
     std::size_t i = 0;
 
+    assert(loop_initial_missing < loop_alignment);
+
     // Initial peel loop, brings the loop index into alignment
     if (loop_initial_missing > 0)
         FINUFFT_UNLIKELY {
-            body(i, std::true_type{}, (loop_alignment - 1) - ((1 << loop_initial_missing) - 1));
+            body(i, std::true_type{}, ((1 << loop_alignment) - 1) - ((1 << loop_initial_missing) - 1));
             loop_count += loop_initial_missing;
+            i += loop_alignment;
         }
 
     // Main loop
@@ -77,7 +80,7 @@ template <typename... Ts> struct AlignMultiplePointersPreviousImpl;
 template <typename U, typename... Ts> struct AlignMultiplePointersPreviousImpl<U, Ts...> {
     std::size_t operator()(std::size_t alignment, U *&ptr, Ts *&...ptrs) const noexcept {
         auto new_ptr = align_pointer_previous(ptr, alignment);
-        auto alignment_offset = (ptr - new_ptr) * sizeof(U);
+        auto alignment_offset = (ptr - new_ptr);
         ptr = new_ptr;
 
         auto other_offset = AlignMultiplePointersPreviousImpl<Ts...>{}(alignment, ptrs...);
@@ -90,7 +93,7 @@ template <typename U, typename... Ts> struct AlignMultiplePointersPreviousImpl<U
 template <typename U> struct AlignMultiplePointersPreviousImpl<U> {
     std::size_t operator()(std::size_t alignment, U *&ptr) const noexcept {
         auto new_ptr = align_pointer_previous(ptr, alignment);
-        auto alignment_offset = (ptr - new_ptr) * sizeof(U);
+        auto alignment_offset = (ptr - new_ptr);
         ptr = new_ptr;
 
         return alignment_offset;
@@ -100,7 +103,7 @@ template <typename U> struct AlignMultiplePointersPreviousImpl<U> {
 } // namespace detail
 
 /** Aligns multiple pointers to the given alignment, and returns
- * the offset (in bytes) by which the pointers were modified.
+ * the offset in pointer elements by which the pointers were modified.
  * Note that this function requires that all pointers have the same
  * relative alignment.
  *

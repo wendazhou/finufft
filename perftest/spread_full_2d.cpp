@@ -16,8 +16,6 @@
 
 #include <tcb/span.hpp>
 
-#include <ips4o/ips4o.hpp>
-
 #include "../src/kernels/avx512/spread_avx512.h"
 #include "../src/kernels/avx512/spread_bin_sort_int.h"
 #include "../src/kernels/legacy/spread_legacy.h"

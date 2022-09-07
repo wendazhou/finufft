@@ -13,7 +13,7 @@ namespace reference {
 namespace {
 
 /** Create array of grid information for each bin.
- * 
+ *
  */
 template <typename T, std::size_t Dim>
 std::vector<grid_specification<Dim>> make_bin_grids(IntGridBinInfo<T, Dim> const &info) {
@@ -41,6 +41,83 @@ std::vector<grid_specification<Dim>> make_bin_grids(IntGridBinInfo<T, Dim> const
     return grids;
 }
 
+/** To handle the possibility of having alignment requirements for subproblem implementations,
+ * we may need to copy points into a local buffer. However, for implementations which have no
+ * such requirement, we can simply directly reference the input points.
+ * 
+ * The following class, and `DirectReferenceLocalPointsBuffer`, implement both facets
+ * of this functionality.
+ * 
+ */
+template <typename T, std::size_t Dim> struct CopyingLocalPointsBuffer {
+    std::size_t max_num_points_;
+    std::size_t num_points_multiple_;
+    SpreaderMemoryInput<Dim, T> points_;
+    std::array<KernelWriteSpec<T>, Dim> padding_info_;
+
+    CopyingLocalPointsBuffer(
+        std::size_t max_num_points, std::size_t num_points_multiple,
+        tcb::span<const KernelWriteSpec<T>, Dim> padding_info)
+        : max_num_points_(max_num_points), num_points_multiple_(num_points_multiple),
+          points_(max_num_points) {
+        std::copy(padding_info.begin(), padding_info.end(), padding_info_.begin());
+    }
+
+    nu_point_collection<Dim, const T> operator()(
+        nu_point_collection<Dim, const T> const &input, std::size_t offset, std::size_t num_points,
+        finufft::spreading::grid_specification<Dim> const &grid) noexcept {
+
+        points_.num_points = num_points;
+        std::memcpy(points_.strengths, input.strengths + 2 * offset, num_points * sizeof(T) * 2);
+
+        for (std::size_t dim = 0; dim < Dim; ++dim) {
+            std::memcpy(
+                points_.coordinates[dim], input.coordinates[dim] + offset, num_points * sizeof(T));
+        }
+
+        auto num_points_padded = finufft::round_to_next_multiple(num_points, num_points_multiple_);
+
+        // Pad the input points to the required multiple, using a pad coordinate
+        // derived from the subgrid. The pad coordinate is given by the leftmost valid
+        // coordinate in the subgrid.
+        std::array<T, Dim> pad_coordinate;
+        for (std::size_t i = 0; i < Dim; ++i) {
+            pad_coordinate[i] = padding_info_[i].min_valid_value(grid.offsets[i], grid.extents[i]);
+        }
+        finufft::spreading::pad_nu_point_collection(points_, num_points_padded, pad_coordinate);
+
+        return points_;
+    }
+};
+
+template <typename T, std::size_t Dim> struct DirectReferenceLocalPointsBuffer {
+    nu_point_collection<Dim, const T> operator()(
+        nu_point_collection<Dim, const T> const &input, std::size_t offset, std::size_t num_points,
+        grid_specification<Dim> const &grid) noexcept {
+        nu_point_collection<Dim, const T> points;
+
+        points.num_points = num_points;
+        points.strengths = input.strengths + 2 * offset;
+        for (std::size_t dim = 0; dim < Dim; ++dim) {
+            points.coordinates[dim] = input.coordinates[dim] + offset;
+        }
+
+        return points;
+    }
+};
+
+#define F(NAME, ...)                                                                               \
+    template <typename T, std::size_t Dim> struct NAME : fu2::unique_function<__VA_ARGS__> {       \
+        using fu2::unique_function<__VA_ARGS__>::unique_function;                                  \
+        using fu2::unique_function<__VA_ARGS__>::operator=;                                        \
+    };
+
+F(LocalPointsBuffer, nu_point_collection<Dim, const T>(
+                         nu_point_collection<Dim, const T> const &, std::size_t, std::size_t,
+                         grid_specification<Dim> const &) noexcept);
+F(LocalPointsBufferFactory, LocalPointsBuffer<T, Dim>(std::size_t) const);
+
+#undef F
 
 /** Main implementation of blocked spreading, with parallelization through OpenMP.
  *
@@ -51,6 +128,7 @@ std::vector<grid_specification<Dim>> make_bin_grids(IntGridBinInfo<T, Dim> const
 template <typename T, std::size_t Dim> struct OmpSpreadBlockedImplementation {
     SpreadSubproblemFunctor<T, Dim> spread_subproblem_;
     SynchronizedAccumulateFactory<T, Dim> accumulate_factory_;
+    LocalPointsBufferFactory<T, Dim> local_points_buffer_factory_;
     SpreadBlockedTimers timers_;
 
     void operator()(
@@ -91,7 +169,8 @@ template <typename T, std::size_t Dim> struct OmpSpreadBlockedImplementation {
         {
             // Allocate per-thread local input and output buffer
             auto subgrid_output = finufft::allocate_aligned_array<T>(2 * grid_size_total, 64);
-            auto local_points = finufft::spreading::SpreaderMemoryInput<Dim, T>(max_num_points);
+            auto local_points_buffer = local_points_buffer_factory_(max_num_points);
+
             SpreadBlockedTimers timers(timers_);
 
             // Zero out output buffer. Chunk by 2MB (page) to avoid unnecessary communication across
@@ -134,38 +213,10 @@ template <typename T, std::size_t Dim> struct OmpSpreadBlockedImplementation {
                 }
 
                 // Gather local points
-                {
+                auto const &local_points = [&]() {
                     finufft::ScopedTimerGuard guard(timers.gather);
-
-                    local_points.num_points = block_num_points;
-
-                    // Copy points to local buffer
-                    std::memcpy(
-                        local_points.strengths,
-                        input.strengths + bin_boundaries[i],
-                        block_num_points * sizeof(T) * 2);
-
-                    for (std::size_t dim = 0; dim < Dim; ++dim) {
-                        std::memcpy(
-                            local_points.coordinates[dim],
-                            input.coordinates[dim] + bin_boundaries[i],
-                            block_num_points * sizeof(T));
-                    }
-
-                    auto num_points_padded = finufft::round_to_next_multiple(
-                        block_num_points, spread_subproblem_.num_points_multiple());
-
-                    // Pad the input points to the required multiple, using a pad coordinate derived
-                    // from the subgrid. The pad coordinate is given by the leftmost valid
-                    // coordinate in the subgrid.
-                    std::array<T, Dim> pad_coordinate;
-                    for (std::size_t i = 0; i < Dim; ++i) {
-                        pad_coordinate[i] =
-                            padding_info[i].min_valid_value(grid.offsets[i], grid.extents[i]);
-                    }
-                    finufft::spreading::pad_nu_point_collection(
-                        local_points, num_points_padded, pad_coordinate);
-                }
+                    return local_points_buffer(input, bin_boundaries[i], block_num_points, grid);
+                }();
 
                 // Spread to local subgrid
                 {
@@ -183,6 +234,21 @@ template <typename T, std::size_t Dim> struct OmpSpreadBlockedImplementation {
     }
 };
 
+template <typename T, std::size_t Dim>
+LocalPointsBufferFactory<T, Dim>
+make_default_points_buffer(SpreadSubproblemFunctor<T, Dim> const &fn) {
+    if (fn.num_points_multiple() == 1) {
+        return LocalPointsBufferFactory<T, Dim>(
+            [](std::size_t) { return DirectReferenceLocalPointsBuffer<T, Dim>{}; });
+    } else {
+        return [num_points_multiple = fn.num_points_multiple(),
+                target_padding = fn.target_padding()](std::size_t max_num_points) {
+            return CopyingLocalPointsBuffer<T, Dim>{
+                max_num_points, num_points_multiple, target_padding};
+        };
+    }
+}
+
 } // namespace
 
 template <typename T, std::size_t Dim>
@@ -190,7 +256,10 @@ SpreadBlockedFunctor<T, Dim> make_omp_spread_blocked(
     SpreadSubproblemFunctor<T, Dim> &&spread_subproblem,
     SynchronizedAccumulateFactory<T, Dim> &&accumulate_factory, finufft::Timer const &timer) {
     return OmpSpreadBlockedImplementation<T, Dim>{
-        std::move(spread_subproblem), std::move(accumulate_factory), SpreadBlockedTimers(timer)};
+        std::move(spread_subproblem),
+        std::move(accumulate_factory),
+        make_default_points_buffer(spread_subproblem),
+        SpreadBlockedTimers(timer)};
 }
 
 namespace {
@@ -213,6 +282,7 @@ template <typename T, std::size_t Dim> struct PackedSortBlockedSpreadFunctorImpl
           spread_blocked_{
               std::move(spread_subproblem),
               std::move(accumulate_factory),
+              make_default_points_buffer(spread_blocked_.spread_subproblem_),
               timers.spread_blocked_timers},
           info_(target_size, grid_size, spread_blocked_.spread_subproblem_.target_padding()),
           sort_timer_(timers.sort_packed), spread_timer_(timers.spread_blocked),

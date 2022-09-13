@@ -12,6 +12,7 @@
  */
 
 #include <algorithm>
+#include <cstring>
 #include <stdexcept>
 
 #include "../../precomputed_poly_kernel_data.h"
@@ -321,6 +322,22 @@ void fill_polynomial_coefficients(
     }
 };
 
+template <typename T, std::size_t Width, std::size_t Degree> struct PolynomialBatchHolder {
+    aligned_unique_array<T> coefficients;
+    std::size_t width;
+
+    static const std::size_t max_width = Width;
+    static const std::size_t degree = Degree;
+
+    explicit PolynomialBatchHolder(std::size_t width = Width)
+        : coefficients(allocate_aligned_array<T>(Width * (Degree + 1), 64)), width(width) {}
+
+    PolynomialBatchHolder(PolynomialBatchHolder const &other) : PolynomialBatchHolder(other.width) {
+        std::memcpy(coefficients.get(), other.coefficients.get(), Width * (Degree + 1) * sizeof(T));
+    };
+    PolynomialBatchHolder(PolynomialBatchHolder &&) noexcept = default;
+};
+
 /** Structure for evaluating a batch of polynomials of the given degree.
  *
  * In order to accelerate evaluation of the kernel, we may make use of
@@ -332,19 +349,9 @@ void fill_polynomial_coefficients(
  * @tparam Degree The degree of each polynomial.
  *
  */
-template <typename T, std::size_t Width, std::size_t Degree> struct PolynomialBatch {
-    /** Array of coefficients for each of the polynomial to evaluate.
-     *
-     * The array contains the coefficients with the faster dimension corresponding
-     * to the width, and the slower dimension corresponding to the degree. Additionally,
-     * the coefficients are stored in reverse order in the degree dimension, such that the
-     * coefficient of the highest degree monomial is stored first.
-     *
-     */
-    aligned_unique_array<T> coefficients;
-    static const std::size_t width = Width;
-
-    PolynomialBatch() : coefficients(allocate_aligned_array<T>(Width * (Degree + 1), 64)) {}
+template <typename T, std::size_t Width, std::size_t Degree>
+struct PolynomialBatch : PolynomialBatchHolder<T, Width, Degree> {
+    using PolynomialBatchHolder<T, Width, Degree>::PolynomialBatchHolder;
 
     /** Create a polynomial from the given coefficients.
      *
@@ -362,24 +369,15 @@ template <typename T, std::size_t Width, std::size_t Degree> struct PolynomialBa
      *
      */
     template <typename U>
-    PolynomialBatch(U const *coefficients, std::size_t width = Width) : PolynomialBatch() {
+    PolynomialBatch(U const *coefficients, std::size_t width = Width)
+        : PolynomialBatchHolder<T, Width, Degree>(width) {
         fill_polynomial_coefficients(Degree, coefficients, width, this->coefficients.get(), Width);
     }
-
-    // Need copy-constructor for compatibility with std::function
-    PolynomialBatch(PolynomialBatch const &other) : PolynomialBatch() {
-        std::copy(
-            other.coefficients.get(),
-            other.coefficients.get() + Width * (Degree + 1),
-            coefficients.get());
-    };
-
-    PolynomialBatch(PolynomialBatch &&) noexcept = default;
 
     void operator()(T *__restrict output, T x) const {
         for (std::size_t i = 0; i < Width; ++i) {
             output[i] = HornerPolynomialEvaluation<T, Degree>{}(
-                x, StridedArray<T const>{coefficients.get() + i, Width});
+                x, StridedArray<T const>{this->coefficients.get() + i, Width});
         }
     }
 };

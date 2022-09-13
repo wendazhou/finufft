@@ -151,6 +151,7 @@ add_library(finufft_obj OBJECT
     src/utils_precindep.cpp
     contrib/legendre_rule_fast.cpp
     src/memory.cpp
+    src/plan.cpp
     src/tracing.cpp
     src/precomputed_poly_kernel_data.cpp
     src/precomputed_poly_kernel_data_helper.cpp

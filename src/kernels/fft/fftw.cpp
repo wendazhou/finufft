@@ -27,8 +27,7 @@ template <> struct FFFTWPlanDeleter<double> {
     void operator()(fftw_plan<double> plan) const noexcept { fftw_destroy_plan(plan); }
 };
 
-template <typename T>
-using FFTWPlanHolder = std::unique_ptr<std::remove_pointer_t<fftw_plan<T>>, FFFTWPlanDeleter<T>>;
+template <typename T> using FFTWPlanHolder = std::shared_ptr<std::remove_pointer_t<fftw_plan<T>>>;
 
 template <typename T> struct fftw_iodim64_generic;
 template <> struct fftw_iodim64_generic<float> { using type = ::fftwf_iodim64; };
@@ -91,9 +90,16 @@ FFTWPlanHolder<T> make_fftw_plan(
         throw std::runtime_error("Failed to create FFTW plan.");
     }
 
-    return FFTWPlanHolder<T>(plan);
+    return FFTWPlanHolder<T>(plan, FFFTWPlanDeleter<T>());
 }
 
+/** This class encapsulates a planned FFTW transform and provides
+ * an object-oriented interface for calling the plan.
+ *
+ * Note that the plan is held through a shared pointer, so that
+ * the planned transform may be copied and used in multiple places.
+ *
+ */
 template <typename T, std::size_t Dim> struct FFTWPlannedTransform;
 
 template <std::size_t Dim> struct FFTWPlannedTransform<float, Dim> {
@@ -117,7 +123,7 @@ template <std::size_t Dim> struct FFTWPlannedTransform<double, Dim> {
 } // namespace
 
 template <typename T, std::size_t Dim>
-PlannedFourierTransformation<T, Dim> make_fftw_planned_transform(
+PlannedFourierTransformation<T> make_fftw_planned_transform(
     FourierTransformDirection direction, tcb::span<const std::size_t, Dim> size,
     tcb::span<const std::size_t, Dim> stride, T *data, std::size_t n_batch,
     std::size_t stride_batch) {
@@ -126,7 +132,7 @@ PlannedFourierTransformation<T, Dim> make_fftw_planned_transform(
 }
 
 #define INSTANTIATE(T, Dim)                                                                        \
-    template PlannedFourierTransformation<T, Dim> make_fftw_planned_transform(                     \
+    template PlannedFourierTransformation<T> make_fftw_planned_transform(                          \
         FourierTransformDirection direction,                                                       \
         tcb::span<const std::size_t, Dim>                                                          \
             size,                                                                                  \

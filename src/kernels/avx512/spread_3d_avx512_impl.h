@@ -14,15 +14,14 @@ namespace finufft {
 namespace spreading {
 namespace avx512 {
 
-template <std::size_t Degree> struct SpreadSubproblemPoly3DW8 {
-    aligned_unique_array<float> coefficients;
+template <std::size_t Degree>
+struct SpreadSubproblemPoly3DW8 : PolynomialBatchHolder<float, 16, Degree> {
+    using Base = PolynomialBatchHolder<float, 16, Degree>;
     float kernel_width;
-    std::size_t writeout_width;
 
     template <typename U>
     SpreadSubproblemPoly3DW8(U const *coefficients, std::size_t width)
-        : coefficients(allocate_aligned_array<float>((Degree + 1) * 16, 64)),
-          kernel_width(static_cast<float>(width)), writeout_width(width) {
+        : Base(width), kernel_width(static_cast<float>(width)) {
 
         // Duplicate the polynomial coefficients as we will be evaluating the same
         // polynomial twice, one in each 256-bit lane.
@@ -43,12 +42,12 @@ template <std::size_t Degree> struct SpreadSubproblemPoly3DW8 {
     void compute_kernel(
         __m512 x, __m512 y, __m512 z, float const *strengths, __m512 &vx1, __m512 &vx2, float *vy,
         float *vz) const {
-        poly_eval_multiply_strengths_2x8<Degree>(x, coefficients.get(), strengths, vx1, vx2);
+        poly_eval_multiply_strengths_2x8<Degree>(x, this->coefficients.get(), strengths, vx1, vx2);
 
-        __m512 k_y = horner_polynomial_evaluation<Degree>(y, coefficients.get());
+        __m512 k_y = horner_polynomial_evaluation<Degree>(y, this->coefficients.get());
         _mm512_store_ps(vy, k_y);
 
-        __m512 k_z = horner_polynomial_evaluation<Degree>(z, coefficients.get());
+        __m512 k_z = horner_polynomial_evaluation<Degree>(z, this->coefficients.get());
         _mm512_store_ps(vz, k_z);
     }
 
@@ -84,8 +83,8 @@ template <std::size_t Degree> struct SpreadSubproblemPoly3DW8 {
         // Only loop up to writeout_width, as there is no
         // need to write out values beyond that (they are zero).
         // We also save a little bit on padding.
-        for (std::size_t dz = 0; dz < writeout_width; ++dz) {
-            for (std::size_t dy = 0; dy < writeout_width; ++dy) {
+        for (std::size_t dz = 0; dz < this->width; ++dz) {
+            for (std::size_t dy = 0; dy < this->width; ++dy) {
                 auto out_base = out + dz * stride_z + dy * stride_y;
                 __m512 out_lo = _mm512_load_ps(out_base);
                 __m512 out_hi = _mm512_load_ps(out_base + 16);
@@ -253,8 +252,8 @@ template <std::size_t Degree> struct SpreadSubproblemPoly3DW8 {
         float ns2 = 0.5 * kernel_width;
         return {
             KernelWriteSpec<float>{ns2, 0, 16},
-            {ns2, 0, static_cast<int>(writeout_width)},
-            {ns2, 0, static_cast<int>(writeout_width)}};
+            {ns2, 0, static_cast<int>(this->width)},
+            {ns2, 0, static_cast<int>(this->width)}};
     }
 };
 
@@ -267,15 +266,14 @@ extern template struct SpreadSubproblemPoly3DW8<9>;
 extern template struct SpreadSubproblemPoly3DW8<10>;
 extern template struct SpreadSubproblemPoly3DW8<11>;
 
-template <std::size_t Degree> struct SpreadSubproblemPoly3DW8F64 {
-    aligned_unique_array<double> coefficients;
+template <std::size_t Degree>
+struct SpreadSubproblemPoly3DW8F64 : PolynomialBatchHolder<double, 8, Degree> {
+    using Base = PolynomialBatchHolder<double, 8, Degree>;
     double kernel_width;
-    std::size_t writeout_width;
 
     template <typename U>
     SpreadSubproblemPoly3DW8F64(U const *coefficients, std::size_t width)
-        : coefficients(allocate_aligned_array<double>((Degree + 1) * 8, 64)),
-          kernel_width(static_cast<float>(width)), writeout_width(width) {
+        : Base(width), kernel_width(static_cast<float>(width)) {
 
         // Duplicate the polynomial coefficients as we will be evaluating the same
         // polynomial twice, one in each 256-bit lane.
@@ -294,13 +292,13 @@ template <std::size_t Degree> struct SpreadSubproblemPoly3DW8F64 {
     void compute_kernel(
         __m512d x, __m512d y, __m512d z, double const *strengths, __m512d &vx_lo, __m512d &vx_hi,
         double *vy, double *vz) const {
-        __m512d k_y = horner_polynomial_evaluation<Degree>(y, coefficients.get());
+        __m512d k_y = horner_polynomial_evaluation<Degree>(y, this->coefficients.get());
         _mm512_store_pd(vy, k_y);
 
-        __m512d k_z = horner_polynomial_evaluation<Degree>(z, coefficients.get());
+        __m512d k_z = horner_polynomial_evaluation<Degree>(z, this->coefficients.get());
         _mm512_store_pd(vz, k_z);
 
-        __m512d k_x = horner_polynomial_evaluation<Degree>(x, coefficients.get());
+        __m512d k_x = horner_polynomial_evaluation<Degree>(x, this->coefficients.get());
 
         __m512d kx_re = _mm512_mul_pd(k_x, _mm512_set1_pd(strengths[0]));
         __m512d kx_im = _mm512_mul_pd(k_x, _mm512_set1_pd(strengths[1]));
@@ -338,8 +336,8 @@ template <std::size_t Degree> struct SpreadSubproblemPoly3DW8F64 {
         // Only loop up to writeout_width, as there is no
         // need to write out values beyond that (they are zero).
         // We also save a little bit on padding.
-        for (std::size_t dz = 0; dz < writeout_width; ++dz) {
-            for (std::size_t dy = 0; dy < writeout_width; ++dy) {
+        for (std::size_t dz = 0; dz < this->width; ++dz) {
+            for (std::size_t dy = 0; dy < this->width; ++dy) {
                 auto out_base = out + dz * stride_z + dy * stride_y;
                 __m512d out_lo = _mm512_load_pd(out_base);
                 __m512d out_mid = _mm512_load_pd(out_base + 8);
@@ -561,8 +559,8 @@ template <std::size_t Degree> struct SpreadSubproblemPoly3DW8F64 {
         double ns2 = 0.5 * kernel_width;
         return {
             KernelWriteSpec<double>{ns2, 0, 12},
-            {ns2, 0, static_cast<int>(writeout_width)},
-            {ns2, 0, static_cast<int>(writeout_width)}};
+            {ns2, 0, static_cast<int>(this->width)},
+            {ns2, 0, static_cast<int>(this->width)}};
     }
 };
 

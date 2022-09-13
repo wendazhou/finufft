@@ -262,6 +262,9 @@ template <typename T, std::size_t Dim> class SpreadSubproblemFunctor {
         virtual void operator()(
             nu_point_collection<Dim, T const> const &input, subgrid_specification<Dim> const &grid,
             T *output) const = 0;
+
+        /** Returns a clone of the current instance. */
+        virtual std::unique_ptr<Concept> clone() const = 0;
     };
 
     template <typename Impl> class Model : public Concept {
@@ -269,21 +272,26 @@ template <typename T, std::size_t Dim> class SpreadSubproblemFunctor {
         Impl impl_;
 
       public:
-        Model(Impl &&impl) : impl_(std::move(impl)) {}
+        Model(Impl const &impl) : impl_(impl) {}
+        Model(Impl &&impl) noexcept : impl_(std::move(impl)) {}
 
-        virtual std::size_t num_points_multiple() const override {
+        virtual std::size_t num_points_multiple() const override final {
             return impl_.num_points_multiple();
         };
-        virtual std::array<std::size_t, Dim> extent_multiple() const override {
+        virtual std::array<std::size_t, Dim> extent_multiple() const override final {
             return impl_.extent_multiple();
         };
-        virtual std::array<KernelWriteSpec<T>, Dim> target_padding() const override {
+        virtual std::array<KernelWriteSpec<T>, Dim> target_padding() const override final {
             return impl_.target_padding();
         };
         virtual void operator()(
             nu_point_collection<Dim, T const> const &input, subgrid_specification<Dim> const &grid,
-            T *output) const override {
+            T *output) const override final {
             return impl_(input, grid, output);
+        }
+
+        virtual std::unique_ptr<Concept> clone() const override final {
+            return std::make_unique<Model<Impl>>(impl_);
         }
     };
 
@@ -294,6 +302,14 @@ template <typename T, std::size_t Dim> class SpreadSubproblemFunctor {
     template <typename Impl>
     SpreadSubproblemFunctor(Impl &&impl)
         : impl_(std::make_unique<Model<Impl>>(std::forward<Impl>(impl))) {}
+    SpreadSubproblemFunctor(SpreadSubproblemFunctor const &other) : impl_(other.impl_->clone()) {}
+    SpreadSubproblemFunctor(SpreadSubproblemFunctor &&other) = default;
+
+    SpreadSubproblemFunctor &operator=(SpreadSubproblemFunctor const &other) {
+        impl_ = other.impl_->clone();
+        return *this;
+    }
+    SpreadSubproblemFunctor &operator=(SpreadSubproblemFunctor &&other) noexcept = default;
 
     std::size_t num_points_multiple() const { return impl_->num_points_multiple(); }
     std::array<std::size_t, Dim> extent_multiple() const { return impl_->extent_multiple(); }
@@ -343,7 +359,8 @@ F(SynchronizedAccumulateFunctor, void(T const *, grid_specification<Dim> const &
  *
  * The paramaters of the function are expected as follows:
  * - T* target: The target buffer to accumulate into.
- * - std::array<std::size_t, Dim> const& size: The size of the target buffer in each dimension.
+ * - std::array<std::size_t, Dim> const& size: The size of the target buffer in each
+ * dimension.
  *
  */
 F(SynchronizedAccumulateFactory,
@@ -360,7 +377,8 @@ enum class FoldRescaleRange { Identity, Pi };
 /** This functor represents an implementation to gather and rescale the data.
  *
  * The parameters of the function are expected as follows:
- * - nu_point_collection<Dim, T> output: the collection to which to write the collected points
+ * - nu_point_collection<Dim, T> output: the collection to which to write the collected
+ * points
  * - nu_point_collection<Dim, const T> input: the collection from which to collect points
  * - std::array<int64_t, Dim> sizes: the size of the output for rescaling
  * - int64_t const* sort_index: indirect index to gather points
@@ -387,7 +405,8 @@ template <typename T, std::size_t Dim> struct SpreadFunctorConfiguration {
  *
  * The parameters of the function are expected as follows:
  * - SpreadFunctorConfiguration<T, Dim>: the specific implementations of the computation
- * - nu_point_collection<Dim, const T> input: the collection of non-uniform points to process
+ * - nu_point_collection<Dim, const T> input: the collection of non-uniform points to
+ * process
  * - int64_t const* sort_index: indirect index to gather points
  * - std::array<int64_t, Dim> const& sizes: the size of the output
  * - T* output: the target buffer to write the data to
@@ -408,7 +427,8 @@ F(SpreadProcessor,
  * - std::size_t num_points: The number of points to sort
  * - std::array<T const*, Dim> coordinates: The coordinates of the points to sort
  * - std::array<T, Dim> extents: The virtual size of the target after rescaling
- * - std::array<T, Dim> bin_sizes: The bin size in each coordinate (in units after rescaling)
+ * - std::array<T, Dim> bin_sizes: The bin size in each coordinate (in units after
+ * rescaling)
  * - FoldRescaleRange input_range: The range of the input data.
  *
  */
@@ -426,10 +446,12 @@ template <typename T, std::size_t Dim> struct IntGridBinInfo;
  * ordered such that each block is contiguous within the points, and then spreading
  * them onto the target buffer. The parameters are expected as follows:
  *
- * - nu_point_collection<Dim, const T> const& input: the collection of non-uniform points to process
- * - IntBinInfo<T, Dim> const& info: a description of the block arrangement for the target buffer
- * - std::size_t const* block_boundaries: an array of size `info.num_bins_total() + 1` describing
- *      the offset into the `input` collection corresponding to each block.
+ * - nu_point_collection<Dim, const T> const& input: the collection of non-uniform points to
+ * process
+ * - IntBinInfo<T, Dim> const& info: a description of the block arrangement for the target
+ * buffer
+ * - std::size_t const* block_boundaries: an array of size `info.num_bins_total() + 1`
+ * describing the offset into the `input` collection corresponding to each block.
  * - T* output: the target buffer to write the data to.
  *
  */
@@ -445,7 +467,8 @@ F(SpreadBlockedFunctor, void(
  * to provide specialized implementations depending on these parameters.
  *
  * The parameters of the function are expected as follows:
- * - nu_point_collection<Dim, const T> const& input: the collection of non-uniform points to process
+ * - nu_point_collection<Dim, const T> const& input: the collection of non-uniform points to
+ * process
  * - T* output: the target buffer to write the data to.
  *
  */
@@ -493,8 +516,8 @@ grid_specification<Dim> compute_subgrid(
         auto max_val = *minmax.second;
 
         // Note: must cast to ensure computation same as during spreading.
-        // At large values of min_val / max_val there can be significant floating point errors
-        // (especially in single precision).
+        // At large values of min_val / max_val there can be significant floating point
+        // errors (especially in single precision).
         offsets[i] =
             static_cast<int64_t>(std::ceil(min_val - padding[i].offset) - padding[i].grid_left);
         sizes[i] = static_cast<size_t>(std::ceil(max_val - padding[i].offset)) +
@@ -556,11 +579,11 @@ template <std::size_t Dim, typename T> struct SubgridData {
     grid_specification<Dim> grid;
 };
 
-/** Pad the input strengths and coordinates between the current size and the given desired total
- * size.
+/** Pad the input strengths and coordinates between the current size and the given desired
+ * total size.
  *
- * Note that this function uses the existing allocation: the arrays in `points` must have been
- * allocated to support the desired total size.
+ * Note that this function uses the existing allocation: the arrays in `points` must have
+ * been allocated to support the desired total size.
  *
  * @param points The collection of non-uniform points to pad.
  * @param total_size The final size of the padded collection.

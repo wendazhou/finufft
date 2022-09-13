@@ -31,15 +31,14 @@ namespace avx512 {
  * additionally vectorized, so that the inner loop processes 4 elements.
  *
  */
-template <std::size_t Degree> struct SpreadSubproblemPoly2DW8 {
-    aligned_unique_array<float> coefficients;
+template <std::size_t Degree>
+struct SpreadSubproblemPoly2DW8 : PolynomialBatchHolder<float, 2 * 8, Degree> {
+    using Base = PolynomialBatchHolder<float, 2 * 8, Degree>;
     float kernel_width;
-    std::size_t writeout_width;
 
     template <typename U>
     SpreadSubproblemPoly2DW8(U const *coefficients, std::size_t width)
-        : coefficients(allocate_aligned_array<float>((Degree + 1) * 16, 64)),
-          kernel_width(static_cast<float>(width)), writeout_width(width) {
+        : Base(width), kernel_width(static_cast<float>(width)) {
 
         // Duplicate the polynomial coefficients as we will be evaluating the same
         // polynomial twice, one in each 256-bit lane.
@@ -91,7 +90,7 @@ template <std::size_t Degree> struct SpreadSubproblemPoly2DW8 {
         // Only loop up to writeout_width, as there is no
         // need to write out values beyond that (they are zero).
         // We also save a little bit on padding.
-        for (std::size_t i = 0; i < writeout_width; ++i) {
+        for (std::size_t i = 0; i < this->width; ++i) {
             auto out_base = out + i * stride_y;
 
             __m512 out_lo = _mm512_load_ps(out_base);
@@ -236,8 +235,8 @@ template <std::size_t Degree> struct SpreadSubproblemPoly2DW8 {
     std::array<KernelWriteSpec<float>, 2> target_padding() const {
         // Use split writeout in first dimension, hence may write 16 in total.
         // However, write exact in second dimension (dependending on true width).
-        float ns2 = 0.5 * kernel_width;
-        return {KernelWriteSpec<float>{ns2, 0, 16}, {ns2, 0, static_cast<int>(writeout_width)}};
+        float ns2 = 0.5 * this->width;
+        return {KernelWriteSpec<float>{ns2, 0, 16}, {ns2, 0, static_cast<int>(this->width)}};
     }
 };
 
@@ -250,16 +249,14 @@ extern template struct SpreadSubproblemPoly2DW8<9>;
 extern template struct SpreadSubproblemPoly2DW8<10>;
 extern template struct SpreadSubproblemPoly2DW8<11>;
 
-template <std::size_t Degree> struct SpreadSubproblemPoly2DW8F64 {
-    aligned_unique_array<double> coefficients;
+template <std::size_t Degree>
+struct SpreadSubproblemPoly2DW8F64 : PolynomialBatchHolder<double, 8, Degree> {
+    using Base = PolynomialBatchHolder<double, 8, Degree>;
     double kernel_width;
-    std::size_t writeout_width;
 
     template <typename U>
     SpreadSubproblemPoly2DW8F64(U const *coefficients, std::size_t width)
-        : coefficients(allocate_aligned_array<double>((Degree + 1) * 8, 64)),
-          kernel_width(static_cast<double>(width)), writeout_width(width) {
-
+        : Base(width), kernel_width(static_cast<double>(width)) {
         fill_polynomial_coefficients(Degree, coefficients, width, this->coefficients.get(), 8);
     }
 
@@ -283,10 +280,10 @@ template <std::size_t Degree> struct SpreadSubproblemPoly2DW8F64 {
         __m512d zy = _mm512_permute_pd(z, 0b11111111);
 
         // Evaluate kernels for x then y.
-        __m512d ky = horner_polynomial_evaluation<Degree>(zy, coefficients.get());
+        __m512d ky = horner_polynomial_evaluation<Degree>(zy, this->coefficients.get());
         _mm512_store_pd(vy, ky);
 
-        __m512d kx = horner_polynomial_evaluation<Degree>(zx, coefficients.get());
+        __m512d kx = horner_polynomial_evaluation<Degree>(zx, this->coefficients.get());
 
         // Compute pre-multiplied x
         __m512d kx_re = _mm512_mul_pd(kx, _mm512_set1_pd(strengths[0]));
@@ -313,7 +310,7 @@ template <std::size_t Degree> struct SpreadSubproblemPoly2DW8F64 {
         // Only loop up to writeout_width, as there is no
         // need to write out values beyond that (they are zero).
         // We also save a little bit on padding.
-        for (std::size_t i = 0; i < writeout_width; ++i) {
+        for (std::size_t i = 0; i < this->width; ++i) {
             __m512d out_lo = _mm512_load_pd(out + i * stride_y);
             __m512d out_mid = _mm512_load_pd(out + i * stride_y + 8);
             __m512d out_hi = _mm512_load_pd(out + i * stride_y + 16);
@@ -445,7 +442,7 @@ template <std::size_t Degree> struct SpreadSubproblemPoly2DW8F64 {
     std::array<std::size_t, 2> extent_multiple() const { return {4, 1}; }
     std::array<KernelWriteSpec<double>, 2> target_padding() const {
         double ns2 = 0.5 * kernel_width;
-        return {KernelWriteSpec<double>{ns2, 0, 12}, {ns2, 0, static_cast<int>(writeout_width)}};
+        return {KernelWriteSpec<double>{ns2, 0, 12}, {ns2, 0, static_cast<int>(this->width)}};
     }
 };
 

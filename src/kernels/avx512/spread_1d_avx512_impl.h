@@ -13,6 +13,7 @@
 #include "poly_eval_routines.h"
 
 #include <cstddef>
+#include <cstring>
 #include <immintrin.h>
 
 #include "../reference/spread_subproblem_reference.h"
@@ -45,14 +46,14 @@ namespace avx512 {
  *       to process the points.
  *
  */
-template <std::size_t Degree> struct SpreadSubproblemPolyW8 {
-    aligned_unique_array<float> coefficients;
+template <std::size_t Degree>
+struct SpreadSubproblemPolyW8 : public PolynomialBatchHolder<float, 8, Degree> {
+    using Base = PolynomialBatchHolder<float, 8, Degree>;
     float kernel_width;
 
     template <typename U>
     SpreadSubproblemPolyW8(U const *coefficients, std::size_t width)
-        : coefficients(allocate_aligned_array<float>((Degree + 1) * 16, 64)),
-          kernel_width(static_cast<float>(width)) {
+        : Base(width), kernel_width(static_cast<float>(width)) {
 
         // Duplicate the polynomial coefficients as we will be evaluating the same
         // polynomial twice, one in each 256-bit lane.
@@ -66,7 +67,7 @@ template <std::size_t Degree> struct SpreadSubproblemPolyW8 {
      *
      */
     void compute_kernel(__m512 z, float const *strengths, __m512 &v1, __m512 &v2) const {
-        poly_eval_multiply_strengths_2x8<Degree>(z, coefficients.get(), strengths, v1, v2);
+        poly_eval_multiply_strengths_2x8<Degree>(z, this->coefficients.get(), strengths, v1, v2);
     }
 
     /** Accumulates and stores the given vector into du at the given index.
@@ -254,14 +255,14 @@ extern template struct SpreadSubproblemPolyW8<11>;
  * processed at a time in the inner loop, in 2 groups of 4.
  *
  */
-template <std::size_t Degree> struct SpreadSubproblemPolyW4 {
-    aligned_unique_array<float> coefficients;
+template <std::size_t Degree>
+struct SpreadSubproblemPolyW4 : PolynomialBatchHolder<float, 4, Degree> {
+    using Base = PolynomialBatchHolder<float, 4, Degree>;
     float kernel_width;
 
     template <typename U>
     SpreadSubproblemPolyW4(U const *coefficients, std::size_t width)
-        : coefficients(allocate_aligned_array<float>((Degree + 1) * 16, 64)),
-          kernel_width(static_cast<float>(width)) {
+        : Base(width), kernel_width(static_cast<float>(width)) {
 
         // Replicate the polynomial coefficients 4 times as we will be evaluating the same
         // polynomial 4 times, one in each 128-bit lane.
@@ -272,7 +273,7 @@ template <std::size_t Degree> struct SpreadSubproblemPolyW4 {
     }
 
     void compute_kernel(__m512 z, float const *dd, __m512 &v1, __m512 &v2) const {
-        __m512 k = horner_polynomial_evaluation<Degree>(z, coefficients.get());
+        __m512 k = horner_polynomial_evaluation<Degree>(z, this->coefficients.get());
 
         // Load weights for the 4 points
         __m256 w = _mm256_load_ps(dd);
@@ -425,13 +426,14 @@ extern template struct SpreadSubproblemPolyW4<5>;
 extern template struct SpreadSubproblemPolyW4<6>;
 extern template struct SpreadSubproblemPolyW4<7>;
 
-template <std::size_t Degree> struct SpreadSubproblemPolyW8F64 {
-    aligned_unique_array<double> coefficients;
+template <std::size_t Degree>
+struct SpreadSubproblemPolyW8F64 : PolynomialBatchHolder<double, 8, Degree> {
+    using Base = PolynomialBatchHolder<double, 8, Degree>;
     double kernel_width;
 
     template <typename U>
     SpreadSubproblemPolyW8F64(U const *coefficients, std::size_t width)
-        : coefficients(allocate_aligned_array<double>(8 * (Degree + 1), 64)), kernel_width(width) {
+        : Base(width), kernel_width(width) {
         fill_polynomial_coefficients(Degree, coefficients, width, this->coefficients.get(), 8);
 
         // We need to adjust the coefficients at each degree to reorder in the width dimension.
@@ -460,7 +462,7 @@ template <std::size_t Degree> struct SpreadSubproblemPolyW8F64 {
     }
 
     void compute_kernel(__m512d z, double const *dd, __m512d &v1, __m512d &v2) const {
-        __m512d k = horner_polynomial_evaluation<Degree>(z, coefficients.get());
+        __m512d k = horner_polynomial_evaluation<Degree>(z, this->coefficients.get());
 
         // Load real and imaginary coefficients
         __m512d w_re = _mm512_set1_pd(dd[0]);

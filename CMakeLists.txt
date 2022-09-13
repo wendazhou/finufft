@@ -156,6 +156,7 @@ add_library(finufft_obj OBJECT
     src/precomputed_poly_kernel_data_helper.cpp
     src/kernels/dispatch.cpp
     src/kernels/legacy/spread_legacy.cpp
+    src/kernels/fft/fftw.cpp
     src/kernels/reference/sort_bin_counting.cpp
     src/kernels/reference/spread_bin_sort_int.cpp
     src/kernels/reference/spread_bin_sort_reference.cpp

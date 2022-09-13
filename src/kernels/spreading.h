@@ -331,6 +331,11 @@ template <typename T, std::size_t Dim> class SpreadSubproblemFunctor {
         using fu2::unique_function<__VA_ARGS__>::unique_function;                                  \
         using fu2::unique_function<__VA_ARGS__>::operator=;                                        \
     };
+#define FC(NAME, ...)                                                                              \
+    template <typename T, std::size_t Dim> struct NAME : fu2::function<__VA_ARGS__> {              \
+        using fu2::function<__VA_ARGS__>::function;                                                \
+        using fu2::function<__VA_ARGS__>::operator=;                                               \
+    };
 
 /** This functor represents a strategy for accumulating data into a target buffer.
  *
@@ -363,8 +368,8 @@ F(SynchronizedAccumulateFunctor, void(T const *, grid_specification<Dim> const &
  * dimension.
  *
  */
-F(SynchronizedAccumulateFactory,
-  SynchronizedAccumulateFunctor<T, Dim>(T *, std::array<std::size_t, Dim> const &) const)
+FC(SynchronizedAccumulateFactory,
+   SynchronizedAccumulateFunctor<T, Dim>(T *, std::array<std::size_t, Dim> const &) const)
 
 /** Enum representing the range of the input data.
  *
@@ -384,10 +389,10 @@ enum class FoldRescaleRange { Identity, Pi };
  * - int64_t const* sort_index: indirect index to gather points
  *
  */
-F(GatherRescaleFunctor,
-  void(
-      nu_point_collection<Dim, T> const &, nu_point_collection<Dim, const T> const &,
-      std::array<int64_t, Dim>, int64_t const *) const);
+FC(GatherRescaleFunctor,
+   void(
+       nu_point_collection<Dim, T> const &, nu_point_collection<Dim, const T> const &,
+       std::array<int64_t, Dim>, int64_t const *) const);
 
 /** This structure groups the necessary sub-components of a spread implementation.
  *
@@ -432,10 +437,10 @@ F(SpreadProcessor,
  * - FoldRescaleRange input_range: The range of the input data.
  *
  */
-F(BinSortFunctor,
-  void(
-      int64_t *, std::size_t, std::array<T const *, Dim> const &, std::array<T, Dim> const &,
-      std::array<T, Dim> const &, FoldRescaleRange) const)
+FC(BinSortFunctor,
+   void(
+       int64_t *, std::size_t, std::array<T const *, Dim> const &, std::array<T, Dim> const &,
+       std::array<T, Dim> const &, FoldRescaleRange) const)
 
 // Forward declaration from sorting.h for bin structure
 template <typename T, std::size_t Dim> struct IntGridBinInfo;
@@ -472,9 +477,10 @@ F(SpreadBlockedFunctor, void(
  * - T* output: the target buffer to write the data to.
  *
  */
-F(SpreadFunctor, void(nu_point_collection<Dim, const T> const &, T *) const)
+FC(SpreadFunctor, void(nu_point_collection<Dim, const T> const &, T *) const)
 
 #undef F
+#undef FC
 
 /** This structure represents the output information of the spreading operation.
  *

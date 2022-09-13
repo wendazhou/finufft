@@ -128,16 +128,20 @@ template <typename T, std::size_t Dim> struct DirectReferenceLocalPointsBuffer {
 F(LocalPointsBuffer, nu_point_collection<Dim, const T>(
                          nu_point_collection<Dim, const T> const &, std::size_t, std::size_t,
                          grid_specification<Dim> const &) noexcept);
-F(LocalPointsBufferFactory, LocalPointsBuffer<T, Dim>(std::size_t) const);
+
+template <typename T, std::size_t Dim>
+struct LocalPointsBufferFactory : fu2::function<LocalPointsBuffer<T, Dim>(std::size_t) const> {
+    using fu2::function<LocalPointsBuffer<T, Dim>(std::size_t) const>::function;
+    using fu2::function<LocalPointsBuffer<T, Dim>(std::size_t) const>::operator=;
+};
 
 #undef F
 
-
 /** Create the default points buffer factory for the given subproblem implementation.
- * 
+ *
  * Selects the appropriate points buffer type based on the alignment requirements
  * of the input of the given subproblem implementation.
- * 
+ *
  */
 template <typename T, std::size_t Dim>
 LocalPointsBufferFactory<T, Dim>

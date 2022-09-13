@@ -78,7 +78,7 @@ template <typename T, std::size_t Dim> struct IntBinInfo {
 };
 
 /** Computes the bin size from the given target grid size and padding requirement.
- * 
+ *
  * The obtained bin size is such that the spreading subproblem, for points lying
  * in a given bin, and using the functor with the given `padding` specification,
  * will only write to an extent of the given `grid_size`.
@@ -100,11 +100,10 @@ std::array<std::size_t, Dim> compute_bin_size_from_grid_and_padding(
     return bin_size;
 }
 
-
 /** Handle corner case where the output buffer size is smaller than the size of a single bin.
  * In this case, we reduce the size of the grid to ensure that the size of the corresponding
  * inferred bin is equal to the size of the output buffer (in that dimension).
- * 
+ *
  */
 template <typename T, std::size_t Dim>
 std::array<std::size_t, Dim> reduce_grid_size(
@@ -241,6 +240,11 @@ struct SortPackedTimers {
         using fu2::unique_function<__VA_ARGS__>::unique_function;                                  \
         using fu2::unique_function<__VA_ARGS__>::operator=;                                        \
     };
+#define FC(NAME, ...)                                                                              \
+    template <typename T, std::size_t Dim> struct NAME : fu2::function<__VA_ARGS__> {              \
+        using fu2::function<__VA_ARGS__>::function;                                                \
+        using fu2::function<__VA_ARGS__>::operator=;                                               \
+    };
 
 /** Functor type for the compute-bin-pack operation
  *
@@ -256,9 +260,9 @@ struct SortPackedTimers {
  * written.
  *
  */
-F(ComputeAndPackBinsFunctor, void(
-                                 nu_point_collection<Dim, const T> const &, FoldRescaleRange,
-                                 IntBinInfo<T, Dim> const &, PointBin<T, Dim> *) const)
+FC(ComputeAndPackBinsFunctor, void(
+                                  nu_point_collection<Dim, const T> const &, FoldRescaleRange,
+                                  IntBinInfo<T, Dim> const &, PointBin<T, Dim> *) const)
 
 /** Functor type for the bin-unpack operation.
  *
@@ -272,8 +276,8 @@ F(ComputeAndPackBinsFunctor, void(
  *  will be written. Note that bins with no points will not have a value written to them.
  *
  */
-F(UnpackBinsFunctor,
-  void(PointBin<T, Dim> const *, nu_point_collection<Dim, T> const &, std::size_t *) const)
+FC(UnpackBinsFunctor,
+   void(PointBin<T, Dim> const *, nu_point_collection<Dim, T> const &, std::size_t *) const)
 
 /** Functor for point sorting operation.
  *
@@ -290,10 +294,10 @@ F(UnpackBinsFunctor,
  * @param info Bin / grid configuration
  *
  */
-F(SortPointsFunctor,
-  void(
-      nu_point_collection<Dim, const T> const &, FoldRescaleRange,
-      nu_point_collection<Dim, T> const &, std::size_t *, IntBinInfo<T, Dim> const &) const);
+FC(SortPointsFunctor,
+   void(
+       nu_point_collection<Dim, const T> const &, FoldRescaleRange,
+       nu_point_collection<Dim, T> const &, std::size_t *, IntBinInfo<T, Dim> const &) const);
 
 /** Functor for point sorting operation.
  *

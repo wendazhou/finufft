@@ -1,9 +1,15 @@
 #pragma once
 
+#include <cstddef>
 #include <function2/function2.h>
 
 namespace finufft {
 namespace interpolation {
+
+enum class ModeOrdering {
+    ZeroMiddle = 0,
+    ZeroFirst = 1,
+};
 
 /** Generic function pointer to an interpolation function.
  *

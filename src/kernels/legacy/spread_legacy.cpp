@@ -89,20 +89,23 @@ construct_opts_from_kernel(const kernel_specification &kernel, std::size_t dim) 
         opts.upsampfac = std::round(upsamp_factor * 1000) / 1000;
     }
 
+    // Use a single thread
+    opts.nthreads = 1;
+
     return opts;
 }
 
 namespace {
 
 /** Current implementation of spreading.
- * 
+ *
  * This functor implements spreading as dispatched to the current finufft implementation.
  * It operates in two steps:
  * - a bin-sorting step, where points are sorted into bins according to their location in
  * the target bufer, and
  * - a spreading step, where points are spread into the target buffer (using intermediate
  * buffers as necessary).
- * 
+ *
  */
 template <typename T, std::size_t Dim> struct LegacySpreadFunctorImplementation {
     std::array<std::size_t, Dim> size_;

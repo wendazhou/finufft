@@ -5,7 +5,6 @@
 #include <cmath>
 #include <complex>
 
-
 namespace finufft {
 namespace quadrature {
 void legendre_compute_glr(int n, double x[], double w[]);
@@ -44,8 +43,8 @@ void onedim_fseries_kernel_impl(
         z[n] *= J2;               // rescale nodes
         f[n] = J2 * static_cast<T>(w[n]) *
                evaluate_es_kernel(static_cast<T>(z[n]), kernel_spec); // vals & quadr wei
-        auto phase =
-            2 * finufft::constants::pi_v<T> * static_cast<T>(num_frequencies / 2 - z[n]) / num_frequencies;
+        auto phase = 2 * finufft::constants::pi_v<T> * static_cast<T>(num_frequencies / 2 - z[n]) /
+                     num_frequencies;
         a[n] = std::exp(std::complex<T>(0, phase)); // phase winding rates
     }
 
@@ -86,6 +85,84 @@ void onedim_fseries_kernel(
     std::size_t num_frequencies, double *coeffs, kernel_specification const &kernel_spec) {
     onedim_fseries_kernel_impl(num_frequencies, coeffs, kernel_spec);
 }
+
+namespace {
+
+template <typename T, std::size_t Dim> struct InterpolationKernelFactoryImpl {
+    kernel_specification kernel_spec_;
+    std::array<std::size_t, Dim> num_frequencies_;
+
+    InterpolationKernelFactoryImpl(
+        kernel_specification const &kernel_spec,
+        tcb::span<const std::size_t, Dim> const &num_frequencies)
+        : kernel_spec_(kernel_spec) {
+        std::copy(num_frequencies.begin(), num_frequencies.end(), num_frequencies_.begin());
+    }
+
+    void operator()(T *coeffs, std::size_t d) const noexcept {
+        onedim_fseries_kernel(num_frequencies_[d], coeffs, kernel_spec_);
+    }
+};
+} // namespace
+
+template <typename T, std::size_t Dim>
+interpolation::InterpolationKernelFactory<T> make_interpolation_kernel_factory(
+    tcb::span<const std::size_t, Dim> num_frequencies, kernel_specification const &kernel_spec) {
+    return InterpolationKernelFactoryImpl<T, Dim>(kernel_spec, num_frequencies);
+}
+
+kernel_specification get_default_kernel_specification(double tolerance, double upsampling_factor) {
+    std::size_t width;
+
+    if (upsampling_factor == 2.0) {
+        // standard sigma (see SISC paper)
+        width = std::ceil(-std::log10(tolerance / 10.0)); // 1 digit per power of 10
+    } else {
+        // custom sigma
+        width = std::ceil(
+            -log(tolerance) /
+            (constants::pi_v<double> * std::sqrt(1.0 - 1.0 / upsampling_factor))); // formula, gam=1
+    }
+    width = std::max(std::size_t(2), width); // (we don't have ns=1 version yet)
+
+    double beta_over_width;
+    switch (width) {
+    case 2:
+        beta_over_width = 2.20;
+        break;
+    case 3:
+        beta_over_width = 2.26;
+        break;
+    case 4:
+        beta_over_width = 2.38;
+        break;
+    default:
+        beta_over_width = 2.30;
+    }
+
+    if (upsampling_factor != 2.0) {
+        double gamma = 0.97;
+        beta_over_width = gamma * constants::pi_v<double> * (1.0 - 0.5 / upsampling_factor);
+    }
+
+    double beta = beta_over_width * width;
+    return {beta, static_cast<int>(width)};
+}
+
+#define INSTANTIATE(T, Dim)                                                                        \
+    template interpolation::InterpolationKernelFactory<T> make_interpolation_kernel_factory(       \
+        tcb::span<const std::size_t, Dim> num_frequencies,                                         \
+        kernel_specification const &kernel_spec);
+
+INSTANTIATE(float, 1);
+INSTANTIATE(float, 2);
+INSTANTIATE(float, 3);
+
+INSTANTIATE(double, 1);
+INSTANTIATE(double, 2);
+INSTANTIATE(double, 3);
+
+#undef INSTANTIATE
 
 } // namespace reference
 } // namespace spreading

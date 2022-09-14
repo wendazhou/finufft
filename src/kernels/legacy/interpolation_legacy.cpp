@@ -3,6 +3,7 @@
 #include <numeric>
 
 #include "../../memory.h"
+#include "../extents.h"
 
 #include <fftw3.h>
 
@@ -45,12 +46,13 @@ template <typename T> using fftw_complex_t = typename fftw_complex_generic<T>::t
 template <typename T, std::size_t Dim> struct LegacyInterpolationFunctor {
     std::array<std::size_t, Dim> input_size_;
     std::array<std::size_t, Dim> output_size_;
-    aligned_unique_array<T> kernel_;
+    std::shared_ptr<T[]> kernel_;
     ModeOrdering mode_ordering_;
 
+    template <typename KernelFactory>
     LegacyInterpolationFunctor(
         tcb::span<const std::size_t, Dim> output_size, tcb::span<const std::size_t, Dim> input_size,
-        tcb::span<const T *const, Dim> kernel, ModeOrdering mode_ordering)
+        KernelFactory kernel_factory, ModeOrdering mode_ordering)
         : kernel_(finufft::allocate_aligned_array<T>(
               std::accumulate(
                   output_size.begin(), output_size.end(), std::size_t(0),
@@ -62,9 +64,9 @@ template <typename T, std::size_t Dim> struct LegacyInterpolationFunctor {
 
         {
             std::size_t offset = 0;
-            for (std::size_t i = 0; i < kernel.size(); ++i) {
+            for (std::size_t i = 0; i < Dim; ++i) {
                 std::size_t size = round_to_next_multiple((output_size[i] / 2) + 1, 64 / sizeof(T));
-                std::copy(kernel[i], kernel[i] + size, kernel_.get() + offset);
+                kernel_factory(kernel_.get() + offset, i);
                 offset += size;
             }
         }
@@ -72,20 +74,6 @@ template <typename T, std::size_t Dim> struct LegacyInterpolationFunctor {
         std::copy(input_size.begin(), input_size.end(), input_size_.begin());
         std::copy(output_size.begin(), output_size.end(), output_size_.begin());
     }
-
-    LegacyInterpolationFunctor(LegacyInterpolationFunctor const &other)
-        : input_size_(other.input_size_), output_size_(other.output_size_),
-          kernel_(finufft::allocate_aligned_array<T>(
-              std::accumulate(
-                  output_size_.begin(), output_size_.end(), std::size_t(0),
-                  [](std::size_t acc, std::size_t s) {
-                      return acc + round_to_next_multiple((s / 2) + 1, 64 / sizeof(T));
-                  }),
-              64)),
-          mode_ordering_(other.mode_ordering_) {
-        std::copy(other.kernel_.get(), other.kernel_.get() + kernel_offset(Dim), kernel_.get());
-    }
-    LegacyInterpolationFunctor(LegacyInterpolationFunctor &&other) noexcept = default;
 
     std::size_t kernel_offset(std::size_t i) const noexcept {
         return std::accumulate(
@@ -147,27 +135,31 @@ template <typename T, std::size_t Dim> struct LegacyInterpolationFunctor {
 
 template <typename T, std::size_t Dim>
 InterpolationFunctor<T, Dim> make_legacy_interpolation_functor(
-    T *output, tcb::span<const std::size_t, Dim> output_size,
-    tcb::span<const std::size_t, Dim> output_stride, T const *input,
+    tcb::span<const std::size_t, Dim> output_size, tcb::span<const std::size_t, Dim> output_stride,
     tcb::span<const std::size_t, Dim> input_size, tcb::span<const std::size_t, Dim> input_stride,
-    tcb::span<const T *const, Dim> kernel, ModeOrdering mode_ordering) {
-    return LegacyInterpolationFunctor<T, Dim>(output_size, input_size, kernel, mode_ordering);
+    InterpolationKernelFactory<T> const &kernel_factory, ModeOrdering mode_ordering) {
+
+    if (!is_fortran_contiguous(output_size, output_stride)) {
+        throw std::invalid_argument("Output array must be Fortran contiguous");
+    }
+    if (!is_fortran_contiguous(input_size, input_stride)) {
+        throw std::invalid_argument("Input array must be Fortran contiguous");
+    }
+
+    return LegacyInterpolationFunctor<T, Dim>(
+        output_size, input_size, kernel_factory, mode_ordering);
 }
 
 #define INSTANTIATE(T, Dim)                                                                        \
     template InterpolationFunctor<T, Dim> make_legacy_interpolation_functor(                       \
-        T *output,                                                                                 \
-        tcb::span<const std::size_t, Dim>                                                          \
-            output_size,                                                                           \
+        tcb::span<const std::size_t, Dim> output_size,                                             \
         tcb::span<const std::size_t, Dim>                                                          \
             output_stride,                                                                         \
-        T const *input,                                                                            \
         tcb::span<const std::size_t, Dim>                                                          \
             input_size,                                                                            \
         tcb::span<const std::size_t, Dim>                                                          \
             input_stride,                                                                          \
-        tcb::span<const T *const, Dim>                                                             \
-            kernel,                                                                                \
+        InterpolationKernelFactory<T> const &kernel_factory,                                       \
         ModeOrdering mode_ordering);
 
 INSTANTIATE(float, 1)

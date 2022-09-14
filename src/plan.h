@@ -74,4 +74,15 @@ Type1Plan<T, Dim> make_type1_plan(
     finufft::fft::PlannedFourierTransformation<T> fft,
     finufft::interpolation::InterpolationFunctor<T, Dim> interpolate);
 
+/** Configuration for creating a type-1 transform.
+ */
+template <std::size_t Dim> struct Type1TransformConfiguration {
+    std::size_t num_points_;             //!< Number of input points
+    std::array<std::size_t, Dim> modes_; //!< Number of modes in each dimension
+    double tolerance_;                   //!< Target tolerance for the transform
+    double upsampling_factor_;           //!< Upsampling factor for the transform
+    std::size_t max_threads_;            //!< Maximum number of threads to use
+    int mode_ordering_;                  //!< Ordering of the output modes
+};
+
 } // namespace finufft

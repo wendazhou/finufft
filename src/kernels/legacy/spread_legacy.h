@@ -38,12 +38,6 @@ SpreadFunctor<T, Dim> make_spread_functor(
 finufft_spread_opts
 construct_opts_from_kernel(const kernel_specification &kernel, std::size_t dim = 0);
 
-/** Create type-1 plan
- *
- */
-template <typename T, std::size_t Dim>
-Type1Plan<T, Dim> make_legacy_type1_plan(Type1TransformConfiguration<Dim> const &configuration);
-
 } // namespace legacy
 
 } // namespace spreading

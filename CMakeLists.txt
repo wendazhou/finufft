@@ -157,6 +157,7 @@ add_library(finufft_obj OBJECT
     src/precomputed_poly_kernel_data_helper.cpp
     src/kernels/dispatch.cpp
     src/kernels/legacy/interpolation_legacy.cpp
+    src/kernels/legacy/plan.cpp
     src/kernels/legacy/spread_kernel_legacy.cpp
     src/kernels/legacy/spread_legacy.cpp
     src/kernels/fft/fftw.cpp

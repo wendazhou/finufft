@@ -1,7 +1,7 @@
 #include <gtest/gtest.h>
 
 #include "../src/constants.h"
-#include "../src/kernels/legacy/spread_legacy.h"
+#include "../src/kernels/legacy/plan.h"
 
 #include "spread_test_utils.h"
 
@@ -36,32 +36,32 @@ void run_type1_transform(
 
 TEST(Type1IntegrationTest, Legacy1DF32) {
     run_type1_transform<float, 1>(
-        {100}, &finufft::spreading::legacy::make_legacy_type1_plan<float, 1>);
+        {100}, &finufft::legacy::make_type1_plan<float, 1>);
 }
 
 TEST(Type1IntegrationTest, Legacy2DF32) {
     run_type1_transform<float, 2>(
-        {64, 78}, &finufft::spreading::legacy::make_legacy_type1_plan<float, 2>);
+        {64, 78}, &finufft::legacy::make_type1_plan<float, 2>);
 }
 
 TEST(Type1IntegrationTest, Legacy3DF32) {
     run_type1_transform<float, 3>(
-        {35, 45, 31}, &finufft::spreading::legacy::make_legacy_type1_plan<float, 3>);
+        {35, 45, 31}, &finufft::legacy::make_type1_plan<float, 3>);
 }
 
 
 TEST(Type1IntegrationTest, Legacy1DF64) {
     run_type1_transform<double, 1>(
-        {100}, &finufft::spreading::legacy::make_legacy_type1_plan<double, 1>);
+        {100}, &finufft::legacy::make_type1_plan<double, 1>);
 }
 
 TEST(Type1IntegrationTest, Legacy2DF64) {
     run_type1_transform<double, 2>(
-        {64, 78}, &finufft::spreading::legacy::make_legacy_type1_plan<double, 2>);
+        {64, 78}, &finufft::legacy::make_type1_plan<double, 2>);
 }
 
 TEST(Type1IntegrationTest, Legacy3DF64) {
     run_type1_transform<double, 3>(
-        {35, 45, 31}, &finufft::spreading::legacy::make_legacy_type1_plan<double, 3>);
+        {35, 45, 31}, &finufft::legacy::make_type1_plan<double, 3>);
 }
 

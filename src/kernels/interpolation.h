@@ -20,8 +20,8 @@ struct InterpolationFunctor : fu2::function<void(T const *, T *) const noexcept>
     using fu2::function<void(T const *, T *) const noexcept>::operator=;
 };
 
-/** This functor represents an utility which fills a given array with the given
- * kernel values for the given dimension.
+/** This functor represents an utility which fills a given array with the Fourier
+ * series of the given kernel over the given number of frequencies.
  *
  */
 template <typename T>

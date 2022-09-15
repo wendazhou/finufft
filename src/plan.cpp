@@ -9,10 +9,13 @@ template <typename T, std::size_t Dim> struct KernelType1Plan {
     finufft::fft::PlannedFourierTransformation<T> fft_;
     finufft::interpolation::InterpolationFunctor<T, Dim> interpolate_;
 
-    void execute(tcb::span<const T *, Dim> coordinates, T const *weights, T *result) {
+    void operator()(
+        std::size_t num_points, tcb::span<const T *const, Dim> coordinates, T const *weights,
+        T *result) {
         finufft::spreading::nu_point_collection<Dim, const T> input;
         std::copy(coordinates.begin(), coordinates.end(), input.coordinates.begin());
         input.strengths = weights;
+        input.num_points = num_points;
 
         spread_blocked_(input, uniform_buffer_.get());
         fft_(uniform_buffer_.get());

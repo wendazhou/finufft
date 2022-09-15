@@ -286,7 +286,7 @@ void deconvolveshuffle1d(int dir,FLT prefac,FLT* ker, BIGINT ms,
   fk is size-ms FLT complex array (2*ms FLTs alternating re,im parts)
   fw is a FFTW style complex array, ie FLT [nf1][2], essentially FLTs
        alternating re,im parts.
-  ker is real-valued FLT array of length nf1/2+1.
+  ker is real-valued FLT array of length ms/2+1.
 
   Single thread only, but shouldn't matter since mostly data movement.
 

@@ -214,7 +214,7 @@ Type1Plan<T, Dim> make_legacy_type1_plan(Type1TransformConfiguration<Dim> const 
         strides_from_sizes<Dim>(configuration.modes_),
         buffer_size,
         buffer_stride,
-        reference::make_interpolation_kernel_factory<T, Dim>(buffer_size, kernel_spec),
+        reference::make_interpolation_kernel_factory<T>(kernel_spec),
         interpolation::ModeOrdering(configuration.mode_ordering_));
 
     return make_type1_plan(

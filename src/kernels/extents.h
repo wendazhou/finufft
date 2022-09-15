@@ -17,11 +17,11 @@ template <std::size_t Dim>
 std::array<std::size_t, Dim> strides_from_sizes(tcb::span<const std::size_t, Dim> sizes) {
     std::array<std::size_t, Dim> strides;
     // Contiguous column-major strides
+    std::size_t stride = 1;
+
     for (std::size_t i = 0; i < Dim; ++i) {
-        strides[i] = 1;
-        for (std::size_t j = i + 1; j < Dim; ++j) {
-            strides[i] *= sizes[j];
-        }
+        strides[i] = stride;
+        stride *= sizes[i];
     }
     return strides;
 }

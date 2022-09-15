@@ -88,27 +88,22 @@ void onedim_fseries_kernel(
 
 namespace {
 
-template <typename T, std::size_t Dim> struct InterpolationKernelFactoryImpl {
+template <typename T> struct InterpolationKernelFactoryImpl {
     kernel_specification kernel_spec_;
-    std::array<std::size_t, Dim> num_frequencies_;
 
-    InterpolationKernelFactoryImpl(
-        kernel_specification const &kernel_spec,
-        tcb::span<const std::size_t, Dim> const &num_frequencies)
-        : kernel_spec_(kernel_spec) {
-        std::copy(num_frequencies.begin(), num_frequencies.end(), num_frequencies_.begin());
-    }
+    InterpolationKernelFactoryImpl(kernel_specification const &kernel_spec)
+        : kernel_spec_(kernel_spec) {}
 
-    void operator()(T *coeffs, std::size_t d) const noexcept {
-        onedim_fseries_kernel(num_frequencies_[d], coeffs, kernel_spec_);
+    void operator()(T *coeffs, std::size_t num_frequencies) const noexcept {
+        onedim_fseries_kernel(num_frequencies, coeffs, kernel_spec_);
     }
 };
 } // namespace
 
-template <typename T, std::size_t Dim>
-interpolation::InterpolationKernelFactory<T> make_interpolation_kernel_factory(
-    tcb::span<const std::size_t, Dim> num_frequencies, kernel_specification const &kernel_spec) {
-    return InterpolationKernelFactoryImpl<T, Dim>(kernel_spec, num_frequencies);
+template <typename T>
+interpolation::InterpolationKernelFactory<T>
+make_interpolation_kernel_factory(kernel_specification const &kernel_spec) {
+    return InterpolationKernelFactoryImpl<T>(kernel_spec);
 }
 
 kernel_specification get_default_kernel_specification(double tolerance, double upsampling_factor) {
@@ -149,18 +144,12 @@ kernel_specification get_default_kernel_specification(double tolerance, double u
     return {beta, static_cast<int>(width)};
 }
 
-#define INSTANTIATE(T, Dim)                                                                        \
+#define INSTANTIATE(T)                                                                             \
     template interpolation::InterpolationKernelFactory<T> make_interpolation_kernel_factory(       \
-        tcb::span<const std::size_t, Dim> num_frequencies,                                         \
         kernel_specification const &kernel_spec);
 
-INSTANTIATE(float, 1);
-INSTANTIATE(float, 2);
-INSTANTIATE(float, 3);
-
-INSTANTIATE(double, 1);
-INSTANTIATE(double, 2);
-INSTANTIATE(double, 3);
+INSTANTIATE(float);
+INSTANTIATE(double);
 
 #undef INSTANTIATE
 

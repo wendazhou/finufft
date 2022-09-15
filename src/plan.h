@@ -31,8 +31,9 @@ template <typename T, std::size_t Dim> class Type1Plan {
   public:
     struct Concept {
         virtual ~Concept() = default;
-        virtual void
-        execute(tcb::span<T const *, Dim> coordinates, T const *weights, T *result) = 0;
+        virtual void operator()(
+            std::size_t num_points, tcb::span<T const *const, Dim> coordinates, T const *weights,
+            T *result) = 0;
     };
 
   private:
@@ -41,9 +42,10 @@ template <typename T, std::size_t Dim> class Type1Plan {
 
         Model(Impl &&impl) : impl_(std::move(impl)) {}
 
-        void
-        execute(tcb::span<T const *, Dim> coordinates, T const *weights, T *result) override final {
-            impl_.execute(coordinates, weights, result);
+        void operator()(
+            std::size_t num_points, tcb::span<T const *const, Dim> coordinates, T const *weights,
+            T *result) override final {
+            impl_(num_points, coordinates, weights, result);
         }
         std::unique_ptr<Concept> clone() const { return std::make_unique<Model<Impl>>(*this); }
     };
@@ -62,8 +64,10 @@ template <typename T, std::size_t Dim> class Type1Plan {
     Type1Plan &operator=(Type1Plan &&) noexcept = default;
 
     constexpr std::size_t dim() const noexcept { return Dim; }
-    void execute(tcb::span<T const *, Dim> coordinates, T const *weights, T *result) {
-        holder_->execute(coordinates, weights, result);
+    void operator()(
+        std::size_t num_points, tcb::span<const T *const, Dim> coordinates, T const *weights,
+        T *result) {
+        (*holder_)(num_points, coordinates, weights, result);
     }
 };
 
@@ -77,12 +81,12 @@ Type1Plan<T, Dim> make_type1_plan(
 /** Configuration for creating a type-1 transform.
  */
 template <std::size_t Dim> struct Type1TransformConfiguration {
-    std::size_t num_points_;             //!< Number of input points
+    std::size_t max_num_points_;         //!< Maximum number of input points
     std::array<std::size_t, Dim> modes_; //!< Number of modes in each dimension
-    double tolerance_;                   //!< Target tolerance for the transform
-    double upsampling_factor_;           //!< Upsampling factor for the transform
-    std::size_t max_threads_;            //!< Maximum number of threads to use
-    int mode_ordering_;                  //!< Ordering of the output modes
+    double tolerance_ = 1e-6;            //!< Target tolerance for the transform
+    double upsampling_factor_ = 2.0;     //!< Upsampling factor for the transform
+    std::size_t max_threads_ = 0;        //!< Maximum number of threads to use
+    int mode_ordering_ = 1;              //!< Ordering of the output modes
 };
 
 } // namespace finufft

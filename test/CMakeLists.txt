@@ -76,6 +76,7 @@ function (add_gtest_test name source)
   gtest_discover_tests(${name})
 endfunction()
 
+add_gtest_test(exact_type1 exact_type1.cpp)
 add_gtest_test(plan_type1_test plan_type1_test.cpp)
 add_gtest_test(spread_add_wrapped_subgrid spread_add_wrapped_subgrid.cpp)
 add_gtest_test(spread_bin_sort spread_bin_sort_test.cpp)

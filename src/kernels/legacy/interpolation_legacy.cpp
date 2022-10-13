@@ -80,14 +80,14 @@ template <typename T, std::size_t Dim> struct LegacyInterpolationFunctor {
         std::copy(output_size.begin(), output_size.end(), output_size_.begin());
 
         for (std::size_t i = 0; i < Dim; ++i) {
-            kernel_factory(kernel_.get() + kernel_offset(i), output_size_[i] / 2 + 1);
+            kernel_factory(kernel_.get() + kernel_offset(i), input_size_[i]);
         }
     }
 
     std::size_t kernel_offset(std::size_t i) const noexcept {
         return std::accumulate(
-            output_size_.begin(),
-            output_size_.begin() + i,
+            input_size_.begin(),
+            input_size_.begin() + i,
             std::size_t(0),
             [](std::size_t acc, std::size_t s) {
                 return acc + round_to_next_multiple((s / 2) + 1, 64 / sizeof(T));
@@ -104,7 +104,7 @@ template <typename T, std::size_t Dim> struct LegacyInterpolationFunctor {
             common::deconvolveshuffle1d(
                 1,
                 1.0,
-                kernel_.get() + kernel_offset(0) + output_size_[0] / 2,
+                kernel_.get() + kernel_offset(0),
                 output_size_[0],
                 output,
                 input_size_[0],
@@ -114,8 +114,8 @@ template <typename T, std::size_t Dim> struct LegacyInterpolationFunctor {
             common::deconvolveshuffle2d(
                 1,
                 1.0,
-                kernel_.get() + kernel_offset(0) + output_size_[0] / 2,
-                kernel_.get() + kernel_offset(1) + output_size_[1] / 2,
+                kernel_.get() + kernel_offset(0),
+                kernel_.get() + kernel_offset(1),
                 output_size_[0],
                 output_size_[1],
                 output,
@@ -127,9 +127,9 @@ template <typename T, std::size_t Dim> struct LegacyInterpolationFunctor {
             common::deconvolveshuffle3d(
                 1,
                 1.0,
-                kernel_.get() + kernel_offset(0) + output_size_[0] / 2,
-                kernel_.get() + kernel_offset(1) + output_size_[1] / 2,
-                kernel_.get() + kernel_offset(2) + output_size_[2] / 2,
+                kernel_.get() + kernel_offset(0),
+                kernel_.get() + kernel_offset(1),
+                kernel_.get() + kernel_offset(2),
                 output_size_[0],
                 output_size_[1],
                 output_size_[2],

@@ -47,8 +47,8 @@ namespace avx512 {
  *
  */
 template <std::size_t Degree>
-struct SpreadSubproblemPolyW8 : public PolynomialBatchHolder<float, 8, Degree> {
-    using Base = PolynomialBatchHolder<float, 8, Degree>;
+struct SpreadSubproblemPolyW8 : public PolynomialBatchHolder<float, 16, Degree> {
+    using Base = PolynomialBatchHolder<float, 16, Degree>;
     float kernel_width;
 
     template <typename U>
@@ -256,8 +256,8 @@ extern template struct SpreadSubproblemPolyW8<11>;
  *
  */
 template <std::size_t Degree>
-struct SpreadSubproblemPolyW4 : PolynomialBatchHolder<float, 4, Degree> {
-    using Base = PolynomialBatchHolder<float, 4, Degree>;
+struct SpreadSubproblemPolyW4 : PolynomialBatchHolder<float, 16, Degree> {
+    using Base = PolynomialBatchHolder<float, 16, Degree>;
     float kernel_width;
 
     template <typename U>

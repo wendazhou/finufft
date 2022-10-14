@@ -83,7 +83,7 @@ FFTWPlanHolder<T> make_fftw_plan(
         howmany_dims,
         reinterpret_cast<fftw_complex<T> *>(data),
         reinterpret_cast<fftw_complex<T> *>(data),
-        FFTW_FORWARD,
+        direction == finufft::fft::FourierTransformDirection::Forward ? FFTW_FORWARD : FFTW_BACKWARD,
         FFTW_ESTIMATE);
 
     if (plan == nullptr) {

@@ -37,7 +37,7 @@ Type1Plan<T, Dim> make_type1_plan(Type1TransformConfiguration<Dim> const &config
     auto spread_functor = finufft::spreading::legacy::make_spread_functor<T, Dim>(
         kernel_spec, spreading::FoldRescaleRange::Pi, buffer_size);
     auto fft = fft::make_fftw_planned_transform<T, Dim>(
-        fft::FourierTransformDirection::Forward, buffer_size, buffer_stride, buffer.get());
+        fft::FourierTransformDirection::Backward, buffer_size, buffer_stride, buffer.get());
 
     auto interpolation = interpolation::legacy::make_legacy_interpolation_functor<T, Dim>(
         configuration.modes_,

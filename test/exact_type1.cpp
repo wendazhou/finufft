@@ -35,7 +35,19 @@ void run_type1_transform_plan_legacy(
     std::size_t modes) {
     finufft::Type1TransformConfiguration<1> config = {
         .max_num_points_ = points.num_points, .modes_ = {modes}, .max_threads_ = 1};
-    auto plan = finufft::legacy::make_type1_plan<double, 1>(config);
+    auto plan = finufft::legacy::make_type1_plan<T, 1>(config);
+    plan(points.num_points, points.coordinates, points.strengths, output);
+}
+
+template <typename T>
+void run_type1_transform_plan_avx512(
+    finufft::spreading::nu_point_collection<1, const T> const& points, T* output,
+    std::size_t modes) {
+
+    finufft::Type1TransformConfiguration<1> config = {
+        .max_num_points_ = points.num_points, .modes_ = {modes}, .max_threads_ = 1};
+
+    auto plan = finufft::avx512::make_type1_plan<T, 1>(config);
     plan(points.num_points, points.coordinates, points.strengths, output);
 }
 
@@ -69,8 +81,8 @@ void test_type1_transform_single_point(
 
     std::size_t modes = 16;
 
-    auto output_exact_holder = finufft::allocate_aligned_array<double>(2 * modes, 64);
-    auto output_fast_holder = finufft::allocate_aligned_array<double>(2 * modes, 64);
+    auto output_exact_holder = finufft::allocate_aligned_array<T>(2 * modes, 64);
+    auto output_fast_holder = finufft::allocate_aligned_array<T>(2 * modes, 64);
 
     tcb::span<T> output_exact = {output_exact_holder.get(), 2 * modes};
     tcb::span<T> output_fast = {output_fast_holder.get(), 2 * modes};
@@ -98,6 +110,24 @@ TEST_P(ExactNuftType1Test, SinglePoint1DF64) {
 
     test_type1_transform_single_point<double>(
         num_modes, coordinate, run_type1_transform_plan_legacy<double>, 1e-5);
+}
+
+TEST_P(ExactNuftType1Test, SinglePoint1DF32) {
+    auto param = GetParam();
+    auto num_modes = std::get<0>(param);
+    auto coordinate = std::get<1>(param);
+
+    test_type1_transform_single_point<float>(
+        num_modes, coordinate, run_type1_transform_plan_legacy<float>, 1e-5);
+}
+
+TEST_P(ExactNuftType1Test, SinglePoint1DF32Avx512) {
+    auto param = GetParam();
+    auto num_modes = std::get<0>(param);
+    auto coordinate = std::get<1>(param);
+
+    test_type1_transform_single_point<float>(
+        num_modes, coordinate, run_type1_transform_plan_avx512<float>, 1e-5);
 }
 
 TEST_P(ExactNuftType1Test, SinglePoint1DF64Guru) {

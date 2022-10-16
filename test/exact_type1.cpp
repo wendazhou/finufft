@@ -4,6 +4,7 @@
 #include "../src/constants.h"
 #include "../src/kernels/avx512/plan.h"
 #include "../src/kernels/legacy/plan.h"
+#include "../src/kernels/reference/plan.h"
 
 #include "spread_test_utils.h"
 
@@ -41,13 +42,25 @@ void run_type1_transform_plan_legacy(
 
 template <typename T>
 void run_type1_transform_plan_avx512(
-    finufft::spreading::nu_point_collection<1, const T> const& points, T* output,
+    finufft::spreading::nu_point_collection<1, const T> const &points, T *output,
     std::size_t modes) {
 
     finufft::Type1TransformConfiguration<1> config = {
         .max_num_points_ = points.num_points, .modes_ = {modes}, .max_threads_ = 1};
 
     auto plan = finufft::avx512::make_type1_plan<T, 1>(config);
+    plan(points.num_points, points.coordinates, points.strengths, output);
+}
+
+template <typename T>
+void run_type1_transform_plan_reference_exact(
+    finufft::spreading::nu_point_collection<1, const T> const &points, T *output,
+    std::size_t modes) {
+
+    finufft::Type1TransformConfiguration<1> config = {
+        .max_num_points_ = points.num_points, .modes_ = {modes}, .max_threads_ = 1};
+
+    auto plan = finufft::reference::make_exact_type1_plan<T, 1>(config);
     plan(points.num_points, points.coordinates, points.strengths, output);
 }
 
@@ -98,8 +111,7 @@ void test_type1_transform_single_point(
     }
 }
 
-class ExactNuftType1Test : public ::testing::TestWithParam<std::tuple<std::size_t, double>> {
-};
+class ExactNuftType1Test : public ::testing::TestWithParam<std::tuple<std::size_t, double>> {};
 
 } // namespace
 
@@ -130,6 +142,25 @@ TEST_P(ExactNuftType1Test, SinglePoint1DF32Avx512) {
         num_modes, coordinate, run_type1_transform_plan_avx512<float>, 1e-5);
 }
 
+
+TEST_P(ExactNuftType1Test, SinglePoint1DF64Exact) {
+    auto param = GetParam();
+    auto num_modes = std::get<0>(param);
+    auto coordinate = std::get<1>(param);
+
+    test_type1_transform_single_point<double>(
+        num_modes, coordinate, run_type1_transform_plan_reference_exact<double>, 1e-5);
+}
+
+TEST_P(ExactNuftType1Test, SinglePoint1DF32Exact) {
+    auto param = GetParam();
+    auto num_modes = std::get<0>(param);
+    auto coordinate = std::get<1>(param);
+
+    test_type1_transform_single_point<float>(
+        num_modes, coordinate, run_type1_transform_plan_reference_exact<float>, 1e-5);
+}
+
 TEST_P(ExactNuftType1Test, SinglePoint1DF64Guru) {
     auto param = GetParam();
     auto num_modes = std::get<0>(param);
@@ -140,8 +171,5 @@ TEST_P(ExactNuftType1Test, SinglePoint1DF64Guru) {
 }
 
 INSTANTIATE_TEST_SUITE_P(
-    ExactNuftType1Test,
-    ExactNuftType1Test,
-    ::testing::Combine(
-        ::testing::Values(16),
-        ::testing::Values(0, 1)));
+    ExactNuftType1Test, ExactNuftType1Test,
+    ::testing::Combine(::testing::Values(16), ::testing::Values(0, 1)));

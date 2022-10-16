@@ -22,6 +22,26 @@ template <typename T, std::size_t Dim> struct KernelType1Plan {
         interpolate_(uniform_buffer_.get(), result);
     }
 };
+
+template <typename T, std::size_t Dim> struct LoopBatchedType1Plan {
+    Type1Plan<T, Dim> plan_;
+    std::size_t weight_stride_;
+    std::size_t result_stride_;
+
+    void operator()(
+        std::size_t num_points, tcb::span<const T *const, Dim> coordinates,
+        std::size_t num_transforms, T const *weights, T *result) {
+        for (std::size_t i = 0; i < num_transforms; ++i) {
+            // Note: strides adjusted by 2 to account for complex elements
+            plan_(
+                num_points,
+                coordinates,
+                weights + i * 2 * weight_stride_,
+                result + i * 2 * result_stride_);
+        }
+    }
+};
+
 } // namespace
 
 template <typename T, std::size_t Dim>
@@ -37,15 +57,23 @@ Type1Plan<T, Dim> make_type1_plan_from_parts(
         std::move(interpolate));
 }
 
+template <typename T, std::size_t Dim>
+BatchedType1Plan<T, Dim>
+batch_type1_plan(Type1Plan<T, Dim> &&plan, std::size_t weight_stride, std::size_t output_stride) {
+    return LoopBatchedType1Plan<T, Dim>(std::move(plan), weight_stride, output_stride);
+}
+
 #define INSTANTIATE(T, Dim)                                                                        \
-    template Type1Plan<T, Dim> make_type1_plan_from_parts(                                                    \
+    template Type1Plan<T, Dim> make_type1_plan_from_parts(                                         \
         finufft::aligned_unique_array<T> uniform_buffer,                                           \
         finufft::spreading::SpreadFunctor<T, Dim>                                                  \
             spread_blocked,                                                                        \
         finufft::fft::PlannedFourierTransformation<T>                                              \
             fft,                                                                                   \
         finufft::interpolation::InterpolationFunctor<T, Dim>                                       \
-            interpolate);
+            interpolate);                                                                          \
+    template BatchedType1Plan<T, Dim> batch_type1_plan(                                            \
+        Type1Plan<T, Dim> &&plan, std::size_t weight_stride, std::size_t output_stride);
 
 INSTANTIATE(float, 1)
 INSTANTIATE(float, 2)

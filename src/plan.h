@@ -71,8 +71,15 @@ template <typename T, std::size_t Dim> class Type1Plan {
     }
 };
 
+/** Creates a new generic type-1 plan from a spread-fft-interpolate strategy.
+ *
+ * This function creates a new type-1 plan from the given implementations of the
+ * spread, fft and interpolation strategies. Most fast NUFT plans may be implemented
+ * as such.
+ *
+ */
 template <typename T, std::size_t Dim>
-Type1Plan<T, Dim> make_type1_plan(
+Type1Plan<T, Dim> make_type1_plan_from_parts(
     finufft::aligned_unique_array<T> uniform_buffer,
     finufft::spreading::SpreadFunctor<T, Dim> spread_blocked,
     finufft::fft::PlannedFourierTransformation<T> fft,

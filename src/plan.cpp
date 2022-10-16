@@ -25,7 +25,7 @@ template <typename T, std::size_t Dim> struct KernelType1Plan {
 } // namespace
 
 template <typename T, std::size_t Dim>
-Type1Plan<T, Dim> make_type1_plan(
+Type1Plan<T, Dim> make_type1_plan_from_parts(
     finufft::aligned_unique_array<T> uniform_buffer,
     finufft::spreading::SpreadFunctor<T, Dim> spread_blocked,
     finufft::fft::PlannedFourierTransformation<T> fft,
@@ -38,7 +38,7 @@ Type1Plan<T, Dim> make_type1_plan(
 }
 
 #define INSTANTIATE(T, Dim)                                                                        \
-    template Type1Plan<T, Dim> make_type1_plan(                                                    \
+    template Type1Plan<T, Dim> make_type1_plan_from_parts(                                                    \
         finufft::aligned_unique_array<T> uniform_buffer,                                           \
         finufft::spreading::SpreadFunctor<T, Dim>                                                  \
             spread_blocked,                                                                        \

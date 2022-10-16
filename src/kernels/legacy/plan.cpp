@@ -47,7 +47,7 @@ Type1Plan<T, Dim> make_type1_plan(Type1TransformConfiguration<Dim> const &config
         spreading::reference::make_interpolation_kernel_factory<T>(kernel_spec),
         interpolation::ModeOrdering(configuration.mode_ordering_));
 
-    return make_type1_plan(
+    return make_type1_plan_from_parts(
         std::move(buffer), std::move(spread_functor), std::move(fft), std::move(interpolation));
 }
 
